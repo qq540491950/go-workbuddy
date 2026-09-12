@@ -501,7 +501,7 @@ export function ChatPage() {
                   onSpeak={() => speak(m.text)}
                   costOf={costOf}
                   onEdit={startEdit}
-                  canEdit={!running && !!activeID && m.kind === "user" && i === messages.length - 1}
+                  canEdit={!running && !!activeID && m.kind === "user" && !messages.slice(i + 1).some((x) => x.kind === "user")}
                 />
               );
             })}
