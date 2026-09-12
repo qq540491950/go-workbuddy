@@ -242,10 +242,15 @@ func (s *Store) saveLocked() error {
 		return err
 	}
 	tmp := s.path + ".tmp"
-	if err := os.WriteFile(tmp, data, 0o644); err != nil {
+	// 0600: the file contains API keys.
+	if err := os.WriteFile(tmp, data, 0o600); err != nil {
 		return err
 	}
-	return os.Rename(tmp, s.path)
+	if err := os.Rename(tmp, s.path); err != nil {
+		return err
+	}
+	_ = os.Chmod(s.path, 0o600)
+	return nil
 }
 
 // Get returns a deep copy of the current config.

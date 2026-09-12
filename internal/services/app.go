@@ -14,11 +14,14 @@ type AppService struct{ S *Services }
 // NewAppService creates the service.
 func NewAppService(s *Services) *AppService { return &AppService{S: s} }
 
+// AppVersion is injected by main (single source of truth).
+var AppVersion = "dev"
+
 // AppInfo returns static app metadata.
 func (a *AppService) AppInfo() map[string]string {
 	return map[string]string{
 		"name":    "WorkBuddy Agent",
-		"version": "0.1.0",
+		"version": AppVersion,
 		"adk":     "google adk-go v2",
 	}
 }

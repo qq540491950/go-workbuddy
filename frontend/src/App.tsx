@@ -10,7 +10,7 @@ import { ModelsPage } from "@/pages/ModelsPage";
 import { SettingsPage } from "@/pages/SettingsPage";
 import { cn } from "@/lib/utils";
 import { applyTheme, cachedTheme, onSystemThemeChange, type ThemePrefs } from "@/lib/theme";
-import { Config } from "@/lib/api";
+import { App as AppService, Config } from "@/lib/api";
 
 const navItems = [
   { key: "chat", label: "对话", icon: MessageSquare },
@@ -28,6 +28,12 @@ export default function App() {
   const [page, setPage] = useState<NavKey>("chat");
   const [prefs, setPrefs] = useState<ThemePrefs>(() => cachedTheme());
   const [isDark, setIsDark] = useState(() => applyTheme(cachedTheme()));
+  const [version, setVersion] = useState("");
+
+  // Boot: fetch app metadata for the sidebar version label.
+  useEffect(() => {
+    AppService.AppInfo().then((info) => setVersion(info?.version ?? "")).catch(() => {});
+  }, []);
 
   // Boot: apply cached theme instantly, then sync from persisted settings.
   useEffect(() => {
@@ -103,7 +109,7 @@ export default function App() {
               {isDark ? <Sun className="h-3.5 w-3.5" /> : <Moon className="h-3.5 w-3.5" />}
             </button>
           </div>
-          <div>v0.1.0</div>
+          {version && <div>v{version}</div>}
         </div>
       </aside>
 

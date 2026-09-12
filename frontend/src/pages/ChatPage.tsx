@@ -42,6 +42,9 @@ type UIMessage = {
 let mid = 0;
 const nextId = () => `m${++mid}`;
 
+// RENDER_LIMIT caps how many messages render at once for smooth long sessions.
+const RENDER_LIMIT = 200;
+
 /** mdToSpeech converts markdown to a speakable plain string. */
 function mdToSpeech(md: string): string {
   return md
@@ -516,6 +519,11 @@ export function ChatPage() {
 
         <ScrollArea className="flex-1">
           <div className="mx-auto max-w-3xl space-y-3 p-4">
+            {messages.length > RENDER_LIMIT && (
+              <div className="rounded-lg border bg-muted/40 px-3 py-2 text-center text-xs text-muted-foreground">
+                已省略较早的 {messages.length - RENDER_LIMIT} 条消息（完整历史已保存，可导出查看）
+              </div>
+            )}
             {messages.length === 0 && !active && providerCount === 0 && <Onboarding />}
             {messages.length === 0 && active && (
               <div className="py-24 text-center text-sm text-muted-foreground">
@@ -523,13 +531,13 @@ export function ChatPage() {
                 向 <span className="font-medium text-foreground">{targetLabel}</span> 发送第一条消息
               </div>
             )}
-            {messages.map((m, i) => {
+            {messages.slice(-RENDER_LIMIT).map((m, i, arr) => {
               const runningTools = computeRunningTools(messages);
               return (
                 <MessageBubble
                   key={m.id}
                   m={m}
-                  isLastAssistant={m.kind === "assistant" && i === messages.length - 1}
+                  isLastAssistant={m.kind === "assistant" && i === arr.length - 1}
                   onRegenerate={regenerate}
                   canRegenerate={!running && !!activeID}
                   toolRunning={m.kind === "tool_call" ? runningTools.has(m.id) : false}
