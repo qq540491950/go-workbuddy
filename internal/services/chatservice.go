@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -28,6 +29,20 @@ const (
 // appEventHook, when set (tests), receives stream events instead of the
 // Wails event bus.
 var appEventHook func(ChatStreamEvent)
+
+// AttachmentIn is an image the user attaches to a message (base64 data).
+type AttachmentIn struct {
+	Name string `json:"name"`
+	MIME string `json:"mime"`
+	Data string `json:"data"` // base64, no data: prefix
+}
+
+// AttachmentOut is an attachment rendered in chat history.
+type AttachmentOut struct {
+	Name    string `json:"name"`
+	MIME    string `json:"mime"`
+	DataURL string `json:"dataUrl"`
+}
 
 // UsageInfo reports token consumption for a turn or a whole session.
 type UsageInfo struct {
@@ -66,14 +81,48 @@ func usageOf(ev *session.Event) *UsageInfo {
 
 // ChatMessage is a rendered historical message.
 type ChatMessage struct {
-	ID        string         `json:"id"`
-	Kind      string         `json:"kind"` // user|message|tool_call|tool_result
-	Author    string         `json:"author"`
-	Text      string         `json:"text"`
-	ToolName  string         `json:"toolName,omitempty"`
-	ToolArgs  map[string]any `json:"toolArgs,omitempty"`
-	ToolResp  map[string]any `json:"toolResp,omitempty"`
-	Timestamp time.Time      `json:"timestamp"`
+	ID          string          `json:"id"`
+	Kind        string          `json:"kind"` // user|assistant|tool_call|tool_result
+	Author      string          `json:"author"`
+	Text        string          `json:"text"`
+	ToolName    string          `json:"toolName,omitempty"`
+	ToolArgs    map[string]any  `json:"toolArgs,omitempty"`
+	ToolResp    map[string]any  `json:"toolResp,omitempty"`
+	Attachments []AttachmentOut `json:"attachments,omitempty"`
+	Timestamp   time.Time       `json:"timestamp"`
+}
+
+const (
+	maxAttachmentBytes = 6 << 20 // 6 MB decoded per file
+	maxAttachments     = 4
+)
+
+var attachmentMIMEAllowed = map[string]bool{
+	"image/png": true, "image/jpeg": true, "image/webp": true, "image/gif": true,
+}
+
+// buildUserContent assembles the user message content: text plus image parts.
+func buildUserContent(text string, atts []AttachmentIn) (*genai.Content, error) {
+	content := genai.NewContentFromText(text, genai.RoleUser)
+	for i, a := range atts {
+		if !attachmentMIMEAllowed[a.MIME] {
+			return nil, fmt.Errorf("不支持的附件类型 %s（仅支持图片）", a.MIME)
+		}
+		raw, err := base64.StdEncoding.DecodeString(a.Data)
+		if err != nil {
+			return nil, fmt.Errorf("附件 %s 解码失败", a.Name)
+		}
+		if len(raw) > maxAttachmentBytes {
+			return nil, fmt.Errorf("附件 %s 超过 6MB 限制", a.Name)
+		}
+		if i >= maxAttachments {
+			return nil, fmt.Errorf("最多附带 %d 个附件", maxAttachments)
+		}
+		content.Parts = append(content.Parts, &genai.Part{
+			InlineData: &genai.Blob{MIMEType: a.MIME, Data: raw},
+		})
+	}
+	return content, nil
 }
 
 // ChatService manages chat sessions and streaming runs over ADK.
@@ -232,6 +281,18 @@ func renderEvent(ev *session.Event, seq int) []ChatMessage {
 			m.ToolResp = p.FunctionResponse.Response
 			m.Author = ev.Author
 			out = append(out, m)
+		case p.InlineData != nil && p.InlineData.Data != nil:
+			flushText()
+			if role == "user" {
+				m := base
+				m.Kind = "user"
+				m.Attachments = []AttachmentOut{{
+					Name:    "attachment-" + fmt.Sprint(len(out)+1),
+					MIME:    p.InlineData.MIMEType,
+					DataURL: "data:" + p.InlineData.MIMEType + ";base64," + base64.StdEncoding.EncodeToString(p.InlineData.Data),
+				}}
+				out = append(out, m)
+			}
 		case p.Text != "" && !p.Thought:
 			textBuf.WriteString(p.Text)
 		}
@@ -257,8 +318,8 @@ func addUsage(total, u *UsageInfo) *UsageInfo {
 
 // Send runs one user turn against the session's target agent/team. It blocks
 // until the run completes and streams progress via chat:stream events.
-func (c *ChatService) Send(sessionID, text string) error {
-	return c.sendTurn(sessionID, text)
+func (c *ChatService) Send(sessionID, text string, attachments []AttachmentIn) error {
+	return c.sendTurn(sessionID, text, attachments)
 }
 
 // trimLastTurn removes all stored events from the last user message onward
@@ -305,6 +366,8 @@ func (c *ChatService) trimLastTurn(sessionID string) (string, error) {
 	return text, nil
 }
 
+var _ = context.Background
+
 // Regenerate redoes the last user turn: it trims the trailing conversation
 // (from the last user message onward, inclusive) and re-runs the same message.
 func (c *ChatService) Regenerate(sessionID string) error {
@@ -312,7 +375,7 @@ func (c *ChatService) Regenerate(sessionID string) error {
 	if err != nil {
 		return err
 	}
-	return c.sendTurn(sessionID, text)
+	return c.sendTurn(sessionID, text, nil)
 }
 
 // EditAndResend replaces the text of the last user turn and re-runs it.
@@ -323,7 +386,7 @@ func (c *ChatService) EditAndResend(sessionID, newText string) error {
 	if _, err := c.trimLastTurn(sessionID); err != nil {
 		return err
 	}
-	return c.sendTurn(sessionID, newText)
+	return c.sendTurn(sessionID, newText, nil)
 }
 
 // deleteEvents removes stored events by ID (used by Regenerate).
@@ -427,7 +490,7 @@ func sanitizeExportName(name string) string {
 
 // sendTurn resolves the session target, builds the agent tree, runs the turn
 // and streams progress.
-func (c *ChatService) sendTurn(sessionID, text string) error {
+func (c *ChatService) sendTurn(sessionID, text string, attachments []AttachmentIn) error {
 	cfg := c.S.Store.Get()
 	var target *config.ChatSession
 	for i := range cfg.Sessions {
@@ -505,7 +568,10 @@ func (c *ChatService) sendTurn(sessionID, text string) error {
 		c.mu.Unlock()
 	}()
 
-	msg := genai.NewContentFromText(text, genai.RoleUser)
+	msg, err := buildUserContent(text, attachments)
+	if err != nil {
+		return err
+	}
 	var turnUsage *UsageInfo
 	var sessionUsage *UsageInfo
 	for ev, err := range rn.Run(ctx, c.userID, sessionID, msg, agent.RunConfig{

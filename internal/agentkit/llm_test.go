@@ -2,6 +2,7 @@ package agentkit
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -302,5 +303,90 @@ func TestOpenAICompatHTTPError(t *testing.T) {
 	}
 	if !strings.Contains(errGot, "401") {
 		t.Fatalf("expected 401 error, got %q", errGot)
+	}
+}
+
+func TestOpenAICompatImageAttachment(t *testing.T) {
+	var captured map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewDecoder(r.Body).Decode(&captured)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"图里是一只猫"}}]}`))
+	}))
+	defer srv.Close()
+	llm, _ := NewOpenAICompat(OpenAICompatConfig{BaseURL: srv.URL, Model: "vision"})
+	png := []byte{0x89, 'P', 'N', 'G'}
+	req := &model.LLMRequest{Contents: []*genai.Content{{
+		Role: genai.RoleUser,
+		Parts: []*genai.Part{
+			{Text: "这张图里是什么？"},
+			{InlineData: &genai.Blob{MIMEType: "image/png", Data: png}},
+		},
+	}}}
+	for _, err := range llm.GenerateContent(context.Background(), req, false) {
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	msgs := captured["messages"].([]any)
+	last := msgs[len(msgs)-1].(map[string]any)
+	parts := last["content"].([]any)
+	if len(parts) != 2 {
+		t.Fatalf("expected 2 content parts, got %d", len(parts))
+	}
+	p0 := parts[0].(map[string]any)
+	if p0["type"] != "text" || p0["text"] != "这张图里是什么？" {
+		t.Fatalf("text part = %v", p0)
+	}
+	p1 := parts[1].(map[string]any)
+	if p1["type"] != "image_url" {
+		t.Fatalf("image part = %v", p1)
+	}
+	url := p1["image_url"].(map[string]any)["url"].(string)
+	if !strings.HasPrefix(url, "data:image/png;base64,") {
+		t.Fatalf("image url = %q", url)
+	}
+	if !strings.Contains(url, base64.StdEncoding.EncodeToString(png)) {
+		t.Fatal("image payload mismatch")
+	}
+}
+
+func TestAnthropicImageAttachment(t *testing.T) {
+	var captured map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewDecoder(r.Body).Decode(&captured)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"content":[{"type":"text","text":"好图"}]}`))
+	}))
+	defer srv.Close()
+	llm, _ := NewAnthropic(AnthropicConfig{BaseURL: srv.URL, Model: "claude-vision"})
+	req := &model.LLMRequest{Contents: []*genai.Content{{
+		Role: genai.RoleUser,
+		Parts: []*genai.Part{
+			{InlineData: &genai.Blob{MIMEType: "image/jpeg", Data: []byte{0xFF, 0xD8}},
+				Text: "看看"},
+		},
+	}}}
+	for _, err := range llm.GenerateContent(context.Background(), req, false) {
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	msgs := captured["messages"].([]any)
+	m0 := msgs[0].(map[string]any)
+	blocks := m0["content"].([]any)
+	var img map[string]any
+	for _, b := range blocks {
+		bb := b.(map[string]any)
+		if bb["type"] == "image" {
+			img = bb
+		}
+	}
+	if img == nil {
+		t.Fatalf("no image block: %v", blocks)
+	}
+	src := img["source"].(map[string]any)
+	if src["media_type"] != "image/jpeg" || src["type"] != "base64" {
+		t.Fatalf("image source = %v", src)
 	}
 }

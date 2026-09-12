@@ -8,6 +8,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -215,11 +216,19 @@ type oaToolCall struct {
 }
 
 type oaMessage struct {
-	Role       string       `json:"role"`
-	Content    any          `json:"content,omitempty"`
-	ToolCalls  []oaToolCall `json:"tool_calls,omitempty"`
-	ToolCallID string       `json:"tool_call_id,omitempty"`
-	Name       string       `json:"name,omitempty"`
+	Role       string        `json:"role"`
+	Content    any           `json:"content,omitempty"` // string or content-part array
+	ToolCalls  []oaToolCall  `json:"tool_calls,omitempty"`
+	ToolCallID string        `json:"tool_call_id,omitempty"`
+	Name       string        `json:"name,omitempty"`
+}
+
+type oaContentPart struct {
+	Type     string `json:"type"`
+	Text     string `json:"text,omitempty"`
+	ImageURL *struct {
+		URL string `json:"url"`
+	} `json:"image_url,omitempty"`
 }
 
 type oaRequest struct {
@@ -275,11 +284,14 @@ func (o *openaiCompatLLM) buildMessages(req *model.LLMRequest) []oaMessage {
 		var textParts []string
 		var calls []oaToolCall
 		var responses []*genai.FunctionResponse
+		var images []*genai.Blob
 		for _, p := range c.Parts {
 			if p == nil {
 				continue
 			}
 			switch {
+			case p.InlineData != nil && p.InlineData.Data != nil:
+				images = append(images, p.InlineData)
 			case p.FunctionCall != nil:
 				args, _ := json.Marshal(p.FunctionCall.Args)
 				id := p.FunctionCall.ID
@@ -317,14 +329,29 @@ func (o *openaiCompatLLM) buildMessages(req *model.LLMRequest) []oaMessage {
 			msgs = append(msgs, m)
 		default:
 			joined := strings.Join(textParts, "")
-			if joined == "" {
-				continue
-			}
 			role := "user"
 			if c.Role == genai.RoleModel {
 				role = "assistant"
 			}
-			msgs = append(msgs, oaMessage{Role: role, Content: joined})
+			if joined == "" && len(images) == 0 {
+				continue
+			}
+			if len(images) > 0 {
+				var parts []oaContentPart
+				if joined != "" {
+					parts = append(parts, oaContentPart{Type: "text", Text: joined})
+				}
+				for _, b := range images {
+					p := oaContentPart{Type: "image_url"}
+					p.ImageURL = &struct {
+						URL string `json:"url"`
+					}{URL: "data:" + b.MIMEType + ";base64," + base64.StdEncoding.EncodeToString(b.Data)}
+					parts = append(parts, p)
+				}
+				msgs = append(msgs, oaMessage{Role: role, Content: parts})
+			} else {
+				msgs = append(msgs, oaMessage{Role: role, Content: joined})
+			}
 		}
 	}
 	return msgs
@@ -527,6 +554,14 @@ type anBlock struct {
 	ToolUseID string `json:"tool_use_id,omitempty"`
 	Content   any    `json:"content,omitempty"`
 	IsError   bool   `json:"is_error,omitempty"`
+	// image
+	Source *anImageSource `json:"source,omitempty"`
+}
+
+type anImageSource struct {
+	Type      string `json:"type"`
+	MediaType string `json:"media_type"`
+	Data      string `json:"data"`
 }
 
 type anMessage struct {
@@ -577,6 +612,12 @@ func (a *anthropicLLM) buildMessages(req *model.LLMRequest) []anMessage {
 				continue
 			}
 			switch {
+			case p.InlineData != nil && p.InlineData.Data != nil:
+				appendBlock(role, anBlock{Type: "image", Source: &anImageSource{
+					Type:      "base64",
+					MediaType: p.InlineData.MIMEType,
+					Data:      base64.StdEncoding.EncodeToString(p.InlineData.Data),
+				}})
 			case p.FunctionCall != nil:
 				id := p.FunctionCall.ID
 				if id == "" {

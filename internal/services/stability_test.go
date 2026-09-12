@@ -135,7 +135,7 @@ func TestSendCancelIsStable(t *testing.T) {
 
 	done := make(chan struct{})
 	go func() {
-		_ = chat.Send(sess.ID, "slow")
+		_ = chat.Send(sess.ID, "slow", nil)
 		close(done)
 	}()
 	for !chat.IsRunning(sess.ID) {

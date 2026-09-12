@@ -70,7 +70,7 @@ func TestChatEndToEndToolLoop(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := chat.Send(sess.ID, "现在几点了？"); err != nil {
+	if err := chat.Send(sess.ID, "现在几点了？", nil); err != nil {
 		t.Fatal(err)
 	}
 

@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"encoding/base64"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -66,7 +67,7 @@ func TestRegenerateTrimsAndReruns(t *testing.T) {
 	reply.Store("first-reply")
 	chat, sess, _ := newChatFixture(t, &reply)
 
-	if err := chat.Send(sess.ID, "你好"); err != nil {
+	if err := chat.Send(sess.ID, "你好", nil); err != nil {
 		t.Fatal(err)
 	}
 	msgs, _ := chat.GetSessionMessages(sess.ID)
@@ -105,7 +106,7 @@ func TestExportSessionWritesMarkdown(t *testing.T) {
 	var reply atomic.Value
 	reply.Store("导出测试回复 **加粗**")
 	chat, sess, store := newChatFixture(t, &reply)
-	if err := chat.Send(sess.ID, "导出我这段话"); err != nil {
+	if err := chat.Send(sess.ID, "导出我这段话", nil); err != nil {
 		t.Fatal(err)
 	}
 	path, err := chat.ExportSession(sess.ID)
@@ -141,7 +142,7 @@ func TestSendAttachesUsageToEvents(t *testing.T) {
 	appEventHook = func(ev ChatStreamEvent) { events = append(events, ev) }
 	t.Cleanup(func() { appEventHook = origApp })
 
-	if err := chat.Send(sess.ID, "统计一下"); err != nil {
+	if err := chat.Send(sess.ID, "统计一下", nil); err != nil {
 		t.Fatal(err)
 	}
 	var msgUsage, doneUsage *UsageInfo
@@ -165,7 +166,7 @@ func TestEditAndResendReplacesLastTurn(t *testing.T) {
 	var reply atomic.Value
 	reply.Store("first-reply")
 	chat, sess, _ := newChatFixture(t, &reply)
-	if err := chat.Send(sess.ID, "原始问题"); err != nil {
+	if err := chat.Send(sess.ID, "原始问题", nil); err != nil {
 		t.Fatal(err)
 	}
 	reply.Store("edited-reply")
@@ -188,4 +189,79 @@ func TestEditAndResendReplacesLastTurn(t *testing.T) {
 	if err := chat.EditAndResend(sess.ID, "   "); err == nil {
 		t.Fatal("expected error for blank message")
 	}
+}
+
+func TestSendWithImageAttachment(t *testing.T) {
+	var captured string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body := readAllBody(r)
+		captured = body
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte(`data: {"choices":[{"delta":{"content":"图里是一只猫。"}}]}` + "\n\n"))
+		_, _ = w.Write([]byte("data: [DONE]\n\n"))
+	}))
+	defer srv.Close()
+
+	dir := t.TempDir()
+	store, err := config.Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = store.Update(func(cfg *config.Config) {
+		cfg.Providers = append(cfg.Providers, config.ModelProvider{
+			ID: "prov_1", Name: "Fake", Protocol: config.ProtocolOpenAI,
+			BaseURL: srv.URL, Models: []string{"vision"},
+		})
+		cfg.Agents = append(cfg.Agents, config.AgentConfig{ID: "a1", Name: "看图", ProviderID: "prov_1", Model: "vision"})
+	})
+	db, sessions, err := newTestSessionService(filepath.Join(dir, "s.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	chat := NewChatService(&Services{Store: store, Kit: agentkit.NewKit(store, mcpmgr.New()), MCP: mcpmgr.New()}, sessions, db)
+	sess, err := chat.NewSession("agent", "a1", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	png := base64.StdEncoding.EncodeToString([]byte{0x89, 'P', 'N', 'G'})
+	err = chat.Send(sess.ID, "这张图里是什么？", []AttachmentIn{{Name: "cat.png", MIME: "image/png", Data: png}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(captured, "data:image/png;base64,") || !strings.Contains(captured, base64.StdEncoding.EncodeToString([]byte{0x89, 'P', 'N', 'G'})) {
+		t.Fatal("image payload missing from provider request")
+	}
+
+	// History round-trips the attachment for rendering.
+	msgs, err := chat.GetSessionMessages(sess.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var atts []AttachmentOut
+	for _, m := range msgs {
+		atts = append(atts, m.Attachments...)
+	}
+	if len(atts) != 1 || atts[0].MIME != "image/png" || !strings.HasPrefix(atts[0].DataURL, "data:image/png;base64,") {
+		t.Fatalf("history attachments = %+v", atts)
+	}
+
+	// Rejected types fail cleanly.
+	err = chat.Send(sess.ID, "再看看", []AttachmentIn{{Name: "x.exe", MIME: "application/exe", Data: "AAAA"}})
+	if err == nil || !strings.Contains(err.Error(), "不支持的附件类型") {
+		t.Fatalf("expected unsupported type error, got %v", err)
+	}
+}
+
+func readAllBody(r *http.Request) string {
+	buf := make([]byte, 0, 8192)
+	tmp := make([]byte, 2048)
+	for {
+		n, err := r.Body.Read(tmp)
+		buf = append(buf, tmp[:n]...)
+		if err != nil {
+			break
+		}
+	}
+	return string(buf)
 }
