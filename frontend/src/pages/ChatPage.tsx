@@ -3,7 +3,7 @@ import { Events } from "@wailsio/runtime";
 import {
   Plus, Send, Square, Trash2, Pencil, MessageSquare, Bot, Users, Loader2,
   Copy, Check, Search, ArrowRight, RefreshCw, Download, Mic, MicOff, Volume2, Square as SquareStop,
-  Paperclip, X,
+  Paperclip, X, BarChart3,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -23,7 +23,7 @@ import { ToolCallCard } from "@/components/ToolCallCard";
 import {
   Chat, Config, errText,
   type AgentConfig, type ChatSession, type TeamConfig, type UsageInfo, type ModelProvider,
-  type AttachmentIn, type AttachmentOut,
+  type AttachmentIn, type AttachmentOut, type SessionStats,
 } from "@/lib/api";
 
 type UIMessage = {
@@ -91,6 +91,8 @@ export function ChatPage() {
   const [renaming, setRenaming] = useState<ChatSession | null>(null);
   const [renameText, setRenameText] = useState("");
   const [sessionUsage, setSessionUsage] = useState<UsageInfo | null>(null);
+  const [statsOpen, setStatsOpen] = useState(false);
+  const [stats, setStats] = useState<SessionStats | null>(null);
   const [autoSpeak, setAutoSpeak] = useState(false);
   const [listening, setListening] = useState(false);
   const [editing, setEditing] = useState(false);
@@ -336,6 +338,16 @@ export function ChatPage() {
     }
   };
 
+  const openStats = async () => {
+    if (!activeID) return;
+    try {
+      setStats(await Chat.SessionStats(activeID));
+      setStatsOpen(true);
+    } catch (e) {
+      toast.error(`加载统计失败: ${errText(e)}`);
+    }
+  };
+
   const exportSession = async () => {
     if (!activeID) return;
     try {
@@ -505,9 +517,14 @@ export function ChatPage() {
               </Badge>
             )}
             {active && (
-              <Button variant="ghost" size="icon" title="导出为 Markdown" onClick={exportSession}>
-                <Download className="h-4 w-4" />
-              </Button>
+              <>
+                <Button variant="ghost" size="icon" title="会话统计" onClick={openStats}>
+                  <BarChart3 className="h-4 w-4" />
+                </Button>
+                <Button variant="ghost" size="icon" title="导出为 Markdown" onClick={exportSession}>
+                  <Download className="h-4 w-4" />
+                </Button>
+              </>
             )}
             {running && (
               <Badge variant="secondary" className="gap-1">
@@ -654,6 +671,34 @@ export function ChatPage() {
           </div>
         </div>
       </div>
+
+      {/* Session stats dialog */}
+      <Dialog open={statsOpen} onOpenChange={setStatsOpen}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="text-base">会话统计</DialogTitle>
+          </DialogHeader>
+          {stats && (
+            <div className="grid grid-cols-2 gap-2 text-sm">
+              {[
+                ["用户消息", stats.messages],
+                ["助手轮次", stats.assistantTurns],
+                ["工具调用", stats.toolCalls],
+                ["工具失败", stats.toolFailures],
+                ["输入 tokens", stats.tokensIn.toLocaleString()],
+                ["输出 tokens", stats.tokensOut.toLocaleString()],
+                ["总 tokens", stats.tokensTotal.toLocaleString()],
+                [costOf({ promptTokens: stats.tokensIn, completionTokens: stats.tokensOut, totalTokens: stats.tokensTotal }) || "—", costOf({ promptTokens: stats.tokensIn, completionTokens: stats.tokensOut, totalTokens: stats.tokensTotal }) ? "估算成本" : "未配置价格"],
+              ].map(([k, v], i) => (
+                <div key={i} className="rounded-lg border p-2.5">
+                  <div className="text-xs text-muted-foreground">{v}</div>
+                  <div className="text-sm font-medium">{k}</div>
+                </div>
+              ))}
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
 
       {/* New chat dialog */}
       <Dialog open={newChatOpen} onOpenChange={setNewChatOpen}>

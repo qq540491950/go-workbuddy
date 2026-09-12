@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { Switch } from "@/components/ui/switch";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle,
@@ -79,6 +80,7 @@ function blankAgent(): AgentConfig {
     mcpServerIds: [],
     builtinTools: ["time"],
     createdAt: "",
+    enableGuardrails: true,
   };
 }
 
@@ -310,7 +312,26 @@ export function AgentsPage() {
                     />
                     工作区文件读写
                   </label>
+                  <label className="flex items-center gap-2 text-sm">
+                    <Checkbox
+                      checked={(editing.builtinTools ?? []).includes("knowledge")}
+                      onCheckedChange={() => setEditing({ ...editing, builtinTools: toggle(editing.builtinTools ?? [], "knowledge") })}
+                    />
+                    知识库检索（workspace/knowledge/）
+                  </label>
                 </div>
+              </div>
+              <div className="flex items-center justify-between rounded-lg border p-3">
+                <div>
+                  <div className="text-sm font-medium">安全护栏</div>
+                  <div className="text-xs text-muted-foreground">
+                    自动遮蔽消息中的密钥/凭据，检测提示注入并告警
+                  </div>
+                </div>
+                <Switch
+                  checked={editing.enableGuardrails !== false}
+                  onCheckedChange={(v) => setEditing({ ...editing, enableGuardrails: v })}
+                />
               </div>
               {skills.length > 0 && (
                 <div className="grid gap-1.5">

@@ -20,6 +20,7 @@ export type Artifact = serviceModels.Artifact;
 export type ArtifactInfo = serviceModels.ArtifactInfo;
 export type AttachmentIn = serviceModels.AttachmentIn;
 export type AttachmentOut = serviceModels.AttachmentOut;
+export type SessionStats = serviceModels.SessionStats;
 export type ChatMessage = serviceModels.ChatMessage;
 export type ChatStreamEvent = serviceModels.ChatStreamEvent;
 export type ServerStatus = mcpModels.ServerStatus;
