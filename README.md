@@ -117,6 +117,20 @@ go vet ./internal/... .
 
 已实施：Markdown + 代码块复制、消息级复制、深浅主题、首次运行引导、会话搜索、快捷键、工具调用折叠面板、流式打字指示器。
 
+### 第六轮迭代：行业调研对齐（已实施）
+
+基于对 2026 agent 开发趋势的调研（Google ADK 生态：[Memory](https://adk.dev/sessions/memory/) / [A2A 协议](https://a2a-protocol.org/latest/) / [HITL](https://adk.dev/graphs/human-input/)；分层护栏最佳实践：[输入验证→模型→输出过滤](https://www.kalviumlabs.ai/blog/guardrails-for-llm-applications/)；[Agent 可观测性](https://www.langchain.com/resources/agent-observability)），结合项目差距落地三项：
+
+| 功能 | 实现 | 对应趋势 |
+| --- | --- | --- |
+| 知识库检索（RAG-lite） | `search_knowledge` 内置工具：`workspace/knowledge/` 下 md/txt/csv/json 全文关键词检索，相关度评分 + 片段摘要，Agent 编辑器勾选挂载 | RAG/知识库 |
+| 分层护栏 | 输入+输出双向密钥脱敏（sk-/AKIA/ghp_/xox/AIza/sk-ant/私钥块/通用 hex secret 8 类模式）与提示注入启发式检测告警；`EnableGuardrails` 每 Agent 开关（默认开） | Guardrails 分层防御 |
+| 会话统计（Observability-lite） | `SessionStats` 聚合：消息数/助手轮次/工具调用与失败/token 用量/估算成本，顶栏统计弹层展示 | 可观测性 |
+
+新增测试：脱敏 8 类模式、注入正负样本、知识库检索/空库/无关文件过滤、统计聚合、护栏脱敏 e2e（历史不留原始密钥）。
+
+路线图（调研后更新）：长期记忆（ADK memory.Service 或 Mem0 集成）、A2A 协议互操作（连接远程 Agent）、工具执行 HITL 确认（ADK toolconfirmation）、语义化检索（嵌入向量）替代关键词 RAG-lite。
+
 ### 第五轮迭代（已实施）
 
 | 功能 | 实现 |
