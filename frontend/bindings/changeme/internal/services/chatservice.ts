@@ -84,6 +84,14 @@ export function Regenerate(sessionID: string): $CancellablePromise<void> {
 }
 
 /**
+ * RememberSession ingests the whole conversation into long-term memory so
+ * other sessions (with the memory tool) can recall it later.
+ */
+export function RememberSession(sessionID: string): $CancellablePromise<number> {
+    return $Call.ByID(2174160522, sessionID);
+}
+
+/**
  * RenameSession updates a session title.
  */
 export function RenameSession(id: string, title: string): $CancellablePromise<void> {

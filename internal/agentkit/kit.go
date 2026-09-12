@@ -46,14 +46,18 @@ func NewModelFromProvider(p config.ModelProvider, modelID string) (model.LLM, er
 
 // Kit assembles ADK agent trees from app configuration.
 type Kit struct {
-	store *config.Store
-	mcp   *mcpmgr.Manager
+	store  *config.Store
+	mcp    *mcpmgr.Manager
+	memory tool.Tool // long-term memory search tool (nil if memory unavailable)
 }
 
 // NewKit creates a Kit.
 func NewKit(store *config.Store, mcp *mcpmgr.Manager) *Kit {
 	return &Kit{store: store, mcp: mcp}
 }
+
+// SetMemoryTool attaches the long-term memory search tool.
+func (k *Kit) SetMemoryTool(t tool.Tool) { k.memory = t }
 
 // BuildAgent builds an ADK agent for the given agent config.
 func (k *Kit) BuildAgent(ac config.AgentConfig) (agent.Agent, error) {
@@ -93,6 +97,10 @@ func (k *Kit) buildLLMAgentWithSubAgents(ac config.AgentConfig, cfg config.Confi
 			tools = append(tools, ListFilesTool(k.workspace()), ReadFileTool(k.workspace()), WriteFileTool(k.workspace()))
 		case "knowledge":
 			tools = append(tools, SearchKnowledgeTool(k.workspace()))
+		case "memory":
+			if k.memory != nil {
+				tools = append(tools, k.memory)
+			}
 		}
 	}
 

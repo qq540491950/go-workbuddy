@@ -11,6 +11,9 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"changeme/internal/memory"
+	adkmemory "google.golang.org/adk/v2/memory"
+
 	"changeme/internal/agentkit"
 	"changeme/internal/config"
 	"changeme/internal/mcpmgr"
@@ -325,5 +328,55 @@ func TestGuardrailRedactsUserInput(t *testing.T) {
 	}
 	if !redactNotice {
 		t.Fatalf("expected redaction notice, events: %+v", events)
+	}
+}
+
+func TestRememberSessionIngestsMemory(t *testing.T) {
+	var reply atomic.Value
+	reply.Store("好的")
+	chat, sess, store := newChatFixture(t, &reply)
+	if err := chat.Send(sess.ID, "项目部署在 europe-west4 区", nil); err != nil {
+		t.Fatal(err)
+	}
+
+	// Memory service starts empty.
+	db, sessions, err := newTestSessionService(filepath.Join(t.TempDir(), "s.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	memSvc, err := memory.NewSQLiteService(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	chat.S.Memory = memSvc
+	if _, err := memSvc.Count("workbuddy", "local"); err != nil {
+		t.Fatal(err)
+	}
+	_ = sessions
+
+	n, err := chat.RememberSession(sess.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n <= 0 {
+		t.Fatalf("expected memories after ingest, got %d", n)
+	}
+	// The deployment fact must be recallable.
+	resp, err := memSvc.SearchMemory(context.Background(), &adkmemory.SearchRequest{
+		AppName: "workbuddy", UserID: "local", Query: "europe-west4",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(resp.Memories) == 0 {
+		t.Fatal("deployment fact not recallable after RememberSession")
+	}
+	_ = store
+
+	// RememberSession without a memory service errors cleanly.
+	chat2, sess2, _ := newChatFixture(t, &reply)
+	chat2.S.Memory = nil
+	if _, err := chat2.RememberSession(sess2.ID); err == nil {
+		t.Fatal("expected error when memory service unavailable")
 	}
 }

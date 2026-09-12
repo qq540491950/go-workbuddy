@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"time"
 
+	"changeme/internal/memory"
+
 	adkmodel "google.golang.org/adk/v2/model"
 	"google.golang.org/genai"
 
@@ -18,9 +20,10 @@ import (
 
 // Services bundles the shared dependencies for all Wails services.
 type Services struct {
-	Store *config.Store
-	Kit   *agentkit.Kit
-	MCP   *mcpmgr.Manager
+	Store  *config.Store
+	Kit    *agentkit.Kit
+	MCP    *mcpmgr.Manager
+	Memory *memory.SQLiteService
 }
 
 func newID(prefix string) string {

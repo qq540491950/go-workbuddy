@@ -11,11 +11,13 @@ import (
 	"github.com/glebarez/sqlite"
 	"github.com/wailsapp/wails/v3/pkg/application"
 	"google.golang.org/adk/v2/session"
+	"google.golang.org/adk/v2/tool/loadmemorytool"
 	"google.golang.org/adk/v2/session/database"
 	"gorm.io/gorm"
 
 	"changeme/internal/agentkit"
 	"changeme/internal/config"
+	"changeme/internal/memory"
 	"changeme/internal/mcpmgr"
 	"changeme/internal/services"
 )
@@ -55,11 +57,19 @@ func main() {
 	services.AppVersion = Version
 
 	// Persistent ADK session storage (SQLite via pure-Go driver). The same
-	// *gorm.DB is shared with ChatService so Regenerate can trim events.
-	db, sessions, err := newSessionService(filepath.Join(cfgDir, "sessions.db"))
+	// *gorm.DB is shared with ChatService (Regenerate) and long-term memory.
+	gormDB, sessions, err := newSessionService(filepath.Join(cfgDir, "sessions.db"))
 	if err != nil {
 		log.Fatal(err)
 	}
+
+	// Long-term memory (SQLite, same DB as sessions).
+	memSvc, err := memory.NewSQLiteService(gormDB)
+	if err != nil {
+		log.Fatal(err)
+	}
+	kit.SetMemoryTool(loadmemorytool.New())
+	svc.Memory = memSvc
 
 	app := application.New(application.Options{
 		Name:        "WorkBuddy Agent",
@@ -69,7 +79,7 @@ func main() {
 			application.NewService(services.NewConfigService(svc)),
 			application.NewService(services.NewMCPService(svc)),
 			application.NewService(services.NewArtifactService(svc)),
-			application.NewService(services.NewChatService(svc, sessions, db)),
+			application.NewService(services.NewChatService(svc, sessions, gormDB)),
 		},
 		Assets: application.AssetOptions{
 			Handler: application.AssetFileServerFS(assets),

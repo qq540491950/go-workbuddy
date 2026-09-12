@@ -550,6 +550,7 @@ func (c *ChatService) sendTurn(sessionID, text string, attachments []AttachmentI
 		AppName:           c.appName,
 		Agent:             root,
 		SessionService:    c.sessions,
+		MemoryService:     c.S.Memory,
 		AutoCreateSession: true,
 	})
 	if err != nil {
@@ -676,6 +677,31 @@ func (c *ChatService) sendTurn(sessionID, text string, attachments []AttachmentI
 		}
 	})
 	return nil
+}
+
+// RememberSession ingests the whole conversation into long-term memory so
+// other sessions (with the memory tool) can recall it later.
+func (c *ChatService) RememberSession(sessionID string) (int, error) {
+	resp, err := c.sessions.Get(context.Background(), &session.GetRequest{
+		AppName: c.appName, UserID: c.userID, SessionID: sessionID,
+	})
+	if err != nil {
+		return 0, err
+	}
+	if resp.Session == nil {
+		return 0, fmt.Errorf("session %q not found", sessionID)
+	}
+	if c.S.Memory == nil {
+		return 0, fmt.Errorf("记忆服务不可用")
+	}
+	if err := c.S.Memory.AddSessionToMemory(context.Background(), resp.Session); err != nil {
+		return 0, err
+	}
+	n, err := c.S.Memory.Count(c.appName, c.userID)
+	if err != nil {
+		return 0, err
+	}
+	return int(n), nil
 }
 
 // SessionStats aggregates observability metrics for one conversation.
