@@ -32,6 +32,8 @@ function blankProvider(): ModelProvider {
     apiKey: "",
     models: [],
     isDefault: false,
+    priceIn: 0,
+    priceOut: 0,
   };
 }
 
@@ -213,6 +215,27 @@ export function ModelsPage() {
                   placeholder={"deepseek-chat\ndeepseek-reasoner"}
                 />
               </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="grid gap-1.5">
+                  <Label>输入价格（¥/1M tokens）</Label>
+                  <Input
+                    type="number" step="0.1" min="0"
+                    value={editing.priceIn ?? 0}
+                    onChange={(e) => setEditing({ ...editing, priceIn: Number(e.target.value) })}
+                    placeholder="可选"
+                  />
+                </div>
+                <div className="grid gap-1.5">
+                  <Label>输出价格（¥/1M tokens）</Label>
+                  <Input
+                    type="number" step="0.1" min="0"
+                    value={editing.priceOut ?? 0}
+                    onChange={(e) => setEditing({ ...editing, priceOut: Number(e.target.value) })}
+                    placeholder="可选"
+                  />
+                </div>
+              </div>
+              <p className="-mt-2 text-xs text-muted-foreground">填写价格后，对话中会显示每次回复与累计的成本估算。</p>
               <div className="flex items-center justify-between rounded-lg border p-3">
                 <Label>设为默认供应商</Label>
                 <Switch

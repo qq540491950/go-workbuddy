@@ -21,7 +21,7 @@ import { MessageMarkdown, CopyButton } from "@/components/MessageMarkdown";
 import { ToolCallCard } from "@/components/ToolCallCard";
 import {
   Chat, Config, errText,
-  type AgentConfig, type ChatSession, type TeamConfig, type UsageInfo,
+  type AgentConfig, type ChatSession, type TeamConfig, type UsageInfo, type ModelProvider,
 } from "@/lib/api";
 
 type UIMessage = {
@@ -77,6 +77,7 @@ export function ChatPage() {
   const [agents, setAgents] = useState<AgentConfig[]>([]);
   const [teams, setTeams] = useState<TeamConfig[]>([]);
   const [providerCount, setProviderCount] = useState(0);
+  const [providerList, setProviderList] = useState<ModelProvider[]>([]);
   const [search, setSearch] = useState("");
   const [newChatOpen, setNewChatOpen] = useState(false);
   const [newType, setNewType] = useState<"agent" | "team">("agent");
@@ -86,6 +87,7 @@ export function ChatPage() {
   const [sessionUsage, setSessionUsage] = useState<UsageInfo | null>(null);
   const [autoSpeak, setAutoSpeak] = useState(false);
   const [listening, setListening] = useState(false);
+  const [editing, setEditing] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const messagesRef = useRef<UIMessage[]>([]);
@@ -105,6 +107,7 @@ export function ChatPage() {
         setAgents(c.agents ?? []);
         setTeams(c.teams ?? []);
         setProviderCount((c.providers ?? []).length);
+        setProviderList(c.providers ?? []);
         setAutoSpeak(!!c.settings?.autoSpeak);
       })
       .catch((e) => toast.error(`加载配置失败: ${errText(e)}`));
@@ -219,8 +222,23 @@ export function ChatPage() {
     if (!text || !activeID || running) return;
     setInput("");
     setRunning(true);
+    const wasEditing = editing;
+    setEditing(false);
+    if (wasEditing) {
+      setMessages((prev) => {
+        const out = [...prev];
+        while (out.length > 0 && (out[out.length - 1].kind === "assistant" || out[out.length - 1].kind === "tool_call" || out[out.length - 1].kind === "tool_result")) {
+          out.pop();
+        }
+        return out;
+      });
+    }
     try {
-      await Chat.Send(activeID, text);
+      if (wasEditing) {
+        await Chat.EditAndResend(activeID, text);
+      } else {
+        await Chat.Send(activeID, text);
+      }
     } catch (e) {
       toast.error(`发送失败: ${errText(e)}`);
       setRunning(false);
@@ -322,6 +340,46 @@ export function ChatPage() {
     return sessions.filter((s) => s.title.toLowerCase().includes(q));
   }, [sessions, search]);
 
+  // Provider pricing for cost estimation (agent → provider; team coordinator).
+  const provider = useMemo(() => {
+    if (!active) return null;
+    let providerId = "";
+    if (active.targetType === "team") {
+      const team = teams.find((t) => t.id === active.targetId);
+      if (team?.autoCoordinate) providerId = team.providerId;
+      else {
+        const lead = agents.find((a) => a.id === team?.leadAgentId);
+        providerId = lead?.providerId ?? "";
+      }
+    } else {
+      providerId = agents.find((a) => a.id === active.targetId)?.providerId ?? "";
+    }
+    return providerList.find((p) => p.id === providerId) ?? null;
+  }, [active, agents, teams, providerList]);
+
+  /** costOf computes ¥ cost from token usage at provider rates (per 1M). */
+  const costOf = (u?: UsageInfo | null): string => {
+    if (!u || !provider) return "";
+    const pin = (provider as any).priceIn ?? 0;
+    const pout = (provider as any).priceOut ?? 0;
+    if (pin <= 0 && pout <= 0) return "";
+    const cost = (u.promptTokens / 1e6) * pin + (u.completionTokens / 1e6) * pout;
+    if (cost <= 0) return "";
+    return cost < 0.01 ? "<¥0.01" : `¥${cost.toFixed(2)}`;
+  };
+
+  const startEdit = (text: string) => {
+    if (running || !activeID) return;
+    setInput(text);
+    setEditing(true);
+    inputRef.current?.focus();
+  };
+
+  const cancelEdit = () => {
+    setEditing(false);
+    setInput("");
+  };
+
   const targetLabel = useMemo(() => {
     if (!active) return "";
     if (active.targetType === "team") {
@@ -405,7 +463,7 @@ export function ChatPage() {
           <div className="flex items-center gap-2">
             {sessionUsage && sessionUsage.totalTokens > 0 && (
               <Badge variant="outline" className="font-normal" title={`输入 ${sessionUsage.promptTokens} + 输出 ${sessionUsage.completionTokens} tokens`}>
-                {sessionUsage.totalTokens.toLocaleString()} tokens
+                {sessionUsage.totalTokens.toLocaleString()} tokens{costOf(sessionUsage) && ` · ${costOf(sessionUsage)}`}
               </Badge>
             )}
             {active && (
@@ -441,6 +499,9 @@ export function ChatPage() {
                   canRegenerate={!running && !!activeID}
                   toolRunning={m.kind === "tool_call" ? runningTools.has(m.id) : false}
                   onSpeak={() => speak(m.text)}
+                  costOf={costOf}
+                  onEdit={startEdit}
+                  canEdit={!running && !!activeID && m.kind === "user" && i === messages.length - 1}
                 />
               );
             })}
@@ -449,6 +510,16 @@ export function ChatPage() {
         </ScrollArea>
 
         <div className="border-t p-3">
+          <div className="mx-auto max-w-3xl">
+            {editing && (
+              <div className="mb-2 flex items-center justify-between rounded-md border border-primary/40 bg-primary/5 px-3 py-1.5 text-xs text-muted-foreground">
+                <span>正在编辑最后一条消息，发送后将替换该轮对话</span>
+                <button className="underline underline-offset-2 hover:text-foreground" onClick={cancelEdit}>
+                  取消编辑
+                </button>
+              </div>
+            )}
+          </div>
           <div className="mx-auto flex max-w-3xl items-end gap-2">
             <div className="relative flex-1">
               <Textarea
@@ -487,7 +558,7 @@ export function ChatPage() {
               </Button>
             ) : (
               <Button onClick={send} disabled={!active || !input.trim()}>
-                <Send className="mr-1 h-4 w-4" /> 发送
+                <Send className="mr-1 h-4 w-4" /> {editing ? "重发" : "发送"}
               </Button>
             )}
           </div>
@@ -616,13 +687,16 @@ function computeRunningTools(messages: UIMessage[]): Set<string> {
   return running;
 }
 
-function MessageBubble({ m, isLastAssistant, onRegenerate, canRegenerate, toolRunning, onSpeak }: {
+function MessageBubble({ m, isLastAssistant, onRegenerate, canRegenerate, toolRunning, onSpeak, costOf, onEdit, canEdit }: {
   m: UIMessage;
   isLastAssistant: boolean;
   onRegenerate: () => void;
   canRegenerate: boolean;
   toolRunning: boolean;
   onSpeak: () => void;
+  costOf: (u?: UsageInfo | null) => string;
+  onEdit: (text: string) => void;
+  canEdit: boolean;
 }) {
   const [copied, setCopied] = useState(false);
   const copyMsg = async () => {
@@ -636,6 +710,16 @@ function MessageBubble({ m, isLastAssistant, onRegenerate, canRegenerate, toolRu
     return (
       <div className="group flex justify-end">
         <div className="flex max-w-[80%] items-end gap-1.5">
+          {canEdit && (
+            <button
+              className="mb-1 inline-flex items-center gap-0.5 rounded p-0.5 text-[11px] text-muted-foreground opacity-0 transition-opacity hover:text-foreground group-hover:opacity-100"
+              title="编辑并重发这条消息"
+              onClick={() => onEdit(m.text)}
+            >
+              <Pencil className="h-3 w-3" />
+              编辑
+            </button>
+          )}
           <CopyButton text={m.text} className="mb-1 opacity-0 transition-opacity group-hover:opacity-100" />
           <div className="whitespace-pre-wrap rounded-2xl rounded-br-md bg-primary px-4 py-2.5 text-sm text-primary-foreground">
             {m.text}
@@ -695,7 +779,7 @@ function MessageBubble({ m, isLastAssistant, onRegenerate, canRegenerate, toolRu
               </button>
               {m.usage && m.usage.totalTokens > 0 && (
                 <span className="text-[11px] text-muted-foreground/70" title={`输入 ${m.usage.promptTokens} + 输出 ${m.usage.completionTokens}`}>
-                  · {m.usage.totalTokens.toLocaleString()} tokens
+                  · {m.usage.totalTokens.toLocaleString()} tokens{costOf(m.usage) && ` · ${costOf(m.usage)}`}
                 </span>
               )}
             </span>
