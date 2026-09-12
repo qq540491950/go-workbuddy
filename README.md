@@ -171,6 +171,34 @@ go vet ./internal/... .
 8. **自动更新与版本通道**：Sparkle/Wails 更新器集成
 9. **配置导入导出与云备份**
 
+## 生产使用
+
+### 打包与发布
+```bash
+wails3 build && wails3 package   # 产物 bin/WorkBuddy Agent.app
+```
+- 版本号统一维护在 `main.go` 的 `Version` 常量，经 AppInfo 暴露到界面
+- 构建使用 `-tags production -trimpath -ldflags "-w -s"`
+
+### 稳定性与自愈
+- Agent 运行时 panic 被 recover 并转为界面错误事件，应用不崩溃
+- 会话数据库损坏时启动自动备份（`sessions.db.corrupt-<时间戳>`）并重建，保证可启动
+- 全部后端路径有单测覆盖，`services` 包通过 `-race`
+
+### 安全
+- `config.json`（含 API Key）权限 0600；API Key 不出本机（仅直连所配置的供应商）
+- 模型输出经 react-markdown 渲染，默认不执行原始 HTML；链接新窗口打开
+- 产物预览严格限制在工作区目录内（目录穿越防护、大小上限）
+
+### 运维与诊断
+- 日志：`~/Library/Application Support/workbuddy-agent/logs/app.log`（5MB 自动轮转）
+- 故障排查：先看 app.log；会话库异常时检查 `sessions.db.corrupt-*` 备份
+- 数据备份：直接复制 `~/Library/Application Support/workbuddy-agent/`（配置 + 会话 + Skills）
+
+### 已知边界
+- 语音识别依赖 Web Speech API（macOS WKWebView 可用性随系统版本变化，不支持时按钮自动禁用）
+- 长会话渲染上限 200 条（完整历史已持久化，可导出 Markdown 查看）
+
 ## 数据存储
 
 | 内容 | 位置（macOS） |
