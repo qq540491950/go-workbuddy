@@ -6,14 +6,17 @@
     settings: { workspaceDir: ws, language: "zh-CN", themeMode: "dark", accent: "blue", fontScale: "md", autoSpeak: false },
     providers: [{ id: "prov_1", name: "DeepSeek", protocol: "openai", baseUrl: "https://api.deepseek.com/v1", apiKey: "sk-demo", models: ["deepseek-chat"], isDefault: true, priceIn: 2, priceOut: 8 }],
     agents: [
-      { id: "agent_1", name: "周报助手", description: "周报", providerId: "prov_1", model: "deepseek-chat", systemPrompt: "", temperature: 0.7, maxTokens: 4096, skillIds: [], mcpServerIds: [], builtinTools: ["time"], createdAt: now }
+      { id: "agent_1", name: "周报助手", description: "周报", providerId: "prov_1", model: "deepseek-chat", systemPrompt: "", temperature: 0.7, maxTokens: 4096, skillIds: [], mcpServerIds: [], builtinTools: ["time"], createdAt: now },
+      { id: "agent_2", name: "代码审查员", description: "审查代码", providerId: "prov_1", model: "deepseek-chat", systemPrompt: "", temperature: 0.3, maxTokens: 4096, skillIds: [], mcpServerIds: [], builtinTools: [], createdAt: now },
+      { id: "agent_3", name: "配图设计师", description: "为文章配图", providerId: "prov_1", model: "deepseek-chat", systemPrompt: "", temperature: 0.7, maxTokens: 4096, skillIds: [], mcpServerIds: [], builtinTools: [], createdAt: now }
     ],
-    teams: [], skills: [], mcpServers: [],
+    teams: [{ id: "team_1", name: "内容创作团队", description: "写作+审查流水线", leadAgentId: "agent_1", autoCoordinate: false, memberAgentIds: ["agent_1", "agent_2", "agent_3"], providerId: "prov_1", model: "deepseek-chat", systemPrompt: "", createdAt: now }],
+    skills: [], mcpServers: [],
     sessions: [{ id: "sess_1", title: "成本与编辑测试", targetType: "agent", targetId: "agent_1", createdAt: now, updatedAt: now }]
   };
   var msgs = {
     sess_1: [
-      { id: "m1", kind: "user", author: "user", text: "统计一下本周工作量。", timestamp: now },
+      { id: "m1", kind: "user", author: "user", text: "看看这张截图里的数据。", timestamp: now, attachments: [{ name: "shot.png", mime: "image/png", dataUrl: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAYAAADED76LAAAAF0lEQVR42mNkYPjPwMDAwMgABXAGACwBA/+8kUOnAAAAAElFTkSuQmCC" }] },
       { id: "m2", kind: "assistant", author: "weekly_assistant", text: "本周完成 **12 项**任务，环比增长 10%。", timestamp: now }
     ]
   };

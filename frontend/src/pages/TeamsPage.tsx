@@ -19,11 +19,8 @@ import {
 
 /** TeamTopology renders a lead→members hierarchy for a team. */
 function TeamTopology({ team, agentName }: { team: TeamConfig; agentName: (id: string) => string }) {
-  const members = team.memberAgentIds ?? [];
   const isAuto = team.autoCoordinate;
-  const ordered = isAuto
-    ? members
-    : [team.leadAgentId, ...members.filter((id) => id !== team.leadAgentId)].filter(Boolean);
+  const members = (team.memberAgentIds ?? []).filter((id) => isAuto || id !== team.leadAgentId);
   return (
     <div className="rounded-lg border bg-muted/20 p-3">
       <div className="flex flex-col items-center gap-2">
@@ -39,7 +36,7 @@ function TeamTopology({ team, agentName }: { team: TeamConfig; agentName: (id: s
           <>
             <div className="h-3 w-px bg-border" />
             <div className="flex flex-wrap items-start justify-center gap-x-4 gap-y-2">
-              {ordered.map((id, i) => {
+              {members.map((id) => {
                 const isLead = !isAuto && id === team.leadAgentId;
                 return (
                   <div key={id} className="flex flex-col items-center">
