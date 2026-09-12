@@ -29,6 +29,10 @@ type ModelProvider struct {
 	APIKey    string   `json:"apiKey"`
 	Models    []string `json:"models"` // model ids usable with this provider
 	IsDefault bool     `json:"isDefault"`
+	// PriceIn/PriceOut are optional prices per 1M tokens (input/output),
+	// used for cost estimation in the chat UI.
+	PriceIn  float64 `json:"priceIn,omitempty"`
+	PriceOut float64 `json:"priceOut,omitempty"`
 }
 
 // AgentConfig describes a user-defined agent.

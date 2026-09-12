@@ -33,6 +33,13 @@ export function DeleteSession(id: string): $CancellablePromise<void> {
 }
 
 /**
+ * EditAndResend replaces the text of the last user turn and re-runs it.
+ */
+export function EditAndResend(sessionID: string, newText: string): $CancellablePromise<void> {
+    return $Call.ByID(4065508909, sessionID, newText);
+}
+
+/**
  * ExportSession writes the conversation as Markdown into the workspace export
  * directory and returns the file path.
  */

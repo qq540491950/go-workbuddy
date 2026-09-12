@@ -261,51 +261,69 @@ func (c *ChatService) Send(sessionID, text string) error {
 	return c.sendTurn(sessionID, text)
 }
 
-// Regenerate redoes the last user turn: it trims the trailing conversation
-// (from the last user message onward, inclusive) and re-runs the same message.
-func (c *ChatService) Regenerate(sessionID string) error {
+// trimLastTurn removes all stored events from the last user message onward
+// (inclusive) and returns that message's text.
+func (c *ChatService) trimLastTurn(sessionID string) (string, error) {
 	resp, err := c.sessions.Get(context.Background(), &session.GetRequest{
 		AppName: c.appName, UserID: c.userID, SessionID: sessionID,
 	})
 	if err != nil {
-		return err
+		return "", err
 	}
 	if resp.Session == nil {
-		return fmt.Errorf("session %q not found", sessionID)
+		return "", fmt.Errorf("session %q not found", sessionID)
 	}
-	type lastTurn struct {
-		text   string
-		evIDs  []string
-	}
-	lt := &lastTurn{}
+	text := ""
+	var evIDs []string
 	for ev := range resp.Session.Events().All() {
 		if ev == nil || ev.Content == nil {
 			continue
 		}
 		if ev.Author == "user" {
-			lt.evIDs = []string{ev.ID}
+			evIDs = []string{ev.ID}
 			var sb strings.Builder
 			for _, p := range ev.Content.Parts {
 				if p != nil && p.Text != "" && !p.Thought {
 					sb.WriteString(p.Text)
 				}
 			}
-			lt.text = sb.String()
+			text = sb.String()
 			continue
 		}
-		if lt.text != "" {
-			lt.evIDs = append(lt.evIDs, ev.ID)
+		if text != "" {
+			evIDs = append(evIDs, ev.ID)
 		}
 	}
-	if lt.text == "" {
-		return fmt.Errorf("没有可重新生成的用户消息")
+	if text == "" {
+		return "", fmt.Errorf("没有可重新生成的用户消息")
 	}
-	if c.db != nil && len(lt.evIDs) > 0 {
-		if err := c.deleteEvents(sessionID, lt.evIDs); err != nil {
-			return fmt.Errorf("裁剪历史失败: %w", err)
+	if c.db != nil && len(evIDs) > 0 {
+		if err := c.deleteEvents(sessionID, evIDs); err != nil {
+			return "", fmt.Errorf("裁剪历史失败: %w", err)
 		}
 	}
-	return c.sendTurn(sessionID, lt.text)
+	return text, nil
+}
+
+// Regenerate redoes the last user turn: it trims the trailing conversation
+// (from the last user message onward, inclusive) and re-runs the same message.
+func (c *ChatService) Regenerate(sessionID string) error {
+	text, err := c.trimLastTurn(sessionID)
+	if err != nil {
+		return err
+	}
+	return c.sendTurn(sessionID, text)
+}
+
+// EditAndResend replaces the text of the last user turn and re-runs it.
+func (c *ChatService) EditAndResend(sessionID, newText string) error {
+	if strings.TrimSpace(newText) == "" {
+		return fmt.Errorf("消息内容不能为空")
+	}
+	if _, err := c.trimLastTurn(sessionID); err != nil {
+		return err
+	}
+	return c.sendTurn(sessionID, newText)
 }
 
 // deleteEvents removes stored events by ID (used by Regenerate).

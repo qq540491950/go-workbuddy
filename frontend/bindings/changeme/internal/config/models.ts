@@ -123,6 +123,13 @@ export interface ModelProvider {
      */
     "models": string[] | null;
     "isDefault": boolean;
+
+    /**
+     * PriceIn/PriceOut are optional prices per 1M tokens (input/output),
+     * used for cost estimation in the chat UI.
+     */
+    "priceIn"?: number;
+    "priceOut"?: number;
 }
 
 /**

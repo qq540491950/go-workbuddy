@@ -160,3 +160,32 @@ func TestSendAttachesUsageToEvents(t *testing.T) {
 		t.Fatalf("done session usage = %+v", doneUsage)
 	}
 }
+
+func TestEditAndResendReplacesLastTurn(t *testing.T) {
+	var reply atomic.Value
+	reply.Store("first-reply")
+	chat, sess, _ := newChatFixture(t, &reply)
+	if err := chat.Send(sess.ID, "原始问题"); err != nil {
+		t.Fatal(err)
+	}
+	reply.Store("edited-reply")
+	if err := chat.EditAndResend(sess.ID, "修改后的问题"); err != nil {
+		t.Fatal(err)
+	}
+	msgs, err := chat.GetSessionMessages(sess.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(msgs) != 2 {
+		t.Fatalf("want 2 messages after edit+resend, got %d", len(msgs))
+	}
+	if msgs[0].Kind != "user" || msgs[0].Text != "修改后的问题" {
+		t.Fatalf("user message = %+v", msgs[0])
+	}
+	if msgs[1].Text != "edited-reply" {
+		t.Fatalf("assistant reply = %+v", msgs[1])
+	}
+	if err := chat.EditAndResend(sess.ID, "   "); err == nil {
+		t.Fatal("expected error for blank message")
+	}
+}
