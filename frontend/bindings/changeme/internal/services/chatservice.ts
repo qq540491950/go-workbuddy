@@ -97,3 +97,10 @@ export function RenameSession(id: string, title: string): $CancellablePromise<vo
 export function Send(sessionID: string, text: string, attachments: $models.AttachmentIn[] | null): $CancellablePromise<void> {
     return $Call.ByID(1748553651, sessionID, text, attachments);
 }
+
+/**
+ * SessionStats computes aggregate metrics from the stored ADK events.
+ */
+export function SessionStats(sessionID: string): $CancellablePromise<$models.SessionStats | null> {
+    return $Call.ByID(568481502, sessionID);
+}

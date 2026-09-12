@@ -91,6 +91,8 @@ func (k *Kit) buildLLMAgentWithSubAgents(ac config.AgentConfig, cfg config.Confi
 			tools = append(tools, TimeTool())
 		case "files":
 			tools = append(tools, ListFilesTool(k.workspace()), ReadFileTool(k.workspace()), WriteFileTool(k.workspace()))
+		case "knowledge":
+			tools = append(tools, SearchKnowledgeTool(k.workspace()))
 		}
 	}
 
@@ -308,6 +310,11 @@ func sanitizeSkillName(name string) string {
 		out = "skill"
 	}
 	return out
+}
+
+// GuardrailsEnabled reports whether guardrails are on for an agent (default on).
+func GuardrailsEnabled(ac config.AgentConfig) bool {
+	return ac.EnableGuardrails == nil || *ac.EnableGuardrails
 }
 
 func firstNonEmpty(vals ...string) string {

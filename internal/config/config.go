@@ -47,8 +47,11 @@ type AgentConfig struct {
 	MaxTokens    int      `json:"maxTokens"`
 	SkillIDs     []string `json:"skillIds"`     // skills attached to this agent
 	MCPServerIDs []string `json:"mcpServerIds"` // MCP servers whose tools are available
-	BuiltinTools []string `json:"builtinTools"` // subset of builtin tool names: time, files
+	BuiltinTools []string `json:"builtinTools"` // subset of builtin tool names: time, files, knowledge
 	CreatedAt    time.Time `json:"createdAt"`
+	// EnableGuardrails masks secrets in user input/model output (default on
+	// when unset). Pointers distinguish "unset" from explicit false.
+	EnableGuardrails *bool `json:"enableGuardrails,omitempty"`
 }
 
 // TeamConfig describes an agent team: a lead agent coordinating member agents.

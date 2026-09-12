@@ -21,5 +21,6 @@ export type {
     AttachmentOut,
     ChatMessage,
     ChatStreamEvent,
+    SessionStats,
     UsageInfo
 } from "./models.js";

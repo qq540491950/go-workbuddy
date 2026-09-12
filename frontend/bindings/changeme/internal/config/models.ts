@@ -25,10 +25,16 @@ export interface AgentConfig {
     "mcpServerIds": string[] | null;
 
     /**
-     * subset of builtin tool names: time, files
+     * subset of builtin tool names: time, files, knowledge
      */
     "builtinTools": string[] | null;
     "createdAt": string;
+
+    /**
+     * EnableGuardrails masks secrets in user input/model output (default on
+     * when unset). Pointers distinguish "unset" from explicit false.
+     */
+    "enableGuardrails"?: boolean | null;
 }
 
 /**

@@ -265,3 +265,65 @@ func readAllBody(r *http.Request) string {
 	}
 	return string(buf)
 }
+
+func TestSessionStatsAggregation(t *testing.T) {
+	var reply atomic.Value
+	reply.Store("统计回复")
+	chat, sess, _ := newChatFixture(t, &reply)
+	if err := chat.Send(sess.ID, "第一句", nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := chat.Send(sess.ID, "第二句", nil); err != nil {
+		t.Fatal(err)
+	}
+	st, err := chat.SessionStats(sess.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st.Messages != 2 {
+		t.Errorf("messages = %d, want 2", st.Messages)
+	}
+	if st.TokensTotal != 28 || st.TokensIn != 20 || st.TokensOut != 8 {
+		t.Errorf("tokens = %d/%d/%d, want 20/8/28", st.TokensIn, st.TokensOut, st.TokensTotal)
+	}
+	if st.FirstAt == nil || st.LastAt == nil {
+		t.Fatal("timestamps missing")
+	}
+	if st.AssistantTurns < 2 {
+		t.Errorf("assistantTurns = %d, want >= 2", st.AssistantTurns)
+	}
+}
+
+func TestGuardrailRedactsUserInput(t *testing.T) {
+	var reply atomic.Value
+	reply.Store("好的")
+	chat, sess, _ := newChatFixture(t, &reply)
+
+	var events []ChatStreamEvent
+	appEventHook = func(ev ChatStreamEvent) { events = append(events, ev) }
+	t.Cleanup(func() { appEventHook = nil })
+
+	secret := "sk-abcdefghijklmnop123456"
+	if err := chat.Send(sess.ID, "帮我用这个 key："+secret, nil); err != nil {
+		t.Fatal(err)
+	}
+	msgs, err := chat.GetSessionMessages(sess.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Stored history must hold the REDACTED text, never the raw secret.
+	for _, m := range msgs {
+		if strings.Contains(m.Text, secret) {
+			t.Fatalf("raw secret leaked into history: %+v", m)
+		}
+	}
+	var redactNotice bool
+	for _, ev := range events {
+		if ev.Kind == "error" && strings.Contains(ev.Text, "已自动遮蔽") {
+			redactNotice = true
+		}
+	}
+	if !redactNotice {
+		t.Fatalf("expected redaction notice, events: %+v", events)
+	}
+}

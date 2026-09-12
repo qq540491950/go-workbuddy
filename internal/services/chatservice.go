@@ -18,6 +18,7 @@ import (
 	"google.golang.org/adk/v2/session"
 	"google.golang.org/genai"
 
+	"changeme/internal/agentkit"
 	"changeme/internal/config"
 )
 
@@ -301,6 +302,20 @@ func renderEvent(ev *session.Event, seq int) []ChatMessage {
 	return out
 }
 
+// targetAgentConfig returns the AgentConfig behind a session (nil for teams
+// or when the target no longer exists).
+func (c *ChatService) targetAgentConfig(cfg config.Config, target *config.ChatSession) *config.AgentConfig {
+	if target.TargetType != "agent" {
+		return nil
+	}
+	for i := range cfg.Agents {
+		if cfg.Agents[i].ID == target.TargetID {
+			return &cfg.Agents[i]
+		}
+	}
+	return nil
+}
+
 func addUsage(total, u *UsageInfo) *UsageInfo {
 	if u == nil {
 		return total
@@ -568,7 +583,24 @@ func (c *ChatService) sendTurn(sessionID, text string, attachments []AttachmentI
 		c.mu.Unlock()
 	}()
 
-	msg, err := buildUserContent(text, attachments)
+	// Layered guardrails: sanitize user input; flag injection attempts.
+	agentCfg := c.targetAgentConfig(cfg, target)
+	guardOn := agentCfg == nil || agentkit.GuardrailsEnabled(*agentCfg)
+	userText := text
+	if guardOn {
+		gr := agentkit.ApplyInputGuardrail(text)
+		userText = gr.Text
+		if gr.InjectRisk {
+			emit(ChatStreamEvent{Kind: "error", Author: "guardrail",
+				Text: "⚠️ 检测到疑似提示注入内容（“" + gr.InjectMatch + "”），已原样发送但请谨慎对待模型输出。"})
+		}
+		if gr.Redacted {
+			emit(ChatStreamEvent{Kind: "error", Author: "guardrail",
+				Text: "🔒 已自动遮蔽消息中的疑似密钥/凭据。"})
+		}
+	}
+
+	msg, err := buildUserContent(userText, attachments)
 	if err != nil {
 		return err
 	}
@@ -618,7 +650,11 @@ func (c *ChatService) sendTurn(sessionID, text string, attachments []AttachmentI
 			}
 		}
 		if textBuf.Len() > 0 {
-			emit(ChatStreamEvent{Kind: "message", Author: ev.Author, Text: textBuf.String(), Usage: turnUsage})
+			outText := textBuf.String()
+			if guardOn {
+				outText = agentkit.ApplyOutputGuardrail(outText)
+			}
+			emit(ChatStreamEvent{Kind: "message", Author: ev.Author, Text: outText, Usage: turnUsage})
 			turnUsage = nil
 		}
 	}
@@ -640,6 +676,84 @@ func (c *ChatService) sendTurn(sessionID, text string, attachments []AttachmentI
 		}
 	})
 	return nil
+}
+
+// SessionStats aggregates observability metrics for one conversation.
+type SessionStats struct {
+	Messages     int        `json:"messages"`
+	ToolCalls    int        `json:"toolCalls"`
+	ToolFailures int        `json:"toolFailures"`
+	AssistantTurns int      `json:"assistantTurns"`
+	TokensIn     int64      `json:"tokensIn"`
+	TokensOut    int64      `json:"tokensOut"`
+	TokensTotal  int64      `json:"tokensTotal"`
+	FirstAt      *time.Time `json:"firstAt,omitempty"`
+	LastAt       *time.Time `json:"lastAt,omitempty"`
+}
+
+// SessionStats computes aggregate metrics from the stored ADK events.
+func (c *ChatService) SessionStats(sessionID string) (*SessionStats, error) {
+	resp, err := c.sessions.Get(context.Background(), &session.GetRequest{
+		AppName: c.appName, UserID: c.userID, SessionID: sessionID,
+	})
+	if err != nil {
+		return nil, err
+	}
+	st := &SessionStats{}
+	if resp.Session == nil {
+		return st, nil
+	}
+	for ev := range resp.Session.Events().All() {
+		if ev == nil {
+			continue
+		}
+		first, last := st.FirstAt, st.LastAt
+		if first == nil || ev.Timestamp.Before(*first) {
+			ts := ev.Timestamp
+			st.FirstAt = &ts
+		}
+		if last == nil || ev.Timestamp.After(*last) {
+			ts := ev.Timestamp
+			st.LastAt = &ts
+		}
+		if ev.Author == "user" {
+			st.Messages++
+			continue
+		}
+		if ev.Content == nil {
+			continue
+		}
+		if u := usageOf(ev); u != nil {
+			st.TokensIn += u.PromptTokens
+			st.TokensOut += u.CompletionTokens
+			st.TokensTotal += u.TotalTokens
+		}
+		if ev.Partial {
+			continue
+		}
+		for _, p := range ev.Content.Parts {
+			if p == nil {
+				continue
+			}
+			switch {
+			case p.FunctionCall != nil:
+				st.ToolCalls++
+			case p.FunctionResponse != nil:
+				if strings.Contains(string(mustJSON(p.FunctionResponse.Response)), `"error"`) {
+					st.ToolFailures++
+				}
+			}
+		}
+		if ev.TurnComplete && !ev.Partial {
+			st.AssistantTurns++
+		}
+	}
+	return st, nil
+}
+
+func mustJSON(v any) []byte {
+	b, _ := json.Marshal(v)
+	return b
 }
 
 // Cancel aborts the in-flight run of a session, if any.

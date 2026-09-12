@@ -110,6 +110,21 @@ export interface ChatStreamEvent {
 }
 
 /**
+ * SessionStats aggregates observability metrics for one conversation.
+ */
+export interface SessionStats {
+    "messages": number;
+    "toolCalls": number;
+    "toolFailures": number;
+    "assistantTurns": number;
+    "tokensIn": number;
+    "tokensOut": number;
+    "tokensTotal": number;
+    "firstAt"?: string | null;
+    "lastAt"?: string | null;
+}
+
+/**
  * UsageInfo reports token consumption for a turn or a whole session.
  */
 export interface UsageInfo {
