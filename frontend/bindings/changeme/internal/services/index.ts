@@ -17,6 +17,8 @@ export {
 export type {
     Artifact,
     ArtifactInfo,
+    AttachmentIn,
+    AttachmentOut,
     ChatMessage,
     ChatStreamEvent,
     UsageInfo

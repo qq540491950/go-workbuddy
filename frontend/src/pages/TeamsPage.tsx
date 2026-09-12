@@ -3,7 +3,6 @@ import { Plus, Trash2, Users } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -17,6 +16,52 @@ import {
 } from "@/components/ui/select";
 import {
   Config, type TeamConfig, type AgentConfig, type ModelProvider, errText } from "@/lib/api";
+
+/** TeamTopology renders a lead→members hierarchy for a team. */
+function TeamTopology({ team, agentName }: { team: TeamConfig; agentName: (id: string) => string }) {
+  const members = team.memberAgentIds ?? [];
+  const isAuto = team.autoCoordinate;
+  const ordered = isAuto
+    ? members
+    : [team.leadAgentId, ...members.filter((id) => id !== team.leadAgentId)].filter(Boolean);
+  return (
+    <div className="rounded-lg border bg-muted/20 p-3">
+      <div className="flex flex-col items-center gap-2">
+        <div className="rounded-lg border border-primary/40 bg-primary/10 px-3 py-1.5 text-center">
+          <div className="text-xs font-semibold text-primary">
+            {isAuto ? "🧭 自动协调员" : `👑 ${agentName(team.leadAgentId)}`}
+          </div>
+          <div className="text-[10px] text-muted-foreground">
+            {isAuto ? team.model || "分派任务 · 汇总结果" : "调度成员 · 汇总结果"}
+          </div>
+        </div>
+        {members.length > 0 && (
+          <>
+            <div className="h-3 w-px bg-border" />
+            <div className="flex flex-wrap items-start justify-center gap-x-4 gap-y-2">
+              {ordered.map((id, i) => {
+                const isLead = !isAuto && id === team.leadAgentId;
+                return (
+                  <div key={id} className="flex flex-col items-center">
+                    <div className="h-2 w-px bg-border" />
+                    <div className="rounded-lg border bg-background px-2.5 py-1.5 text-center">
+                      <div className="text-xs font-medium">
+                        {isLead && "👑 "}{agentName(id)}
+                      </div>
+                      <div className="text-[10px] text-muted-foreground">
+                        {isLead ? "负责人" : "成员"}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
 
 function blankTeam(): TeamConfig {
   return {
@@ -138,12 +183,8 @@ export function TeamsPage() {
               {t.description && (
                 <p className="mt-2 line-clamp-2 text-sm text-muted-foreground">{t.description}</p>
               )}
-              <div className="mt-2 flex flex-wrap gap-1">
-                {(t.memberAgentIds ?? []).map((id) => (
-                  <Badge key={id} variant="secondary" className="font-normal">
-                    {agentName(id)}{!t.autoCoordinate && id === t.leadAgentId ? " (负责人)" : ""}
-                  </Badge>
-                ))}
+              <div className="mt-3">
+                <TeamTopology team={t} agentName={agentName} />
               </div>
             </CardContent>
           </Card>

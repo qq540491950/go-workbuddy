@@ -3,6 +3,7 @@ import { Events } from "@wailsio/runtime";
 import {
   Plus, Send, Square, Trash2, Pencil, MessageSquare, Bot, Users, Loader2,
   Copy, Check, Search, ArrowRight, RefreshCw, Download, Mic, MicOff, Volume2, Square as SquareStop,
+  Paperclip, X,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -22,6 +23,7 @@ import { ToolCallCard } from "@/components/ToolCallCard";
 import {
   Chat, Config, errText,
   type AgentConfig, type ChatSession, type TeamConfig, type UsageInfo, type ModelProvider,
+  type AttachmentIn, type AttachmentOut,
 } from "@/lib/api";
 
 type UIMessage = {
@@ -34,6 +36,7 @@ type UIMessage = {
   toolResp?: { [k: string]: any } | null;
   streaming?: boolean;
   usage?: UsageInfo | null;
+  attachments?: AttachmentOut[] | null;
 };
 
 let mid = 0;
@@ -88,6 +91,8 @@ export function ChatPage() {
   const [autoSpeak, setAutoSpeak] = useState(false);
   const [listening, setListening] = useState(false);
   const [editing, setEditing] = useState(false);
+  const [pendingAtts, setPendingAtts] = useState<AttachmentIn[]>([]);
+  const fileRef = useRef<HTMLInputElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const messagesRef = useRef<UIMessage[]>([]);
@@ -135,6 +140,7 @@ export function ChatPage() {
             toolName: m.toolName,
             toolArgs: m.toolArgs,
             toolResp: m.toolResp,
+            attachments: m.attachments ?? null,
           })),
         );
       })
@@ -224,6 +230,8 @@ export function ChatPage() {
     setRunning(true);
     const wasEditing = editing;
     setEditing(false);
+    const atts = pendingAtts;
+    setPendingAtts([]);
     if (wasEditing) {
       setMessages((prev) => {
         const out = [...prev];
@@ -237,16 +245,43 @@ export function ChatPage() {
       if (wasEditing) {
         await Chat.EditAndResend(activeID, text);
       } else {
-        await Chat.Send(activeID, text);
+        await Chat.Send(activeID, text, atts.length > 0 ? atts : null);
       }
     } catch (e) {
       toast.error(`发送失败: ${errText(e)}`);
       setRunning(false);
+      setPendingAtts(atts); // restore on failure
     }
   };
 
   const cancel = () => {
     if (activeID) Chat.Cancel(activeID);
+  };
+
+  const MAX_ATT_BYTES = 6 * 1024 * 1024;
+  const allowedMIME = ["image/png", "image/jpeg", "image/webp", "image/gif"];
+
+  const addFiles = async (files: FileList | File[]) => {
+    for (const f of Array.from(files)) {
+      if (!allowedMIME.includes(f.type)) {
+        toast.error(`不支持的类型 ${f.type || f.name}（仅图片）`);
+        continue;
+      }
+      if (f.size > MAX_ATT_BYTES) {
+        toast.error(`${f.name} 超过 6MB`);
+        continue;
+      }
+      const buf = await f.arrayBuffer();
+      let binary = "";
+      const bytes = new Uint8Array(buf);
+      const chunk = 0x8000;
+      for (let i = 0; i < bytes.length; i += chunk) {
+        binary += String.fromCharCode(...bytes.subarray(i, i + chunk));
+      }
+      setPendingAtts((prev) =>
+        prev.length >= 4 ? prev : [...prev, { name: f.name, mime: f.type, data: btoa(binary) }],
+      );
+    }
   };
 
   const toggleVoiceInput = () => {
@@ -520,7 +555,32 @@ export function ChatPage() {
               </div>
             )}
           </div>
-          <div className="mx-auto flex max-w-3xl items-end gap-2">
+          <div className="mx-auto max-w-3xl">
+            {pendingAtts.length > 0 && (
+              <div className="mb-2 flex flex-wrap gap-2">
+                {pendingAtts.map((a, i) => (
+                  <span key={i} className="group/att relative flex items-center gap-1.5 rounded-md border bg-muted/40 py-1 pl-1 pr-5 text-xs">
+                    <img src={`data:${a.mime};base64,${a.data}`} alt={a.name} className="h-8 w-8 rounded object-cover" />
+                    <span className="max-w-[120px] truncate">{a.name}</span>
+                    <button
+                      className="absolute right-1 top-1/2 -translate-y-1/2 rounded p-0.5 text-muted-foreground hover:text-foreground"
+                      onClick={() => setPendingAtts((prev) => prev.filter((_, j) => j !== i))}
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
+          <div
+            className="mx-auto flex max-w-3xl items-end gap-2"
+            onDragOver={(e) => e.preventDefault()}
+            onDrop={(e) => {
+              e.preventDefault();
+              if (e.dataTransfer.files.length > 0) addFiles(e.dataTransfer.files);
+            }}
+          >
             <div className="relative flex-1">
               <Textarea
                 ref={inputRef}
@@ -537,6 +597,28 @@ export function ChatPage() {
                 disabled={!active || running}
                 className={cn(listening && "border-primary/60 ring-1 ring-primary/40")}
               />
+              <input
+                ref={fileRef}
+                type="file"
+                accept="image/png,image/jpeg,image/webp,image/gif"
+                multiple
+                className="hidden"
+                onChange={(e) => {
+                  if (e.target.files) addFiles(e.target.files);
+                  e.target.value = "";
+                }}
+              />
+              <button
+                title="添加图片附件"
+                disabled={!active || running}
+                onClick={() => fileRef.current?.click()}
+                className={cn(
+                  "absolute bottom-2 right-9 flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground",
+                  (!active || running) && "opacity-40",
+                )}
+              >
+                <Paperclip className="h-3.5 w-3.5" />
+              </button>
               <button
                 title={speechSupported() ? (listening ? "停止语音输入" : "语音输入") : "当前环境不支持语音识别"}
                 disabled={!active || running || !speechSupported()}
@@ -709,7 +791,16 @@ function MessageBubble({ m, isLastAssistant, onRegenerate, canRegenerate, toolRu
   if (m.kind === "user") {
     return (
       <div className="group flex justify-end">
-        <div className="flex max-w-[80%] items-end gap-1.5">
+        <div className="flex max-w-[80%] flex-col items-end gap-1.5">
+          {(m.attachments?.length ?? 0) > 0 && (
+            <div className="flex flex-wrap justify-end gap-1.5">
+              {m.attachments!.map((a, i) => (
+                <img key={i} src={a.dataUrl} alt={a.name} className="h-20 rounded-lg border object-cover" />
+              ))}
+            </div>
+          )}
+          {m.text && (
+          <div className="flex items-end gap-1.5">
           {canEdit && (
             <button
               className="mb-1 inline-flex items-center gap-0.5 rounded p-0.5 text-[11px] text-muted-foreground opacity-0 transition-opacity hover:text-foreground group-hover:opacity-100"
@@ -724,6 +815,8 @@ function MessageBubble({ m, isLastAssistant, onRegenerate, canRegenerate, toolRu
           <div className="whitespace-pre-wrap rounded-2xl rounded-br-md bg-primary px-4 py-2.5 text-sm text-primary-foreground">
             {m.text}
           </div>
+          </div>
+          )}
         </div>
       </div>
     );

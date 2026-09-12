@@ -94,6 +94,6 @@ export function RenameSession(id: string, title: string): $CancellablePromise<vo
  * Send runs one user turn against the session's target agent/team. It blocks
  * until the run completes and streams progress via chat:stream events.
  */
-export function Send(sessionID: string, text: string): $CancellablePromise<void> {
-    return $Call.ByID(1748553651, sessionID, text);
+export function Send(sessionID: string, text: string, attachments: $models.AttachmentIn[] | null): $CancellablePromise<void> {
+    return $Call.ByID(1748553651, sessionID, text, attachments);
 }

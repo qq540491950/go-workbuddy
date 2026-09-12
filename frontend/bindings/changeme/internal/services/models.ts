@@ -42,13 +42,35 @@ export interface ArtifactInfo {
 }
 
 /**
+ * AttachmentIn is an image the user attaches to a message (base64 data).
+ */
+export interface AttachmentIn {
+    "name": string;
+    "mime": string;
+
+    /**
+     * base64, no data: prefix
+     */
+    "data": string;
+}
+
+/**
+ * AttachmentOut is an attachment rendered in chat history.
+ */
+export interface AttachmentOut {
+    "name": string;
+    "mime": string;
+    "dataUrl": string;
+}
+
+/**
  * ChatMessage is a rendered historical message.
  */
 export interface ChatMessage {
     "id": string;
 
     /**
-     * user|message|tool_call|tool_result
+     * user|assistant|tool_call|tool_result
      */
     "kind": string;
     "author": string;
@@ -56,6 +78,7 @@ export interface ChatMessage {
     "toolName"?: string;
     "toolArgs"?: { [_ in string]?: any } | null;
     "toolResp"?: { [_ in string]?: any } | null;
+    "attachments"?: AttachmentOut[] | null;
     "timestamp": string;
 }
 
