@@ -117,6 +117,15 @@ go vet ./internal/... .
 
 已实施：Markdown + 代码块复制、消息级复制、深浅主题、首次运行引导、会话搜索、快捷键、工具调用折叠面板、流式打字指示器。
 
+### 第七轮迭代：长期记忆（已实施）
+
+调研路线图第一项落地：
+
+- **持久化记忆服务**：`internal/memory` 实现 ADK `memory.Service`（SQLite `memories` 表，与会话库同库）；`AddSessionToMemory` 按 event 幂等摄取（跳过 partial/thought，工具调用记录为摘要），`SearchMemory` 关键词相关度检索，按用户隔离，附带 Count/Clear
+- **模型可自动召回**：runner 接入 MemoryService；Agent 勾选「长期记忆检索」后挂载 ADK `loadmemorytool`，模型可跨会话检索用户历史
+- **一键存入**：对话顶栏 🧠 按钮把当前整段对话存入长期记忆（toast 显示累计条数）
+- 测试：摄取幂等/检索命中/用户隔离/清空 ×4 + RememberSession e2e（部署事实跨会话可召回、无记忆服务时干净报错）
+
 ### 第六轮迭代：行业调研对齐（已实施）
 
 基于对 2026 agent 开发趋势的调研（Google ADK 生态：[Memory](https://adk.dev/sessions/memory/) / [A2A 协议](https://a2a-protocol.org/latest/) / [HITL](https://adk.dev/graphs/human-input/)；分层护栏最佳实践：[输入验证→模型→输出过滤](https://www.kalviumlabs.ai/blog/guardrails-for-llm-applications/)；[Agent 可观测性](https://www.langchain.com/resources/agent-observability)），结合项目差距落地三项：

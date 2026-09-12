@@ -3,7 +3,7 @@ import { Events } from "@wailsio/runtime";
 import {
   Plus, Send, Square, Trash2, Pencil, MessageSquare, Bot, Users, Loader2,
   Copy, Check, Search, ArrowRight, RefreshCw, Download, Mic, MicOff, Volume2, Square as SquareStop,
-  Paperclip, X, BarChart3,
+  Paperclip, X, BarChart3, Brain,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -518,6 +518,19 @@ export function ChatPage() {
             )}
             {active && (
               <>
+                <Button
+                  variant="ghost" size="icon" title="存入长期记忆（供其他对话召回）"
+                  onClick={async () => {
+                    try {
+                      const n = await Chat.RememberSession(activeID);
+                      toast.success(`已存入长期记忆（共 ${n} 条）`);
+                    } catch (e) {
+                      toast.error(`存入失败: ${errText(e)}`);
+                    }
+                  }}
+                >
+                  <Brain className="h-4 w-4" />
+                </Button>
                 <Button variant="ghost" size="icon" title="会话统计" onClick={openStats}>
                   <BarChart3 className="h-4 w-4" />
                 </Button>

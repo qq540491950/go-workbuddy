@@ -319,6 +319,13 @@ export function AgentsPage() {
                     />
                     知识库检索（workspace/knowledge/）
                   </label>
+                  <label className="flex items-center gap-2 text-sm">
+                    <Checkbox
+                      checked={(editing.builtinTools ?? []).includes("memory")}
+                      onCheckedChange={() => setEditing({ ...editing, builtinTools: toggle(editing.builtinTools ?? [], "memory") })}
+                    />
+                    长期记忆检索（可跨会话召回用户历史）
+                  </label>
                 </div>
               </div>
               <div className="flex items-center justify-between rounded-lg border p-3">
