@@ -24,7 +24,7 @@ vars:
   # avdmanager lives under cmdline-tools/<version>/bin; used to auto-create an
   # AVD when none exists (mirrors the iOS `ensure-simulator` auto-create flow).
   AVDMANAGER:
-    sh: 'command -v avdmanager || ls "${ANDROID_HOME:-${ANDROID_SDK_ROOT:-$([ -d "$HOME/Library/Android/sdk" ] && echo "$HOME/Library/Android/sdk" || echo "$HOME/Android/Sdk")}}"/cmdline-tools/*/bin/avdmanager 2>/dev/null | sort -V | tail -1 || true'
+    sh: 'command -v avdmanager || ls "${ANDROID_HOME:-${ANDROID_SDK_ROOT:-$([ -d "$HOME/Library/Android/sdk" ] && echo "$HOME/Library/Android/sdk" || echo "$HOME/Android/Sdk")}}"/cmdline-tools/*/bin/avdmanager 2>/dev/null | sort -V 2>/dev/null | tail -1 || true'
 
 tasks:
   install:deps:
@@ -64,7 +64,7 @@ tasks:
         NDK_ROOT="$ANDROID_NDK_HOME"
         if [ -z "$NDK_ROOT" ]; then
           SDK_ROOT="{{.SDK_ROOT}}"
-          NDK_ROOT=$(ls -d "$SDK_ROOT"/ndk/* 2>/dev/null | sort -V | tail -1)
+          NDK_ROOT=$(ls -d "$SDK_ROOT"/ndk/* 2>/dev/null | sort -V 2>/dev/null | tail -1)
         fi
         if [ -z "$NDK_ROOT" ] || [ ! -d "$NDK_ROOT" ]; then
           echo "Error: Android NDK not found"
@@ -295,7 +295,7 @@ tasks:
           # Pick the highest-API installed image matching the host ABI.
           SDK_ROOT="{{.SDK_ROOT}}"
           ABI="{{.ANDROID_ABI}}"
-          IMG=$(ls -d "$SDK_ROOT"/system-images/android-*/*/"$ABI" 2>/dev/null | sort -V | tail -1)
+          IMG=$(ls -d "$SDK_ROOT"/system-images/android-*/*/"$ABI" 2>/dev/null | sort -V 2>/dev/null | tail -1)
           AVDMANAGER="{{.AVDMANAGER}}"
           if [ -n "$IMG" ] && [ -x "$AVDMANAGER" ]; then
             PKG="system-images;$(echo "$IMG" | sed "s|$SDK_ROOT/system-images/||" | tr '/' ';')"
