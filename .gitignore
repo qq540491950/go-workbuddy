@@ -9,3 +9,6 @@ build/ios/xcode/overlay.json
 build/ios/xcode/gen/
 build/android/overlay.json
 frontend/public/__wb-mock.js
+
+# Go 编译产物（模块名 changeme 时 go build 的输出）
+changeme
