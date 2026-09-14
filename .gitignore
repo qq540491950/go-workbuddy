@@ -12,3 +12,6 @@ frontend/public/__wb-mock.js
 
 # Go 编译产物（模块名 changeme 时 go build 的输出）
 changeme
+
+# 本地安装的 ZCode skills（mattpocock/skills，不入库）
+.zcode/skills/
