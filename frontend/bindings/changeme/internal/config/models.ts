@@ -117,6 +117,31 @@ export enum MCPTransport {
 /**
  * ModelProvider describes a configurable LLM provider endpoint.
  */
+/**
+ * ModelInfo describes a model exposed by a provider.
+ */
+export interface ModelInfo {
+    "id": string;
+
+    /**
+     * Multimodal marks models that accept image input; the chat UI uses it
+     * to enable the image attachment button.
+     */
+    "multimodal"?: boolean;
+
+    /**
+     * ContextWindow is the model's input context size in tokens (0 = unknown).
+     */
+    "contextWindow"?: number;
+
+    /**
+     * PriceIn/PriceOut are optional prices per 1M tokens (input/output),
+     * used for cost estimation in the chat UI.
+     */
+    "priceIn"?: number;
+    "priceOut"?: number;
+}
+
 export interface ModelProvider {
     "id": string;
     "name": string;
@@ -127,12 +152,13 @@ export interface ModelProvider {
     /**
      * model ids usable with this provider
      */
-    "models": string[] | null;
+    "models": ModelInfo[] | null;
     "isDefault": boolean;
 
     /**
-     * PriceIn/PriceOut are optional prices per 1M tokens (input/output),
-     * used for cost estimation in the chat UI.
+     * PriceIn/PriceOut are the legacy provider-level prices. They are copied
+     * down to each model and cleared on load (migrateLegacy); kept only so
+     * old config files migrate instead of losing data.
      */
     "priceIn"?: number;
     "priceOut"?: number;

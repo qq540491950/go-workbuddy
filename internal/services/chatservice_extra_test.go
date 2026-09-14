@@ -44,7 +44,7 @@ func newChatFixture(t *testing.T, reply *atomic.Value) (*ChatService, config.Cha
 		cfg.Settings.WorkspaceDir = filepath.Join(dir, "workspace")
 		cfg.Providers = append(cfg.Providers, config.ModelProvider{
 			ID: "prov_1", Name: "Fake", Protocol: config.ProtocolOpenAI,
-			BaseURL: srv.URL, Models: []string{"fake-mini"},
+			BaseURL: srv.URL, Models: []config.ModelInfo{{ID: "fake-mini"}},
 		})
 		cfg.Agents = append(cfg.Agents, config.AgentConfig{
 			ID: "agent_1", Name: "助手", ProviderID: "prov_1", Model: "fake-mini",
@@ -213,7 +213,7 @@ func TestSendWithImageAttachment(t *testing.T) {
 	_ = store.Update(func(cfg *config.Config) {
 		cfg.Providers = append(cfg.Providers, config.ModelProvider{
 			ID: "prov_1", Name: "Fake", Protocol: config.ProtocolOpenAI,
-			BaseURL: srv.URL, Models: []string{"vision"},
+			BaseURL: srv.URL, Models: []config.ModelInfo{{ID: "vision"}},
 		})
 		cfg.Agents = append(cfg.Agents, config.AgentConfig{ID: "a1", Name: "看图", ProviderID: "prov_1", Model: "vision"})
 	})

@@ -28,6 +28,7 @@ export type ToolInfo = mcpModels.ToolInfo;
 
 export type AppConfig = configModels.Config;
 export type ModelProvider = configModels.ModelProvider;
+export type ModelInfo = configModels.ModelInfo;
 export type AgentConfig = configModels.AgentConfig;
 export type TeamConfig = configModels.TeamConfig;
 export type SkillConfig = configModels.SkillConfig;

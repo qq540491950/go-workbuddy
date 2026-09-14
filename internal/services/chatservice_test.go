@@ -46,7 +46,7 @@ func TestChatEndToEndToolLoop(t *testing.T) {
 	err = store.Update(func(cfg *config.Config) {
 		cfg.Providers = append(cfg.Providers, config.ModelProvider{
 			ID: "prov_1", Name: "Fake", Protocol: config.ProtocolOpenAI,
-			BaseURL: srv.URL, Models: []string{"fake-mini"}, IsDefault: true,
+			BaseURL: srv.URL, Models: []config.ModelInfo{{ID: "fake-mini"}}, IsDefault: true,
 		})
 		cfg.Agents = append(cfg.Agents, config.AgentConfig{
 			ID: "agent_1", Name: "时间助手", ProviderID: "prov_1", Model: "fake-mini",

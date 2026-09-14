@@ -276,7 +276,7 @@ export function TeamsPage() {
                         <SelectTrigger><SelectValue placeholder="选择模型" /></SelectTrigger>
                         <SelectContent>
                           {(providerOf(editing.providerId)?.models ?? []).map((m) => (
-                            <SelectItem key={m} value={m}>{m}</SelectItem>
+                            <SelectItem key={m.id} value={m.id}>{m.id}</SelectItem>
                           ))}
                         </SelectContent>
                       </Select>

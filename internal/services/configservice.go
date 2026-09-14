@@ -50,7 +50,7 @@ func (c *ConfigService) SaveProvider(p config.ModelProvider) error {
 		p.ID = newID("prov_")
 	}
 	if p.Models == nil {
-		p.Models = []string{}
+		p.Models = []config.ModelInfo{}
 	}
 	return c.S.Store.Update(func(cfg *config.Config) {
 		replaced := false
@@ -85,6 +85,14 @@ func (c *ConfigService) DeleteProvider(id string) error {
 		}
 		cfg.Providers = out
 	})
+}
+
+// ListProviderModels fetches the model IDs offered by the provider's list
+// endpoint, so the user can pick instead of typing model ids by hand.
+func (c *ConfigService) ListProviderModels(p config.ModelProvider) ([]string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	return agentkit.ListProviderModels(ctx, p)
 }
 
 // TestProvider performs a minimal round-trip against the provider with the

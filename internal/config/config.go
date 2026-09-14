@@ -20,17 +20,49 @@ const (
 	ProtocolGemini     Protocol = "gemini"     // Google Gemini API
 )
 
-// ModelProvider describes a configurable LLM provider endpoint.
-type ModelProvider struct {
-	ID        string   `json:"id"`
-	Name      string   `json:"name"`
-	Protocol  Protocol `json:"protocol"`
-	BaseURL   string   `json:"baseUrl"`
-	APIKey    string   `json:"apiKey"`
-	Models    []string `json:"models"` // model ids usable with this provider
-	IsDefault bool     `json:"isDefault"`
+// ModelInfo describes a model exposed by a provider.
+type ModelInfo struct {
+	ID string `json:"id"`
+	// Multimodal marks models that accept image input; the chat UI uses it
+	// to enable the image attachment button.
+	Multimodal bool `json:"multimodal,omitempty"`
+	// ContextWindow is the model's input context size in tokens (0 = unknown).
+	ContextWindow int `json:"contextWindow,omitempty"`
 	// PriceIn/PriceOut are optional prices per 1M tokens (input/output),
 	// used for cost estimation in the chat UI.
+	PriceIn  float64 `json:"priceIn,omitempty"`
+	PriceOut float64 `json:"priceOut,omitempty"`
+}
+
+// UnmarshalJSON accepts both the legacy entries ("model-id") and the current
+// object form, so old config files load unchanged.
+func (m *ModelInfo) UnmarshalJSON(data []byte) error {
+	var id string
+	if err := json.Unmarshal(data, &id); err == nil {
+		*m = ModelInfo{ID: id}
+		return nil
+	}
+	type plain ModelInfo
+	var p plain
+	if err := json.Unmarshal(data, &p); err != nil {
+		return err
+	}
+	*m = ModelInfo(p)
+	return nil
+}
+
+// ModelProvider describes a configurable LLM provider endpoint.
+type ModelProvider struct {
+	ID        string      `json:"id"`
+	Name      string      `json:"name"`
+	Protocol  Protocol    `json:"protocol"`
+	BaseURL   string      `json:"baseUrl"`
+	APIKey    string      `json:"apiKey"`
+	Models    []ModelInfo `json:"models"` // model ids usable with this provider
+	IsDefault bool        `json:"isDefault"`
+	// PriceIn/PriceOut are the legacy provider-level prices. They are copied
+	// down to each model and cleared on load (migrateLegacy); kept only so
+	// old config files migrate instead of losing data.
 	PriceIn  float64 `json:"priceIn,omitempty"`
 	PriceOut float64 `json:"priceOut,omitempty"`
 }
@@ -202,6 +234,33 @@ func Default() Config {
 	}
 }
 
+// migrateLegacy converges older config schemas onto the current one: legacy
+// provider-level prices move down to each model, and nameless model entries
+// are dropped. Runs once per load; the result is persisted by Open.
+func (c *Config) migrateLegacy() {
+	for i := range c.Providers {
+		p := &c.Providers[i]
+		if p.PriceIn > 0 || p.PriceOut > 0 {
+			for j := range p.Models {
+				if p.Models[j].PriceIn == 0 {
+					p.Models[j].PriceIn = p.PriceIn
+				}
+				if p.Models[j].PriceOut == 0 {
+					p.Models[j].PriceOut = p.PriceOut
+				}
+			}
+			p.PriceIn, p.PriceOut = 0, 0
+		}
+		models := p.Models[:0]
+		for _, m := range p.Models {
+			if m.ID != "" {
+				models = append(models, m)
+			}
+		}
+		p.Models = models
+	}
+}
+
 // Open loads (or creates) the config store under dir.
 func Open(dir string) (*Store, error) {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
@@ -226,6 +285,7 @@ func Open(dir string) (*Store, error) {
 		}
 	}
 	s.cfg.Settings.normalize()
+	s.cfg.migrateLegacy()
 	// Persist normalized defaults so old config files converge on the new schema.
 	if _, err := os.Stat(s.path); err == nil {
 		_ = s.saveLocked()

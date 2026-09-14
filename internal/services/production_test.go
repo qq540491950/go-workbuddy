@@ -38,7 +38,7 @@ func TestSendTurnKeepsSessionUsableAfterFailure(t *testing.T) {
 	// Unreachable provider: the turn fails but the app must stay healthy.
 	_ = store.Update(func(cfg *config.Config) {
 		cfg.Providers = append(cfg.Providers, config.ModelProvider{
-			ID: "p1", Name: "X", Protocol: config.ProtocolOpenAI, BaseURL: "http://127.0.0.1:1", Models: []string{"m"},
+			ID: "p1", Name: "X", Protocol: config.ProtocolOpenAI, BaseURL: "http://127.0.0.1:1", Models: []config.ModelInfo{{ID: "m"}},
 		})
 		cfg.Agents = append(cfg.Agents, config.AgentConfig{ID: "agent_1", Name: "A", ProviderID: "p1", Model: "m"})
 	})

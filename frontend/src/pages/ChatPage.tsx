@@ -22,7 +22,7 @@ import { MessageMarkdown, CopyButton } from "@/components/MessageMarkdown";
 import { ToolCallCard } from "@/components/ToolCallCard";
 import {
   Chat, Config, errText,
-  type AgentConfig, type ChatSession, type TeamConfig, type UsageInfo, type ModelProvider,
+  type AgentConfig, type ChatSession, type TeamConfig, type UsageInfo, type ModelProvider, type ModelInfo,
   type AttachmentIn, type AttachmentOut, type SessionStats,
 } from "@/lib/api";
 
@@ -390,28 +390,41 @@ export function ChatPage() {
     return sessions.filter((s) => s.title.toLowerCase().includes(q));
   }, [sessions, search]);
 
-  // Provider pricing for cost estimation (agent → provider; team coordinator).
-  const provider = useMemo(() => {
-    if (!active) return null;
+  // Provider + model of the active target (agent → its model; team →
+  // coordinator when auto, lead agent otherwise) for cost estimation and
+  // multimodal gating.
+  const target = useMemo(() => {
+    if (!active) return { provider: null as ModelProvider | null, model: null as ModelInfo | null };
     let providerId = "";
+    let modelId = "";
     if (active.targetType === "team") {
       const team = teams.find((t) => t.id === active.targetId);
-      if (team?.autoCoordinate) providerId = team.providerId;
-      else {
+      if (team?.autoCoordinate) {
+        providerId = team.providerId;
+        modelId = team.model;
+      } else {
         const lead = agents.find((a) => a.id === team?.leadAgentId);
         providerId = lead?.providerId ?? "";
+        modelId = lead?.model ?? "";
       }
     } else {
-      providerId = agents.find((a) => a.id === active.targetId)?.providerId ?? "";
+      const agent = agents.find((a) => a.id === active.targetId);
+      providerId = agent?.providerId ?? "";
+      modelId = agent?.model ?? "";
     }
-    return providerList.find((p) => p.id === providerId) ?? null;
+    const provider = providerList.find((p) => p.id === providerId) ?? null;
+    const model = provider?.models?.find((m) => m.id === modelId) ?? null;
+    return { provider, model };
   }, [active, agents, teams, providerList]);
 
-  /** costOf computes ¥ cost from token usage at provider rates (per 1M). */
+  /** modelMultimodal gates the image attachment entry (see ModelInfo). */
+  const modelMultimodal = !!target.model?.multimodal;
+
+  /** costOf computes ¥ cost from token usage at model rates (per 1M). */
   const costOf = (u?: UsageInfo | null): string => {
-    if (!u || !provider) return "";
-    const pin = (provider as any).priceIn ?? 0;
-    const pout = (provider as any).priceOut ?? 0;
+    if (!u || !target.model) return "";
+    const pin = target.model.priceIn ?? 0;
+    const pout = target.model.priceOut ?? 0;
     if (pin <= 0 && pout <= 0) return "";
     const cost = (u.promptTokens / 1e6) * pin + (u.completionTokens / 1e6) * pout;
     if (cost <= 0) return "";
@@ -647,12 +660,12 @@ export function ChatPage() {
                 }}
               />
               <button
-                title="添加图片附件"
-                disabled={!active || running}
+                title={modelMultimodal ? "添加图片附件" : "当前模型未开启多模态（在模型配置中开启）"}
+                disabled={!active || running || !modelMultimodal}
                 onClick={() => fileRef.current?.click()}
                 className={cn(
                   "absolute bottom-2 right-9 flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground",
-                  (!active || running) && "opacity-40",
+                  (!active || running || !modelMultimodal) && "opacity-40",
                 )}
               >
                 <Paperclip className="h-3.5 w-3.5" />

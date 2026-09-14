@@ -25,7 +25,7 @@ func TestBuildAgentWithBuiltinTools(t *testing.T) {
 	kit, store := newTestKit(t)
 	err := store.Update(func(cfg *config.Config) {
 		cfg.Providers = append(cfg.Providers, config.ModelProvider{
-			ID: "p1", Name: "Fake", Protocol: config.ProtocolOpenAI, Models: []string{"m1"},
+			ID: "p1", Name: "Fake", Protocol: config.ProtocolOpenAI, Models: []config.ModelInfo{{ID: "m1"}},
 		})
 		cfg.Agents = append(cfg.Agents, config.AgentConfig{
 			ID: "a1", Name: "助手 A", ProviderID: "p1", Model: "m1",
@@ -53,7 +53,7 @@ func TestBuildTeamAutoCoordinator(t *testing.T) {
 	kit, store := newTestKit(t)
 	err := store.Update(func(cfg *config.Config) {
 		cfg.Providers = append(cfg.Providers, config.ModelProvider{
-			ID: "p1", Name: "Fake", Protocol: config.ProtocolOpenAI, Models: []string{"m1"},
+			ID: "p1", Name: "Fake", Protocol: config.ProtocolOpenAI, Models: []config.ModelInfo{{ID: "m1"}},
 		})
 		for _, id := range []string{"m1", "m2"} {
 			cfg.Agents = append(cfg.Agents, config.AgentConfig{

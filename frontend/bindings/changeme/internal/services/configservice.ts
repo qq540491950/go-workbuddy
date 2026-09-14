@@ -57,6 +57,14 @@ export function GetConfig(): $CancellablePromise<config$0.Config> {
 }
 
 /**
+ * ListProviderModels fetches the model IDs offered by the provider's list
+ * endpoint, so the user can pick instead of typing model ids by hand.
+ */
+export function ListProviderModels(p: config$0.ModelProvider): $CancellablePromise<Array<string>> {
+    return $Call.ByID(2350675726, p);
+}
+
+/**
  * SaveAgent inserts or updates an agent.
  */
 export function SaveAgent(a: config$0.AgentConfig): $CancellablePromise<void> {
