@@ -111,12 +111,18 @@ func semanticSearch(opts SearchOptions, query string) (string, error) {
 	}
 	var hits []chunkScore
 	keywords := strings.Fields(strings.ToLower(query))
+	seenFiles := map[string]bool{}
 	for _, r := range rows {
 		vec := decodeVector(r.Embedding, r.Dim)
 		if len(vec) == 0 {
 			continue
 		}
 		hits = append(hits, chunkScore{row: r, cos: cosine(qvec, vec), kw: keywordScore(r.Content, keywords)})
+	}
+	// Workspace-relative references for artifact previews (deduped, ranked
+	// order applied after sorting below via re-scan).
+	for _, h := range hits {
+		seenFiles[h.row.File] = true
 	}
 	if len(hits) == 0 {
 		return "知识库为空：请将 Markdown/文本文件放入工作区 knowledge/ 目录。", nil
@@ -137,12 +143,34 @@ func semanticSearch(opts SearchOptions, query string) (string, error) {
 		hits = hits[:knowledgeMaxResults]
 	}
 	var sb strings.Builder
+	filesSet := map[string]bool{}
 	for _, h := range hits {
 		fmt.Fprintf(&sb, "### %s（语义相关度 %d%%）\n", h.row.File, int(math.Round(maxFloat(h.cos, 0)*100)))
 		sb.WriteString(snippetOf(h.row.Content, knowledgeSnippet))
 		sb.WriteString("\n\n")
+		filesSet[h.row.File] = true
 	}
-	return strings.TrimSpace(sb.String()), nil
+	refs := refsOf(filesSet)
+	return withRefs(sb.String(), refs), nil
+}
+
+// refsOf returns sorted knowledge/<file> refs for preview integration.
+func refsOf(files map[string]bool) []string {
+	out := make([]string, 0, len(files))
+	for f := range files {
+		out = append(out, knowledgeDirName+"/"+f)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// withRefs appends a machine-readable file reference line that the UI uses
+// for artifact preview buttons.
+func withRefs(text string, refs []string) string {
+	if len(refs) == 0 {
+		return text
+	}
+	return strings.TrimSpace(text) + "\n\n文件: " + strings.Join(refs, ", ")
 }
 
 // ensureIndexed brings the persistent index in sync with the knowledge dir:

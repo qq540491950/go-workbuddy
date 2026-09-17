@@ -447,9 +447,7 @@ type pathArgs struct {
 	Path string `json:"path" jsonschema:"relative path inside the workspace"`
 }
 
-type filesResult struct {
-	Entries string `json:"entries"`
-}
+
 
 // SafeWorkspacePath resolves rel inside workspace and blocks traversal.
 func SafeWorkspacePath(workspace, rel string) (string, error) {

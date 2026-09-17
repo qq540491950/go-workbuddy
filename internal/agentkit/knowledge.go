@@ -22,6 +22,13 @@ type queryArgs struct {
 	Query string `json:"query" jsonschema:"search keywords, space separated"`
 }
 
+// filesResult is the search_knowledge payload; Refs carries
+// workspace-relative paths so the UI can offer artifact previews.
+type filesResult struct {
+	Entries string   `json:"entries"`
+	Refs    []string `json:"refs,omitempty"`
+}
+
 // SearchKnowledgeTool searches the workspace knowledge base: hybrid
 // semantic+keyword when an embedding backend is wired in, keyword otherwise.
 func SearchKnowledgeTool(opts SearchOptions) tool.Tool {

@@ -14,7 +14,7 @@ import { Artifact, errText, type Artifact as ArtifactData } from "@/lib/api";
  *  arguments/results so their outputs can be previewed. */
 export function extractArtifactPaths(...objs: (unknown | null | undefined)[]): string[] {
   const out = new Set<string>();
-  const re = /"(?:path|file|file_path|filename|image_path|artifact|output)"\s*:\s*"([^"]+\.(?:png|jpe?g|gif|webp|svg|bmp|ico|pdf|md|markdown|txt|log|csv|json|ya?ml|xml|html?|go|ts|tsx|js|py|rs|java|sh|sql|toml|ini|css))"/gi;
+  const re = /"(?:path|file|file_path|filename|image_path|artifact|output|refs)"\s*:\s*"([^"]+\.(?:png|jpe?g|gif|webp|svg|bmp|ico|pdf|md|markdown|txt|log|csv|json|ya?ml|xml|html?|go|ts|tsx|js|py|rs|java|sh|sql|toml|ini|css))"/gi;
   for (const o of objs) {
     if (o == null) continue;
     try {
