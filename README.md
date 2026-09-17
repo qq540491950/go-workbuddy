@@ -120,6 +120,17 @@ go vet ./internal/... .
 
 已实施：Markdown + 代码块复制、消息级复制、深浅主题、首次运行引导、会话搜索、快捷键、工具调用折叠面板、流式打字指示器。
 
+### 第四十三轮迭代：代理覆盖契约固化（已实施）
+
+- 契约测试钉住：无显式 HTTPClient 的 MCP streamable 传输（`http.DefaultClient` → `http.DefaultTransport`）必须经过全局代理——回环转发桩验证流量真实穿过代理服务器
+- 顺带确认 gemini SDK / 模型适配器 / 向量客户端同路径覆盖；代理桩需直连转发（避免自环）
+
+测试：代理覆盖 e2e（流量真实经过代理服务器）+ 回归。
+
+### 第四十二轮迭代：全量代码审查（已实施）
+
+双子代理（Standards + Spec）并行审查 35 个提交：修复 tool_result 双发 bug、预算豁免确认应答、错误中文化、semantic.go 清理、README 章节排序（22/29 节补齐）。
+
 ### 第四十一轮迭代：长会话自动上下文压缩（已实施）
 
 依据 ADK `session/compaction` 官方能力（滑动窗口 + 尾部保留）：
