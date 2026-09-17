@@ -17,6 +17,10 @@ import * as agentkit$0 from "../agentkit/models.js";
 // @ts-ignore: Unused imports
 import * as config$0 from "../config/models.js";
 
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore: Unused imports
+import * as $models from "./models.js";
+
 /**
  * CheckRemoteAgent resolves the A2A agent card advertised at the URL and
  * returns a summary for the UI connectivity check.
@@ -30,6 +34,13 @@ export function CheckRemoteAgent(cardURL: string): $CancellablePromise<agentkit$
  */
 export function DeleteAgent(id: string): $CancellablePromise<void> {
     return $Call.ByID(3938069995, id);
+}
+
+/**
+ * DeleteKnowledgeFile removes one knowledge file by name (traversal-guarded).
+ */
+export function DeleteKnowledgeFile(name: string): $CancellablePromise<void> {
+    return $Call.ByID(2830238348, name);
 }
 
 /**
@@ -88,6 +99,13 @@ export function ImportSkillsFromWorkspace(): $CancellablePromise<number> {
  */
 export function KnowledgeIndexStats(): $CancellablePromise<agentkit$0.KnowledgeIndexStats> {
     return $Call.ByID(1223381284);
+}
+
+/**
+ * ListKnowledgeFiles lists the workspace knowledge directory files.
+ */
+export function ListKnowledgeFiles(): $CancellablePromise<$models.KnowledgeFile[] | null> {
+    return $Call.ByID(1900178754);
 }
 
 /**

@@ -13,7 +13,7 @@ import {
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 import { ACCENTS, FONT_SCALES, applyTheme, cacheTheme, type ThemePrefs } from "@/lib/theme";
-import { App, A2A, Config, type AgentConfig, type A2AStatus, type KnowledgeIndexStats, type ModelProvider, type StorageInfo, type Settings, errText, Protocol } from "@/lib/api";
+import { App, A2A, Config, type AgentConfig, type A2AStatus, type KnowledgeFile, type KnowledgeIndexStats, type ModelProvider, type StorageInfo, type Settings, errText, Protocol } from "@/lib/api";
 
 export function SettingsPage() {
   const [settings, setSettings] = useState<Settings | null>(null);
@@ -30,6 +30,7 @@ export function SettingsPage() {
   const [indexStats, setIndexStats] = useState<KnowledgeIndexStats | null>(null);
   const [kbTestQuery, setKbTestQuery] = useState("");
   const [kbTestResult, setKbTestResult] = useState("");
+  const [kbFiles, setKbFiles] = useState<KnowledgeFile[]>([]);
 
   const reload = useCallback(() => {
     Config.GetConfig()
@@ -44,6 +45,7 @@ export function SettingsPage() {
   useEffect(() => {
     A2A.Status().then(setA2AStatus).catch(() => {});
     Config.KnowledgeIndexStats().then(setIndexStats).catch(() => {});
+    Config.ListKnowledgeFiles().then((fs) => setKbFiles(fs ?? [])).catch(() => {});
     App.StorageStats().then(setStorage).catch(() => {});
   }, []);
 
@@ -230,6 +232,37 @@ export function SettingsPage() {
                 onChange={(e) => setSettings({ ...settings, embeddingModel: e.target.value })}
                 placeholder="text-embedding-3-small / BAAI/bge-large-zh-v1.5"
               />
+              {kbFiles.length > 0 && (
+                <div className="rounded-lg border p-2">
+                  <div className="mb-1 text-xs text-muted-foreground">knowledge/ 目录文件</div>
+                  <div className="grid gap-1">
+                    {kbFiles.map((f) => (
+                      <div key={f.name} className="flex items-center justify-between gap-2 text-xs">
+                        <span className="truncate font-mono">{f.name}</span>
+                        <span className="shrink-0 text-muted-foreground">
+                          {(f.sizeBytes / 1024).toFixed(1)} KB · {f.modTime}
+                        </span>
+                        <button
+                          className="shrink-0 rounded p-0.5 text-muted-foreground hover:text-destructive"
+                          title={`删除 ${f.name}`}
+                          onClick={async () => {
+                            if (!window.confirm(`删除知识文件「${f.name}」？索引将同步移除该文件。`)) return;
+                            try {
+                              await Config.DeleteKnowledgeFile(f.name);
+                              setKbFiles((prev) => (prev ?? []).filter((x) => x.name !== f.name));
+                              toast.success("已删除（下次检索自动从索引移除）");
+                            } catch (e) {
+                              toast.error(`删除失败: ${errText(e)}`);
+                            }
+                          }}
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
               <div className="grid gap-1.5">
                 <div className="flex items-center gap-2">
                   <Input

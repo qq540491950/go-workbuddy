@@ -144,6 +144,15 @@ export interface ChatStreamEvent {
 }
 
 /**
+ * KnowledgeFile describes one file in the workspace knowledge directory.
+ */
+export interface KnowledgeFile {
+    "name": string;
+    "sizeBytes": number;
+    "modTime": string;
+}
+
+/**
  * SessionStats aggregates observability metrics for one conversation.
  */
 export interface SessionStats {

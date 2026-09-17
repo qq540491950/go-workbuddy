@@ -422,6 +422,71 @@ func (c *ConfigService) SaveSettings(s config.Settings) error {
 	})
 }
 
+// KnowledgeFile describes one file in the workspace knowledge directory.
+type KnowledgeFile struct {
+	Name      string `json:"name"`
+	SizeBytes int64  `json:"sizeBytes"`
+	ModTime   string `json:"modTime"`
+}
+
+// safeKnowledgePath resolves a knowledge file name inside the workspace and
+// blocks directory traversal.
+func (c *ConfigService) safeKnowledgePath(name string) (string, error) {
+	workspace := c.S.Store.Get().Settings.WorkspaceDir
+	if workspace == "" {
+		return "", fmt.Errorf("请先在设置中配置工作区目录")
+	}
+	if name == "" || strings.Contains(name, "/") || strings.Contains(name, "\\") || strings.Contains(name, "..") {
+		return "", fmt.Errorf("非法的知识库文件名: %q", name)
+	}
+	root := filepath.Join(workspace, "knowledge")
+	p := filepath.Join(root, name)
+	if !strings.HasPrefix(p, root+string(filepath.Separator)) && filepath.Dir(p) != root {
+		return "", fmt.Errorf("非法的知识库文件名: %q", name)
+	}
+	return p, nil
+}
+
+// ListKnowledgeFiles lists the workspace knowledge directory files.
+func (c *ConfigService) ListKnowledgeFiles() ([]KnowledgeFile, error) {
+	workspace := c.S.Store.Get().Settings.WorkspaceDir
+	if workspace == "" {
+		return nil, fmt.Errorf("请先在设置中配置工作区目录")
+	}
+	entries, err := os.ReadDir(filepath.Join(workspace, "knowledge"))
+	if err != nil {
+		if os.IsNotExist(err) {
+			return []KnowledgeFile{}, nil
+		}
+		return nil, err
+	}
+	out := []KnowledgeFile{}
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		st, err := e.Info()
+		if err != nil {
+			continue
+		}
+		out = append(out, KnowledgeFile{
+			Name:      e.Name(),
+			SizeBytes: st.Size(),
+			ModTime:   st.ModTime().Format("2006-01-02 15:04"),
+		})
+	}
+	return out, nil
+}
+
+// DeleteKnowledgeFile removes one knowledge file by name (traversal-guarded).
+func (c *ConfigService) DeleteKnowledgeFile(name string) error {
+	p, err := c.safeKnowledgePath(name)
+	if err != nil {
+		return err
+	}
+	return os.Remove(p)
+}
+
 // ResetKnowledgeIndex wipes the vector index so the next search re-embeds
 // everything from the workspace files.
 func (c *ConfigService) ResetKnowledgeIndex() error { return c.S.Kit.ResetKnowledgeIndex() }
