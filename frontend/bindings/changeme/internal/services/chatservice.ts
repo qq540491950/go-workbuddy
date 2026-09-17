@@ -19,6 +19,14 @@ import * as config$0 from "../config/models.js";
 import * as $models from "./models.js";
 
 /**
+ * ArchiveSession toggles the archived flag of a session (archived sessions
+ * are hidden from the default sidebar list but never deleted).
+ */
+export function ArchiveSession(id: string, archived: boolean): $CancellablePromise<void> {
+    return $Call.ByID(621651531, id, archived);
+}
+
+/**
  * Cancel aborts the in-flight run of a session, if any.
  */
 export function Cancel(sessionID: string): $CancellablePromise<void> {

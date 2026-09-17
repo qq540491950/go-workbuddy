@@ -3,7 +3,7 @@ import { Events } from "@wailsio/runtime";
 import {
   Plus, Send, Square, Trash2, Pencil, MessageSquare, Bot, Users, Loader2,
   Copy, Check, Search, ArrowRight, RefreshCw, Download, Mic, MicOff, Volume2, Square as SquareStop,
-  Paperclip, X, BarChart3, Brain, ShieldAlert, Network, GitFork, Pin, PinOff, FileCode2,
+  Paperclip, X, BarChart3, Brain, ShieldAlert, Network, GitFork, Pin, PinOff, FileCode2, Archive,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -543,14 +543,25 @@ export function ChatPage() {
     return () => clearTimeout(t);
   }, [search]);
 
+  const [showArchived, setShowArchived] = useState(false);
+  const archivedCount = useMemo(() => sessions.filter((x) => x.archived).length, [sessions]);
+
   const filteredSessions = useMemo(() => {
     const q = search.trim().toLowerCase();
-    if (!q) return sessions;
-    return sessions.filter((s) => {
-      if (s.title.toLowerCase().includes(q)) return true;
-      return contentMatches ? contentMatches.has(s.id) : false;
-    });
-  }, [sessions, search, contentMatches]);
+    const base = sessions.filter((s) => !s.archived);
+    const withQuery = (() => {
+      if (!q) return base;
+      return base.filter((s) => {
+        if (s.title.toLowerCase().includes(q)) return true;
+        return contentMatches ? contentMatches.has(s.id) : false;
+      });
+    })();
+    if (showArchived) {
+      const archivedList = sessions.filter((s) => s.archived);
+      return [...withQuery, ...archivedList];
+    }
+    return withQuery;
+  }, [sessions, search, contentMatches, showArchived]);
 
   // Provider + model of the active target (agent → its model; team →
   // coordinator when auto, lead agent otherwise) for cost estimation and
@@ -651,6 +662,14 @@ export function ChatPage() {
         </div>
         <ScrollArea className="flex-1 px-2">
           <div className="grid gap-1 pb-3">
+            {archivedCount > 0 && (
+              <button
+                className="mb-1 w-full rounded-md px-2 py-1 text-left text-xs text-muted-foreground hover:bg-accent/50"
+                onClick={() => setShowArchived((v) => !v)}
+              >
+                {showArchived ? "隐藏" : "显示"}已归档会话（{archivedCount}）
+              </button>
+            )}
             {filteredSessions.map((s) => (
               <div
                 key={s.id}
@@ -670,8 +689,19 @@ export function ChatPage() {
                   {s.preview && <span className="block truncate text-[11px] text-muted-foreground">{s.preview}</span>}
                 </span>
                 {s.pinned && <Pin className="h-3 w-3 shrink-0 text-primary" aria-label="已置顶" />}
+                {s.archived && <Badge variant="outline" className="shrink-0 px-1 py-0 text-[10px] text-muted-foreground">归档</Badge>}
                 {runningMap[s.id] && <Loader2 className="h-3 w-3 shrink-0 animate-spin text-primary" aria-label="生成中" />}
                 <span className="hidden shrink-0 items-center gap-0.5 group-hover:flex">
+                  <button
+                    className="rounded p-0.5 hover:bg-background"
+                    title={s.archived ? "取消归档" : "归档此会话"}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      Chat.ArchiveSession(s.id, !s.archived).then(reloadSessions).catch(() => {});
+                    }}
+                  >
+                    <Archive className="h-3 w-3" />
+                  </button>
                   <button
                     className="rounded p-0.5 hover:bg-background"
                     title={s.pinned ? "取消置顶" : "置顶此会话"}

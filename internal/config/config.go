@@ -252,6 +252,8 @@ type ChatSession struct {
 	Pinned bool `json:"pinned,omitempty"`
 	// Preview is the tail of the latest assistant reply, for the sidebar.
 	Preview string `json:"preview,omitempty"`
+	// Archived sessions are hidden from the main sidebar list.
+	Archived bool `json:"archived,omitempty"`
 }
 
 // Store persists Config as JSON and guards concurrent access.

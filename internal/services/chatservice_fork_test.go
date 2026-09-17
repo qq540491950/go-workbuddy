@@ -442,3 +442,57 @@ func TestSessionLifecycleAudit(t *testing.T) {
 		}
 	}
 }
+
+// TestArchiveSessionRoundTrip: archive/unarchive toggles the persisted flag.
+func TestArchiveSessionRoundTrip(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte(sseDone))
+	}))
+	defer srv.Close()
+
+	dir := t.TempDir()
+	store, err := config.Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Update(func(cfg *config.Config) {
+		cfg.Providers = append(cfg.Providers, config.ModelProvider{
+			ID: "p1", Name: "P", Protocol: config.ProtocolOpenAI,
+			BaseURL: srv.URL, Models: []config.ModelInfo{{ID: "m"}}, IsDefault: true,
+		})
+		cfg.Agents = append(cfg.Agents, config.AgentConfig{ID: "a1", Name: "A", ProviderID: "p1", Model: "m"})
+	}); err != nil {
+		t.Fatal(err)
+	}
+	db, sessions, err := newTestSessionService(filepath.Join(dir, "sessions.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	svc := &Services{Store: store, Kit: agentkit.NewKit(store, mcpmgr.New()), MCP: mcpmgr.New()}
+	chat := NewChatService(svc, sessions, db)
+	sess, err := chat.NewSession("agent", "a1", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := chat.ArchiveSession(sess.ID, true); err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, s := range chat.ListSessions() {
+		if s.ID == sess.ID {
+			found = s.Archived
+		}
+	}
+	if !found {
+		t.Fatal("archived flag not persisted")
+	}
+	if err := chat.ArchiveSession(sess.ID, false); err != nil {
+		t.Fatal(err)
+	}
+	for _, s := range chat.ListSessions() {
+		if s.ID == sess.ID && s.Archived {
+			t.Fatal("unarchive failed")
+		}
+	}
+}

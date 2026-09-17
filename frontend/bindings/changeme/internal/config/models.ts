@@ -88,6 +88,11 @@ export interface ChatSession {
      * Preview is the tail of the latest assistant reply, for the sidebar.
      */
     "preview"?: string;
+
+    /**
+     * Archived sessions are hidden from the main sidebar list.
+     */
+    "archived"?: boolean;
 }
 
 /**
