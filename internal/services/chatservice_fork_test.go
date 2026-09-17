@@ -328,3 +328,57 @@ func TestSessionPreviewUpdated(t *testing.T) {
 		}
 	}
 }
+
+// TestExportSessionMarksForkLine: forking from a session that already has a
+// history makes the exported Markdown note the origin.
+func TestExportSessionMarksForkLine(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte(sseText("回答") + sseDone))
+	}))
+	defer srv.Close()
+
+	dir := t.TempDir()
+	store, err := config.Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Update(func(cfg *config.Config) {
+		cfg.Settings.WorkspaceDir = dir
+		cfg.Providers = append(cfg.Providers, config.ModelProvider{
+			ID: "p1", Name: "P", Protocol: config.ProtocolOpenAI,
+			BaseURL: srv.URL, Models: []config.ModelInfo{{ID: "m"}}, IsDefault: true,
+		})
+		cfg.Agents = append(cfg.Agents, config.AgentConfig{ID: "a1", Name: "A", ProviderID: "p1", Model: "m"})
+	}); err != nil {
+		t.Fatal(err)
+	}
+	db, sessions, err := newTestSessionService(filepath.Join(dir, "sessions.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	svc := &Services{Store: store, Kit: agentkit.NewKit(store, mcpmgr.New()), MCP: mcpmgr.New()}
+	chat := NewChatService(svc, sessions, db)
+	sess, err := chat.NewSession("agent", "a1", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := chat.Send(sess.ID, "原始", nil); err != nil {
+		t.Fatal(err)
+	}
+	branch, err := chat.ForkSession(sess.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	path, err := chat.ExportSession(branch.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), "分叉自") {
+		t.Fatalf("fork origin missing in export:\n%s", data)
+	}
+}

@@ -584,6 +584,11 @@ func (c *ChatService) ExportSession(sessionID string) (string, error) {
 		fmt.Fprintf(&sb, "- 统计: %d 条用户消息 · %d 轮回复 · %d 次工具调用 · %d tokens\n",
 			st.Messages, st.AssistantTurns, st.ToolCalls, st.TokensTotal)
 	}
+	if meta.ForkedFrom != "" {
+		if src := c.resolveSessionTarget(cfg, meta.ForkedFrom); src != nil {
+			fmt.Fprintf(&sb, "- 分叉自: %s\n", src.Title)
+		}
+	}
 	fmt.Fprintf(&sb, "\n---\n\n")
 	for _, m := range msgs {
 		switch m.Kind {
@@ -644,6 +649,11 @@ func (c *ChatService) ExportSessionHTML(sessionID string) (string, error) {
 	var body strings.Builder
 	fmt.Fprintf(&body, "# %s\n\n", meta.Title)
 	fmt.Fprintf(&body, "- 对象: %s `%s`\n\n", map[bool]string{true: "团队", false: "Agent"}[meta.TargetType == "team"], meta.TargetID)
+	if meta.ForkedFrom != "" {
+		if src := c.resolveSessionTarget(cfg, meta.ForkedFrom); src != nil {
+			fmt.Fprintf(&body, "- 分叉自: %s\n\n", src.Title)
+		}
+	}
 	for _, m := range msgs {
 		switch m.Kind {
 		case "user":
