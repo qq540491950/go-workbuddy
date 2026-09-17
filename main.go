@@ -55,6 +55,7 @@ func main() {
 
 	// MCP manager + agent kit.
 	mgr := mcpmgr.New()
+	mgr.SetTokenStore(store) // OAuth tokens persist across restarts
 	kit := agentkit.NewKit(store, mgr)
 	svc := &services.Services{Store: store, Kit: kit, MCP: mgr}
 	services.AppVersion = Version

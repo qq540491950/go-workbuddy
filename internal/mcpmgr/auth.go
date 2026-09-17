@@ -12,6 +12,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/auth"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/modelcontextprotocol/go-sdk/oauthex"
+	"golang.org/x/oauth2"
 
 	"changeme/internal/config"
 )
@@ -67,7 +68,9 @@ func headersOnlyClient(cfg config.MCPServerConfig) *http.Client {
 // (OAuth 2.1 + PKCE per the MCP authorization spec) into a streamable HTTP
 // transport. The loopback redirect listener is created here so the redirect
 // URL is stable for the handler; it serves only while the consent flow runs.
-func newOAuthTransport(cfg config.MCPServerConfig) (mcp.Transport, error) {
+// When tokenStore is non-nil, tokens persist across app restarts: a cached
+// unexpired token (or a refreshable one) skips the browser consent flow.
+func newOAuthTransport(cfg config.MCPServerConfig, tokenStore *config.Store) (mcp.Transport, error) {
 	if cfg.OAuthClientID == "" {
 		return nil, fmt.Errorf("oauth2 认证需要预注册的 client id")
 	}
@@ -78,11 +81,28 @@ func newOAuthTransport(cfg config.MCPServerConfig) (mcp.Transport, error) {
 	redirectURL := fmt.Sprintf("http://127.0.0.1:%d/callback", ln.Addr().(*net.TCPAddr).Port)
 
 	fetcher := newBrowserAuthCodeFetcher(ln)
-	handler, err := auth.NewAuthorizationCodeHandler(&auth.AuthorizationCodeHandlerConfig{
+	handlerCfg := &auth.AuthorizationCodeHandlerConfig{
 		PreregisteredClient: &oauthex.ClientCredentials{ClientID: cfg.OAuthClientID},
 		RedirectURL:         redirectURL,
 		AuthorizationCodeFetcher: fetcher,
-	})
+		NewTokenSource: func(ctx context.Context, oc *oauth2.Config, token *oauth2.Token) (oauth2.TokenSource, error) {
+			// Persist every newly issued/refreshed token so restarts stay
+			// silent while the refresh token remains valid.
+			if tokenStore != nil {
+				_ = tokenStore.Update(func(c *config.Config) {
+					if c.MCPTokens == nil {
+						c.MCPTokens = map[string]config.MCPOAuthToken{}
+					}
+					c.MCPTokens[cfg.ID] = MCPOAuthTokenFromOauth2(token, oc.Endpoint.TokenURL)
+				})
+			}
+			return oc.TokenSource(ctx, token), nil
+		},
+	}
+	if cached := cachedTokenSource(tokenStore, cfg.ID, cfg.OAuthClientID); cached != nil {
+		handlerCfg.InitialTokenSource = cached
+	}
+	handler, err := auth.NewAuthorizationCodeHandler(handlerCfg)
 	if err != nil {
 		ln.Close()
 		return nil, err
@@ -133,6 +153,49 @@ func newBrowserAuthCodeFetcher(ln net.Listener) auth.AuthorizationCodeFetcher {
 		case <-time.After(5 * time.Minute):
 			return nil, fmt.Errorf("授权等待超时（5 分钟）")
 		}
+	}
+}
+
+// cachedTokenSource rebuilds a token source from the persisted cache:
+// unexpired tokens are used as-is; expired ones with a refresh token and a
+// known token endpoint refresh silently (no browser).
+func cachedTokenSource(store *config.Store, serverID, clientID string) oauth2.TokenSource {
+	if store == nil {
+		return nil
+	}
+	cfgSnapshot := store.Get()
+	cached, ok := cfgSnapshot.MCPTokens[serverID]
+	if !ok || cached.AccessToken == "" {
+		return nil
+	}
+	if cached.TokenURL == "" || cached.RefreshToken == "" {
+		// Only usable while it has not expired.
+		tok := oauth2TokenFromCached(cached)
+		if tok.Valid() {
+			return oauth2.StaticTokenSource(tok)
+		}
+		return nil
+	}
+	oc := &oauth2.Config{ClientID: clientID, Endpoint: oauth2.Endpoint{TokenURL: cached.TokenURL}}
+	return oc.TokenSource(context.Background(), oauth2TokenFromCached(cached))
+}
+
+func oauth2TokenFromCached(c config.MCPOAuthToken) *oauth2.Token {
+	return &oauth2.Token{
+		AccessToken:  c.AccessToken,
+		RefreshToken: c.RefreshToken,
+		TokenType:    c.TokenType,
+		Expiry:       c.Expiry,
+	}
+}
+
+func MCPOAuthTokenFromOauth2(t *oauth2.Token, tokenURL string) config.MCPOAuthToken {
+	return config.MCPOAuthToken{
+		AccessToken:  t.AccessToken,
+		RefreshToken: t.RefreshToken,
+		TokenType:    t.TokenType,
+		Expiry:       t.Expiry,
+		TokenURL:     tokenURL,
 	}
 }
 

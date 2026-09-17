@@ -37,9 +37,10 @@ type ServerStatus struct {
 
 // Manager owns MCP toolsets keyed by server config ID.
 type Manager struct {
-	mu       sync.Mutex
-	toolsets map[string]tool.Toolset
-	states   map[string]*ServerStatus
+	mu         sync.Mutex
+	toolsets   map[string]tool.Toolset
+	states     map[string]*ServerStatus
+	tokenStore *config.Store // optional: persists OAuth tokens across restarts
 }
 
 // New creates an empty manager.
@@ -50,7 +51,17 @@ func New() *Manager {
 	}
 }
 
-func buildTransport(cfg config.MCPServerConfig) (mcp.Transport, error) {
+// SetTokenStore enables OAuth token persistence (config-backed). Without it
+// tokens live only for the process lifetime and consent re-runs per launch.
+func (m *Manager) SetTokenStore(store *config.Store) {
+	m.tokenStore = store
+}
+
+func (m *Manager) buildTransportFor(cfg config.MCPServerConfig) (mcp.Transport, error) {
+	return buildTransport(cfg, m.tokenStore)
+}
+
+func buildTransport(cfg config.MCPServerConfig, tokenStore *config.Store) (mcp.Transport, error) {
 	switch cfg.Transport {
 	case config.MCPStreamableHTTP:
 		if cfg.URL == "" {
@@ -58,7 +69,7 @@ func buildTransport(cfg config.MCPServerConfig) (mcp.Transport, error) {
 		}
 		switch cfg.AuthType {
 		case "oauth2":
-			return newOAuthTransport(cfg)
+			return newOAuthTransport(cfg, tokenStore)
 		case "bearer", "api-key":
 			return &mcp.StreamableClientTransport{Endpoint: cfg.URL, HTTPClient: authHTTPClient(cfg)}, nil
 		}
@@ -94,7 +105,7 @@ func (m *Manager) Toolset(cfg config.MCPServerConfig) (tool.Toolset, error) {
 	}
 	m.mu.Unlock()
 
-	tr, err := buildTransport(cfg)
+	tr, err := m.buildTransportFor(cfg)
 	if err != nil {
 		return nil, err
 	}

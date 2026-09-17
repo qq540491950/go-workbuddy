@@ -86,7 +86,7 @@ func TestConfigBackupRoundTrip(t *testing.T) {
 }
 
 func TestConfigBackupMasked(t *testing.T) {
-	app, _, workspace := newBackupTestService(t)
+	app, store, workspace := newBackupTestService(t)
 
 	path, err := app.ExportConfig(false)
 	if err != nil {
@@ -98,6 +98,24 @@ func TestConfigBackupMasked(t *testing.T) {
 	}
 	if strings.Contains(string(data), "sk-secret-123") {
 		t.Fatal("masked export leaked the API key")
+	}
+	// OAuth token cache must never be exported (secrets, machine-local).
+	err = store.Update(func(cfg *config.Config) {
+		cfg.MCPTokens = map[string]config.MCPOAuthToken{"m1": {AccessToken: "at-secret", TokenURL: "https://x/token"}}
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	path2, err := app.ExportConfig(true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	data2, err := os.ReadFile(path2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(data2), "at-secret") {
+		t.Fatal("export leaked the MCP OAuth token cache")
 	}
 	// The key file must not be group/other readable since it may hold secrets.
 	if filepath.Dir(path) != filepath.Join(workspace, "exports") {

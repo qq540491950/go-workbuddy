@@ -160,6 +160,17 @@ type MCPServerConfig struct {
 	OAuthRedirectPort int    `json:"oauthRedirectPort,omitempty"` // 0 => ephemeral port
 }
 
+// MCPOAuthToken is a cached OAuth token for an MCP server. TokenURL enables
+// silent refresh across app restarts (no re-consent while the refresh token
+// stays valid).
+type MCPOAuthToken struct {
+	AccessToken  string    `json:"accessToken"`
+	RefreshToken string    `json:"refreshToken,omitempty"`
+	TokenType    string    `json:"tokenType,omitempty"`
+	Expiry       time.Time `json:"expiry,omitempty"`
+	TokenURL     string    `json:"tokenUrl,omitempty"`
+}
+
 // Settings holds global application settings.
 type Settings struct {
 	WorkspaceDir string `json:"workspaceDir"`
@@ -196,6 +207,9 @@ type Config struct {
 	Agents       []AgentConfig       `json:"agents"`
 	RemoteAgents []RemoteAgentConfig `json:"remoteAgents,omitempty"`
 	Teams        []TeamConfig        `json:"teams"`
+	// MCPTokens caches OAuth tokens for streamable-http MCP servers
+	// (server ID -> token). Secrets live in this 0600 file only.
+	MCPTokens map[string]MCPOAuthToken `json:"mcpTokens,omitempty"`
 	Skills       []SkillConfig       `json:"skills"`
 	MCPServers   []MCPServerConfig   `json:"mcpServers"`
 	Sessions     []ChatSession       `json:"sessions"`

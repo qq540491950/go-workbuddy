@@ -10,6 +10,7 @@ export type {
     AgentConfig,
     ChatSession,
     Config,
+    MCPOAuthToken,
     MCPServerConfig,
     ModelInfo,
     ModelProvider,

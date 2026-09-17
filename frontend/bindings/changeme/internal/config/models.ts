@@ -82,9 +82,28 @@ export interface Config {
     "agents": AgentConfig[] | null;
     "remoteAgents"?: RemoteAgentConfig[] | null;
     "teams": TeamConfig[] | null;
+
+    /**
+     * MCPTokens caches OAuth tokens for streamable-http MCP servers
+     * (server ID -> token). Secrets live in this 0600 file only.
+     */
+    "mcpTokens"?: { [_ in string]?: MCPOAuthToken } | null;
     "skills": SkillConfig[] | null;
     "mcpServers": MCPServerConfig[] | null;
     "sessions": ChatSession[] | null;
+}
+
+/**
+ * MCPOAuthToken is a cached OAuth token for an MCP server. TokenURL enables
+ * silent refresh across app restarts (no re-consent while the refresh token
+ * stays valid).
+ */
+export interface MCPOAuthToken {
+    "accessToken": string;
+    "refreshToken"?: string;
+    "tokenType"?: string;
+    "expiry"?: string;
+    "tokenUrl"?: string;
 }
 
 /**

@@ -176,7 +176,7 @@ func TestMCPAuthBearer(t *testing.T) {
 		ID: "m1", Name: " secured", Transport: config.MCPStreamableHTTP,
 		URL: srv.URL + "/mcp", AuthType: "bearer", AuthToken: testAccessToken,
 	}
-	tr, err := buildTransport(cfg)
+	tr, err := buildTransport(cfg, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -192,7 +192,7 @@ func TestMCPAuthAPIKey(t *testing.T) {
 		ID: "m2", Name: "secured", Transport: config.MCPStreamableHTTP,
 		URL: srv.URL + "/mcp", AuthType: "api-key", AuthToken: testAPIKey, AuthHeader: "X-API-Key",
 	}
-	tr, err := buildTransport(cfg)
+	tr, err := buildTransport(cfg, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -213,7 +213,7 @@ func TestMCPAuthOAuth2Flow(t *testing.T) {
 		URL: resource.URL + "/mcp", AuthType: "oauth2",
 		OAuthClientID: "workbuddy-desktop",
 	}
-	tr, err := buildTransport(cfg)
+	tr, err := buildTransport(cfg, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -233,7 +233,7 @@ func TestMCPAuthUnauthenticatedRejected(t *testing.T) {
 		ID: "m4", Name: "noauth", Transport: config.MCPStreamableHTTP,
 		URL: srv.URL + "/mcp", // no AuthType
 	}
-	tr, err := buildTransport(cfg)
+	tr, err := buildTransport(cfg, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -247,5 +247,50 @@ func TestMCPAuthUnauthenticatedRejected(t *testing.T) {
 	}
 	if err == nil || !strings.Contains(err.Error(), "Unauthorized") {
 		t.Fatalf("expected unauthorized failure without credentials, got %v", err)
+	}
+}
+
+// TestMCPAuthTokenPersistence runs the OAuth flow once with a config-backed
+// token store, then simulates an app restart: a fresh transport seeded from
+// the cache must connect WITHOUT opening the browser.
+func TestMCPAuthTokenPersistence(t *testing.T) {
+	as := newFakeAuthorizationServer(t)
+	resource := newProtectedMCPServer(t, "oauth2", as.URL)
+	dir := t.TempDir()
+	store, err := config.Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg := config.MCPServerConfig{
+		ID: "m5", Name: "secured", Transport: config.MCPStreamableHTTP,
+		URL: resource.URL + "/mcp", AuthType: "oauth2",
+		OAuthClientID: "workbuddy-desktop",
+	}
+
+	// First run: full consent flow; the browser simulator is required.
+	defer func() { URLOpener = defaultURLOpener }()
+	URLOpener = browserSimulator()
+	tr1, err := buildTransport(cfg, store)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if names := listToolsThrough(t, tr1); len(names) != 1 {
+		t.Fatalf("first flow tools: %v", names)
+	}
+	snap := store.Get()
+	cached, ok := snap.MCPTokens[cfg.ID]
+	if !ok || cached.AccessToken != testAccessToken || cached.TokenURL == "" {
+		t.Fatalf("token not persisted: %+v (store has %+v)", cached, snap.MCPTokens)
+	}
+
+	// "Restart": fresh transport from the same store. The browser must NOT
+	// be opened (opening fails the test).
+	URLOpener = func(string) error { return fmt.Errorf("browser must not open for cached token") }
+	tr2, err := buildTransport(cfg, store)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if names := listToolsThrough(t, tr2); len(names) != 1 || names[0] != "ping" {
+		t.Fatalf("restart flow tools: %v", names)
 	}
 }

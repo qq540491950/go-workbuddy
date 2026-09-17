@@ -136,6 +136,16 @@ go vet ./internal/... .
 
 测试：上限触发（第 3 次调用被拦 + done 收尾）、超时中止（1s 上限 vs 3s 挂起模型）、零值保持旧行为 ×3 + 全量 `-race` + 打包构建零错误。
 
+### 第二十一轮迭代：MCP OAuth 令牌持久化（已实施）
+
+第十八轮 OAuth 的补全——**重启后免重复授权**：
+
+- **令牌缓存**：`Config.MCPTokens`（config.json 0600）按服务器缓存访问/刷新令牌与 token endpoint；OAuth handler 通过官方 `NewTokenSource`/`InitialTokenSource` 钩子读写缓存
+- **静默刷新**：缓存含刷新令牌 + token endpoint 时，过期令牌自动静默刷新（无需浏览器）；浏览器授权仅在首次或刷新令牌彻底失效时触发
+- **导出安全**：令牌缓存永不导出（含密钥导出也不含——属机器本地秘密，丢失可重新授权恢复）
+
+测试：重启模拟 e2e（首次完整授权 → 断言缓存写入含 TokenURL → 新 transport 免浏览器直连成功，浏览器被调用即测试失败）+ 脱敏导出零泄漏扩展 + 全量 `-race`。
+
 ### 第十八轮迭代：MCP 远程服务器认证（Bearer / API Key / OAuth 2.1，已实施）
 
 路线图「MCP OAuth」落地，依据 MCP 官方授权规范与 go-sdk v1.7 官方 `auth.AuthorizationCodeHandler`（授权码 + PKCE）：

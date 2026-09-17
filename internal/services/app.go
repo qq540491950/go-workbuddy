@@ -54,6 +54,8 @@ type configBackup struct {
 func (a *AppService) ExportConfig(includeSecrets bool) (string, error) {
 	cfg := a.S.Store.Get()
 	cfg.Sessions = nil
+	// OAuth tokens are secrets AND machine-local: never exported.
+	cfg.MCPTokens = nil
 	if !includeSecrets {
 		for i := range cfg.Providers {
 			cfg.Providers[i].APIKey = ""
