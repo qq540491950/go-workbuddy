@@ -534,7 +534,14 @@ func (c *ChatService) ExportSession(sessionID string) (string, error) {
 
 	var sb strings.Builder
 	fmt.Fprintf(&sb, "# %s\n\n", meta.Title)
-	fmt.Fprintf(&sb, "- 对象: %s %s\n", map[bool]string{true: "团队", false: "Agent"}[meta.TargetType == "team"], nameOf(meta.TargetType, meta.TargetID))
+	kind := "Agent"
+	switch meta.TargetType {
+	case "team":
+		kind = "团队"
+	case "remote":
+		kind = "远程 Agent"
+	}
+	fmt.Fprintf(&sb, "- 对象: %s %s\n", kind, nameOf(meta.TargetType, meta.TargetID))
 	fmt.Fprintf(&sb, "- 创建时间: %s\n", meta.CreatedAt.Format("2006-01-02 15:04"))
 	if st, err := c.SessionStats(sessionID); err == nil {
 		fmt.Fprintf(&sb, "- 统计: %d 条用户消息 · %d 轮回复 · %d 次工具调用 · %d tokens\n",
@@ -793,7 +800,9 @@ func (c *ChatService) runTurn(target *config.ChatSession, guardOn bool, msg *gen
 
 	emit := func(ev ChatStreamEvent) { c.emitChat(sessionID, ev) }
 
-	if budgetExceeded {
+	if budgetExceeded && titleFromText != "" {
+		// Refuse new user turns only; pending HITL confirm resumes must still
+		// run so an in-flight tool round-trip can finish.
 		emit(ChatStreamEvent{Kind: "error", Text: fmt.Sprintf("会话 token 预算已满（%d），本轮未执行。", maxSessionTokens)})
 		emit(ChatStreamEvent{Kind: "done"})
 		return nil
@@ -884,8 +893,6 @@ func (c *ChatService) runTurn(target *config.ChatSession, guardOn bool, msg *gen
 			case p.FunctionResponse != nil:
 				c.audit(sessionID, "result", ev.Author, p.FunctionResponse.Name,
 					mustJSON(p.FunctionResponse.Response), resultErrorOf(p.FunctionResponse.Response))
-				emit(ChatStreamEvent{Kind: "tool_result", Author: ev.Author,
-					ToolName: p.FunctionResponse.Name, ToolResp: p.FunctionResponse.Response})
 				emit(ChatStreamEvent{Kind: "tool_result", Author: ev.Author,
 					ToolName: p.FunctionResponse.Name, ToolResp: p.FunctionResponse.Response})
 			case p.Text != "" && !p.Thought:

@@ -60,7 +60,7 @@ frontend/stub/               # 浏览器视觉回归：setTransport 数据桩 + 
 - 测试与被测代码同包同目录（`*_test.go`），e2e 用 `httptest` 假服务器（fake SSE 模型 / 假授权服务器 / 内存 A2A 服务端），不依赖外部网络。
 - UI 文案为中文；错误经 `errText()` 透传到 toast。
 - 每轮功能迭代在 README.md「视觉测试与体验设计」章节**顶部**追加「### 第 N 轮迭代：<主题>（已实施）」记录（含依据、实现要点、测试证据）。
-- 提交信息格式：`feat(scope): 主题 — 要点`，正文列出实现与测试清单。
+- 提交信息采用约定式前缀（feat / fix / docs / test / chore / refactor）+ scope，如 `feat(chat): 主题 — 要点`；正文列出实现与测试清单。
 
 ## 已知边界
 

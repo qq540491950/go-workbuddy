@@ -111,7 +111,6 @@ func semanticSearch(opts SearchOptions, query string) (string, error) {
 	}
 	var hits []chunkScore
 	keywords := strings.Fields(strings.ToLower(query))
-	seenFiles := map[string]bool{}
 	for _, r := range rows {
 		vec := decodeVector(r.Embedding, r.Dim)
 		if len(vec) == 0 {
@@ -119,16 +118,11 @@ func semanticSearch(opts SearchOptions, query string) (string, error) {
 		}
 		hits = append(hits, chunkScore{row: r, cos: cosine(qvec, vec), kw: keywordScore(r.Content, keywords)})
 	}
-	// Workspace-relative references for artifact previews (deduped, ranked
-	// order applied after sorting below via re-scan).
-	for _, h := range hits {
-		seenFiles[h.row.File] = true
-	}
 	if len(hits) == 0 {
 		return "知识库为空：请将 Markdown/文本文件放入工作区 knowledge/ 目录。", nil
 	}
 	for i := range hits {
-		hits[i].kw = minFloat(hits[i].kw, 10) / 10
+		hits[i].kw = min(hits[i].kw, 10) / 10
 	}
 	// Relevance floor: drop chunks with no meaningful signal so unrelated
 	// files never surface just because the corpus is small.
@@ -137,7 +131,7 @@ func semanticSearch(opts SearchOptions, query string) (string, error) {
 		return "知识库中没有找到与查询相关的内容。", nil
 	}
 	sort.Slice(hits, func(i, j int) bool {
-		return semanticWeight*hits[i].cos+0.25*hits[i].kw > semanticWeight*hits[j].cos+0.25*hits[j].kw
+		return blendScore(hits[i]) > blendScore(hits[j])
 	})
 	if len(hits) > knowledgeMaxResults {
 		hits = hits[:knowledgeMaxResults]
@@ -145,7 +139,7 @@ func semanticSearch(opts SearchOptions, query string) (string, error) {
 	var sb strings.Builder
 	filesSet := map[string]bool{}
 	for _, h := range hits {
-		fmt.Fprintf(&sb, "### %s（语义相关度 %d%%）\n", h.row.File, int(math.Round(maxFloat(h.cos, 0)*100)))
+		fmt.Fprintf(&sb, "### %s（语义相关度 %d%%）\n", h.row.File, int(math.Round(max(h.cos, 0)*100)))
 		sb.WriteString(snippetOf(h.row.Content, knowledgeSnippet))
 		sb.WriteString("\n\n")
 		filesSet[h.row.File] = true
@@ -450,12 +444,15 @@ type chunkScore struct {
 	kw  float64
 }
 
+// blendScore mixes semantic and keyword signals into one ranking score.
+func blendScore(h chunkScore) float64 { return semanticWeight*h.cos + 0.25*h.kw }
+
 // filterByScore keeps chunks whose blended semantic+keyword score clears a
 // small relevance floor.
 func filterByScore(hits []chunkScore) []chunkScore {
 	out := hits[:0]
 	for _, h := range hits {
-		if semanticWeight*h.cos+0.25*h.kw >= 0.05 {
+		if blendScore(h) >= 0.05 {
 			out = append(out, h)
 		}
 	}
@@ -487,16 +484,3 @@ func minInt(a, b int) int {
 	return b
 }
 
-func minFloat(a, b float64) float64 {
-	if a < b {
-		return a
-	}
-	return b
-}
-
-func maxFloat(a, b float64) float64 {
-	if a > b {
-		return a
-	}
-	return b
-}

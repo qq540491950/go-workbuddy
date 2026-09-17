@@ -17,7 +17,7 @@ import (
 // picked up without restarting the app.
 func BuildRemoteAgent(rc config.RemoteAgentConfig) (agent.Agent, error) {
 	if rc.CardURL == "" {
-		return nil, fmt.Errorf("remote agent %q: card url is required", rc.Name)
+		return nil, fmt.Errorf("远程 Agent %q 缺少 Card URL", rc.Name)
 	}
 	return remoteagentv2.NewA2A(remoteagentv2.A2AConfig{
 		Name:              sanitizeAgentName(rc.Name),

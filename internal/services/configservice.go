@@ -279,18 +279,16 @@ func (c *ConfigService) ImportSkillsFromWorkspace() (int, error) {
 		if name == "" {
 			continue
 		}
-		id, added := c.addSkillIfNew(name, desc, body)
-		if added {
+		if c.addSkillIfNew(name, desc, body) {
 			imported++
-			_ = id
 		}
 	}
 	return imported, nil
 }
 
-// addSkillIfNew inserts a skill unless an identical normalized name exists.
-func (c *ConfigService) addSkillIfNew(name, desc, body string) (string, bool) {
-	var id string
+// addSkillIfNew inserts a skill unless an identical normalized name exists;
+// reports whether it was added.
+func (c *ConfigService) addSkillIfNew(name, desc, body string) bool {
 	added := false
 	_ = c.S.Store.Update(func(cfg *config.Config) {
 		key := strings.ToLower(strings.Join(strings.Fields(name), "-"))
@@ -299,11 +297,12 @@ func (c *ConfigService) addSkillIfNew(name, desc, body string) (string, bool) {
 				return
 			}
 		}
-		s := config.SkillConfig{ID: newID("skill_"), Name: name, Description: desc, Content: body, CreatedAt: nowUTC()}
-		cfg.Skills = append(cfg.Skills, s)
-		id, added = s.ID, true
+		cfg.Skills = append(cfg.Skills, config.SkillConfig{
+			ID: newID("skill_"), Name: name, Description: desc, Content: body, CreatedAt: nowUTC(),
+		})
+		added = true
 	})
-	return id, added
+	return added
 }
 
 // parseSKILLMarkdown extracts name/description from YAML frontmatter and
@@ -423,10 +422,10 @@ func (c *ConfigService) KnowledgeIndexStats() agentkit.KnowledgeIndexStats {
 // SaveRemoteAgent inserts or updates a remote A2A agent.
 func (c *ConfigService) SaveRemoteAgent(r config.RemoteAgentConfig) error {
 	if r.Name == "" {
-		return fmt.Errorf("remote agent name is required")
+		return fmt.Errorf("远程 Agent 名称不能为空")
 	}
 	if r.CardURL == "" {
-		return fmt.Errorf("card url is required")
+		return fmt.Errorf("Card URL 不能为空")
 	}
 	if r.ID == "" {
 		r.ID = newID("ra_")
