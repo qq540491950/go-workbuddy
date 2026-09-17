@@ -530,7 +530,12 @@ func (c *ChatService) ExportSession(sessionID string) (string, error) {
 	var sb strings.Builder
 	fmt.Fprintf(&sb, "# %s\n\n", meta.Title)
 	fmt.Fprintf(&sb, "- 对象: %s %s\n", map[bool]string{true: "团队", false: "Agent"}[meta.TargetType == "team"], nameOf(meta.TargetType, meta.TargetID))
-	fmt.Fprintf(&sb, "- 创建时间: %s\n\n---\n\n", meta.CreatedAt.Format("2006-01-02 15:04"))
+	fmt.Fprintf(&sb, "- 创建时间: %s\n", meta.CreatedAt.Format("2006-01-02 15:04"))
+	if st, err := c.SessionStats(sessionID); err == nil {
+		fmt.Fprintf(&sb, "- 统计: %d 条用户消息 · %d 轮回复 · %d 次工具调用 · %d tokens\n",
+			st.Messages, st.AssistantTurns, st.ToolCalls, st.TokensTotal)
+	}
+	fmt.Fprintf(&sb, "\n---\n\n")
 	for _, m := range msgs {
 		switch m.Kind {
 		case "user":
