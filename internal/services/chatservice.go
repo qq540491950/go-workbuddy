@@ -1321,17 +1321,27 @@ func (c *ChatService) SessionStats(sessionID string) (*SessionStats, error) {
 	return st, nil
 }
 
-// audit appends one JSONL line for the tool audit trail. Failures are
-// silently ignored: auditing must never break the conversation.
+// auditMaxBytes caps the audit file before rotation (10MB).
+const auditMaxBytes = 10 << 20
+
+// audit appends one JSONL line for the tool audit trail. At auditMaxBytes the
+// file rotates to <path>.old. Failures are silently ignored: auditing must
+// never break the conversation.
 func (c *ChatService) audit(sessionID, phase, author, tool string, payload []byte, errMsg string) {
 	if c.auditPath == "" || !c.S.Store.Get().Settings.ToolsAudit {
 		return
+	}
+	if st, err := os.Stat(c.auditPath); err == nil && st.Size() >= auditMaxBytes {
+		_ = os.Rename(c.auditPath, c.auditPath+".old")
 	}
 	rec, _ := json.Marshal(map[string]any{
 		"ts": nowUTC(), "sessionId": sessionID, "phase": phase,
 		"author": author, "tool": tool, "error": errMsg,
 		"payload": json.RawMessage(payload),
 	})
+	if st, err := os.Stat(c.auditPath); err == nil && st.Size()+int64(len(rec))+1 >= auditMaxBytes {
+		_ = os.Rename(c.auditPath, c.auditPath+".old")
+	}
 	f, err := os.OpenFile(c.auditPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o640)
 	if err != nil {
 		return

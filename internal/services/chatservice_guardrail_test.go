@@ -344,3 +344,43 @@ func TestSearchSessionsMatchesContent(t *testing.T) {
 		t.Fatalf("non-matching query should return none: %+v", none)
 	}
 }
+
+// TestToolAuditRotation: when the audit file reaches the cap it rotates to
+// <path>.old and new records continue in a fresh file.
+func TestToolAuditRotation(t *testing.T) {
+	auditPath := filepath.Join(t.TempDir(), "audit.jsonl")
+	turn := 0
+	chat, _, _ := newGuardrailTestChat(t, 0, 0, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		turn++
+		if turn == 1 {
+			_, _ = w.Write([]byte(sseToolCall("c1", "get_current_time", `"{}"`) + sseDone))
+			return
+		}
+		_, _ = w.Write([]byte(sseText("完成") + sseDone))
+	})
+	chat.SetToolAuditPath(auditPath)
+	if err := chat.S.Store.Update(func(cfg *config.Config) { cfg.Settings.ToolsAudit = true }); err != nil {
+		t.Fatal(err)
+	}
+	// Pre-fill the audit file so the next record crosses the cap.
+	if err := os.WriteFile(auditPath, []byte(strings.Repeat("x", auditMaxBytes-2)), 0o640); err != nil {
+		t.Fatal(err)
+	}
+
+	sess, err := chat.NewSession("agent", "a1", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := chat.Send(sess.ID, "触发轮转", nil); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := os.Stat(auditPath + ".old"); err != nil {
+		t.Fatalf("rotation did not produce .old file: %v", err)
+	}
+	fresh, err := os.ReadFile(auditPath)
+	if err != nil || len(fresh) == 0 || len(fresh) >= auditMaxBytes {
+		t.Fatalf("fresh audit file wrong: len=%d err=%v", len(fresh), err)
+	}
+}
