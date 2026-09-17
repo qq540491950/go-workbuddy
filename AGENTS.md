@@ -22,6 +22,7 @@ cd frontend && npm run stub                # 浏览器视觉回归桩（端口 9
 注意：`wails3 build` 的绑定生成带 `-clean=true`，会**重建**绑定文件 —— 手工改绑定会被覆盖。改 Go 服务后直接跑再生成即可（前端 import 用生成产物）。
 
 - **`wails3 generate bindings` 必须在仓库根目录执行**：在子目录（如 frontend/）执行会扫描到 Go 标准库与依赖包，生成 `bindings/time/`、`bindings/gorm.io/`、`bindings/context/` 等垃圾目录（可删除；正确产物为 `bindings/changeme/` 与 `bindings/github.com/`——后者含 wails-typed-events 插件必需的 eventcreate/eventdata，勿删）。
+- **依赖包绑定产物不入库**：`.gitignore` 已排除 `bindings/{context,database,gorm.io,reflect,strings,sync,time,google.golang.org}`——每次 `wails3 build` 自动重建，git status 不会显示。
 
 ## 目录地图
 
