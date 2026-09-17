@@ -13,7 +13,7 @@ import {
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 import { ACCENTS, FONT_SCALES, applyTheme, cacheTheme, type ThemePrefs } from "@/lib/theme";
-import { App, A2A, Config, type AgentConfig, type A2AStatus, type KnowledgeFile, type KnowledgeIndexStats, type ModelProvider, type StorageInfo, type Settings, errText, Protocol } from "@/lib/api";
+import { App, A2A, Config, type AgentConfig, type A2AStatus, type KnowledgeFile, type KnowledgeIndexStats, type ModelProvider, type Settings, type StorageInfo, errText, Protocol } from "@/lib/api";
 
 export function SettingsPage() {
   const [settings, setSettings] = useState<Settings | null>(null);
@@ -24,7 +24,7 @@ export function SettingsPage() {
   const [logOpen, setLogOpen] = useState(false);
   const [logText, setLogText] = useState("");
   const [storage, setStorage] = useState<StorageInfo | null>(null);
-  const [a2aStatus, setA2AStatus] = useState<A2AStatus | null>(null);
+  const [a2aStatuses, setA2AStatuses] = useState<A2AStatus[]>([]);
   const [a2aAgent, setA2AAgent] = useState("");
   const [a2aPort, setA2APort] = useState("8080");
   const [indexStats, setIndexStats] = useState<KnowledgeIndexStats | null>(null);
@@ -43,7 +43,7 @@ export function SettingsPage() {
   }, []);
   useEffect(reload, [reload]);
   useEffect(() => {
-    A2A.Status().then(setA2AStatus).catch(() => {});
+    A2A.Status().then((sts) => setA2AStatuses(sts ?? [])).catch(() => {});
     Config.KnowledgeIndexStats().then(setIndexStats).catch(() => {});
     Config.ListKnowledgeFiles().then((fs) => setKbFiles(fs ?? [])).catch(() => {});
     App.StorageStats().then(setStorage).catch(() => {});
@@ -480,42 +480,43 @@ export function SettingsPage() {
               </div>
             </div>
             <div className="flex items-center gap-2">
-              {!a2aStatus?.running ? (
-                <Button
-                  onClick={async () => {
-                    if (!a2aAgent) { toast.error("请选择要发布的 Agent"); return; }
-                    try {
-                      setA2AStatus(await A2A.Start(a2aAgent, Number(a2aPort) || 0));
-                      toast.success("A2A 服务已启动");
-                    } catch (e) {
-                      toast.error(`启动失败: ${errText(e)}`);
-                    }
-                  }}
-                >
-                  启动服务
-                </Button>
-              ) : (
-                <Button
-                  variant="outline"
-                  onClick={async () => {
-                    try {
-                      await A2A.Stop();
-                      setA2AStatus(await A2A.Status());
-                      toast.success("A2A 服务已停止");
-                    } catch (e) {
-                      toast.error(`停止失败: ${errText(e)}`);
-                    }
-                  }}
-                >
-                  停止服务
-                </Button>
-              )}
-              {a2aStatus?.running && (
-                <span className="text-xs text-muted-foreground">
-                  运行中：<span className="font-mono">{a2aStatus.url}</span> · 发布 {a2aStatus.agentName}
-                </span>
-              )}
+              <Button
+                onClick={async () => {
+                  if (!a2aAgent) { toast.error("请选择要发布的 Agent"); return; }
+                  try {
+                    await A2A.Start(a2aAgent, Number(a2aPort) || 0);
+                    setA2AStatuses((await A2A.Status()) ?? []);
+                    toast.success("A2A 服务已启动");
+                  } catch (e) {
+                    toast.error(`启动失败: ${errText(e)}`);
+                  }
+                }}
+              >
+                发布 Agent
+              </Button>
             </div>
+            {(a2aStatuses.length ?? 0) > 0 && (
+              <div className="grid gap-1.5 rounded-lg border p-2.5">
+                {a2aStatuses.map((st) => (
+                  <div key={st.agentId} className="flex items-center justify-between gap-2 text-xs">
+                    <span className="truncate">
+                      <span className="font-medium">{st.agentName}</span>
+                      <span className="ml-1.5 font-mono text-muted-foreground">{st.url}</span>
+                    </span>
+                    <Button variant="ghost" size="sm" className="shrink-0" onClick={async () => {
+                      try {
+                        await A2A.StopAgent(st.agentId ?? "");
+                        setA2AStatuses((await A2A.Status()) ?? []);
+                      } catch (e) {
+                        toast.error(`停止失败: ${errText(e)}`);
+                      }
+                    }}>
+                      停止
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            )}
             <div className="flex items-center justify-between rounded-lg border p-3">
               <div>
                 <div className="text-sm font-medium">开机自动启动 A2A 服务</div>

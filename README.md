@@ -120,6 +120,14 @@ go vet ./internal/... .
 
 已实施：Markdown + 代码块复制、消息级复制、深浅主题、首次运行引导、会话搜索、快捷键、工具调用折叠面板、流式打字指示器。
 
+### 第五十八轮迭代：A2A 服务多 Agent 并发发布（已实施）
+
+- A2AService 重构为多服务器模型：可同时发布多个本地 Agent（各自独立端口与 Agent Card，`Status` 返回全部运行条目）
+- Start 按 Agent 幂等（重复发布返回现有状态）；`StopAgent` 单独下线某个 Agent；`StopAll` 兜底
+- 设置页 A2A 卡片改为运行列表（逐项停止）；发布按钮常驻，支持多 Agent 同时对外服务
+
+测试：发布/幂等/停止清空 e2e 更新 + 全量 `-race` + 打包零错误。
+
 ### 第五十七轮迭代：输入框斜杠命令（已实施）
 
 - 输入框支持本地斜杠命令：`/export`（导出 Markdown）、`/exporthtml`（导出 HTML）、`/stats`（会话统计）、`/new`（新建对话）

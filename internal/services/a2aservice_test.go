@@ -51,8 +51,8 @@ func TestA2AServiceLoopback(t *testing.T) {
 	svc := &Services{Store: store, Kit: agentkit.NewKit(store, mcpmgr.New()), MCP: mcpmgr.New()}
 	a2a := NewA2AService(svc, sessions)
 
-	if st := a2a.Status(); st.Running {
-		t.Fatalf("must start stopped: %+v", st)
+	if sts := a2a.Status(); len(sts) != 0 {
+		t.Fatalf("must start with no published agents: %+v", sts)
 	}
 
 	st, err := a2a.Start("a1", 0) // port 0: pick a free port
@@ -113,16 +113,16 @@ func TestA2AServiceLoopback(t *testing.T) {
 		t.Fatalf("loopback answer missing: %+v", msgs)
 	}
 
-	// Starting twice is idempotent.
+	// Starting twice is idempotent for the same agent.
 	if st2, err := a2a.Start("a1", 0); err != nil || !st2.Running || st2.URL != st.URL {
 		t.Fatalf("double start should keep existing server: %+v err=%v", st2, err)
 	}
 
-	// Stop must clear status.
-	if err := a2a.Stop(); err != nil {
+	// StopAgent clears only that agent's entry.
+	if err := a2a.StopAgent("a1"); err != nil {
 		t.Fatal(err)
 	}
-	if st := a2a.Status(); st.Running {
-		t.Fatalf("still running after Stop: %+v", st)
+	if sts := a2a.Status(); len(sts) != 0 {
+		t.Fatalf("still published after StopAgent: %+v", sts)
 	}
 }

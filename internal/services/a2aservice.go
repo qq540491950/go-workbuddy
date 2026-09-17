@@ -25,11 +25,16 @@ type A2AService struct {
 	S        *Services
 	Sessions session.Service
 
-	mu       sync.Mutex
+	mu      sync.Mutex
+	servers map[string]*a2aServer // agentID -> running server
+}
+
+type a2aServer struct {
 	srv      *http.Server
 	listener net.Listener
 	agentID  string
 	cardName string
+	url      string
 }
 
 // NewA2AService creates the service. sessions backs the server-side stores of
@@ -38,7 +43,7 @@ func NewA2AService(s *Services, sessions session.Service) *A2AService {
 	return &A2AService{S: s, Sessions: sessions}
 }
 
-// A2AStatus describes the current server state for the UI.
+// A2AStatus describes one running published agent.
 type A2AStatus struct {
 	Running   bool   `json:"running"`
 	URL       string `json:"url,omitempty"`
@@ -47,12 +52,16 @@ type A2AStatus struct {
 }
 
 // Start publishes the given local agent over A2A on the requested port
-// (0 = pick a free one) and returns the status with the advertised card URL.
+// (0 = pick a free one). Idempotent per agent: republishing a running agent
+// returns its existing status. Multiple agents may be published at once.
 func (a *A2AService) Start(agentID string, port int) (A2AStatus, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	if a.srv != nil {
-		return a.currentStatus(), nil
+	if a.servers == nil {
+		a.servers = map[string]*a2aServer{}
+	}
+	if existing, ok := a.servers[agentID]; ok {
+		return A2AStatus{Running: true, URL: existing.url, AgentID: agentID, AgentName: existing.cardName}, nil
 	}
 	cfg := a.S.Store.Get()
 	var agentCfg *config.AgentConfig
@@ -103,45 +112,51 @@ func (a *A2AService) Start(agentID string, port int) (A2AStatus, error) {
 	go func() {
 		_ = srv.Serve(ln)
 	}()
-	a.srv = srv
-	a.listener = ln
-	a.agentID = agentID
-	a.cardName = name
-	return a.currentStatus(), nil
+	entry := &a2aServer{
+		srv: srv, listener: ln, agentID: agentID,
+		cardName: name, url: "http://" + ln.Addr().String(),
+	}
+	a.servers[agentID] = entry
+	return A2AStatus{Running: true, URL: entry.url, AgentID: agentID, AgentName: name}, nil
 }
 
-// Stop shuts the A2A server down.
-func (a *A2AService) Stop() error {
+// StopAgent shuts down one published agent's server.
+func (a *A2AService) StopAgent(agentID string) error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	if a.srv == nil {
+	entry, ok := a.servers[agentID]
+	if !ok {
 		return nil
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
-	err := a.srv.Shutdown(ctx)
-	a.srv = nil
-	a.listener = nil
-	a.agentID = ""
-	a.cardName = ""
+	err := entry.srv.Shutdown(ctx)
+	delete(a.servers, agentID)
 	return err
 }
 
-// Status reports whether the server is running.
-func (a *A2AService) Status() A2AStatus {
+// StopAll shuts down every published agent server.
+func (a *A2AService) StopAll() {
 	a.mu.Lock()
-	defer a.mu.Unlock()
-	return a.currentStatus()
+	ids := make([]string, 0, len(a.servers))
+	for id := range a.servers {
+		ids = append(ids, id)
+	}
+	a.mu.Unlock()
+	for _, id := range ids {
+		_ = a.StopAgent(id)
+	}
 }
 
-func (a *A2AService) currentStatus() A2AStatus {
-	if a.srv == nil || a.listener == nil {
-		return A2AStatus{}
+// Status lists all currently published agents.
+func (a *A2AService) Status() []A2AStatus {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	out := make([]A2AStatus, 0, len(a.servers))
+	for _, e := range a.servers {
+		out = append(out, A2AStatus{
+			Running: true, URL: e.url, AgentID: e.agentID, AgentName: e.cardName,
+		})
 	}
-	return A2AStatus{
-		Running:   true,
-		URL:       "http://" + a.listener.Addr().String(),
-		AgentID:   a.agentID,
-		AgentName: a.cardName,
-	}
+	return out
 }
