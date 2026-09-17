@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useState } from "react";
-import { Plus, Trash2, Bot, Network, Loader2 } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Plus, Trash2, Bot, Network, Loader2, FolderDown, Upload } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -17,7 +17,7 @@ import {
 } from "@/components/ui/select";
 import {
   Config, type AgentConfig, type ModelProvider, type SkillConfig, type MCPServerConfig,
-  type RemoteAgentConfig, type RemoteAgentInfo, errText } from "@/lib/api";
+  type RemoteAgentConfig, type RemoteAgentInfo, App, errText } from "@/lib/api";
 
 const agentTemplates: { label: string; make: () => AgentConfig }[] = [
   {
@@ -99,6 +99,7 @@ export function AgentsPage() {
   const [remoteEditing, setRemoteEditing] = useState<RemoteAgentConfig | null>(null);
   const [remoteCheck, setRemoteCheck] = useState<RemoteAgentInfo | null>(null);
   const [checking, setChecking] = useState(false);
+  const agentImportRef = useRef<HTMLInputElement>(null);
 
   const reload = useCallback(() => {
     Config.GetConfig().then((c) => {
@@ -203,6 +204,27 @@ export function AgentsPage() {
               </option>
             ))}
           </select>
+          <Button variant="outline" onClick={() => agentImportRef.current?.click()}>
+            <FolderDown className="mr-1 h-4 w-4" /> 导入 Agent
+          </Button>
+          <input
+            ref={agentImportRef}
+            type="file"
+            accept="application/json,.json"
+            className="hidden"
+            onChange={async (e) => {
+              const f = e.target.files?.[0];
+              e.target.value = "";
+              if (!f) return;
+              try {
+                const imported = await App.ImportAgent(await f.text());
+                toast.success(`已导入 Agent「${imported.name}」`);
+                reload();
+              } catch (err) {
+                toast.error(`导入失败: ${errText(err)}`);
+              }
+            }}
+          />
           <Button onClick={() => setEditing(blankAgent())}>
             <Plus className="mr-1 h-4 w-4" /> 新增 Agent
           </Button>
@@ -235,6 +257,20 @@ export function AgentsPage() {
                     </div>
                   </div>
                   <div className="flex items-center gap-1">
+                    <Button
+                      variant="ghost" size="icon"
+                      title="导出为分享文件"
+                      onClick={async () => {
+                        try {
+                          const p = await App.ExportAgent(a.id);
+                          toast.success(`已导出: ${p}`);
+                        } catch (err) {
+                          toast.error(`导出失败: ${errText(err)}`);
+                        }
+                      }}
+                    >
+                      <Upload className="h-4 w-4 text-muted-foreground" />
+                    </Button>
                     <Button variant="outline" size="sm" onClick={() => setEditing({ ...a, skillIds: a.skillIds ?? [], mcpServerIds: a.mcpServerIds ?? [], builtinTools: a.builtinTools ?? [] })}>
                       编辑
                     </Button>

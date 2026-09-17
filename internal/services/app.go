@@ -38,6 +38,89 @@ const backupSchemaVersion = 1
 // maxBackupBytes caps the import payload (10MB, far above any real config).
 const maxBackupBytes = 10 << 20
 
+// agentShare is the portable per-agent share document. The referenced
+// provider id travels with it so the importer can re-link or flag it.
+type agentShare struct {
+	Version int               `json:"version"`
+	Agent   config.AgentConfig `json:"agent"`
+}
+
+// ExportAgent writes one agent (without secrets of its own — agents carry no
+// keys) as a shareable JSON file into <workspace>/exports/agents and returns
+// the file path.
+func (a *AppService) ExportAgent(agentID string) (string, error) {
+	cfg := a.S.Store.Get()
+	var agent *config.AgentConfig
+	for i := range cfg.Agents {
+		if cfg.Agents[i].ID == agentID {
+			agent = &cfg.Agents[i]
+			break
+		}
+	}
+	if agent == nil {
+		return "", fmt.Errorf("agent %q not found", agentID)
+	}
+	data, err := json.MarshalIndent(agentShare{Version: backupSchemaVersion, Agent: *agent}, "", "  ")
+	if err != nil {
+		return "", err
+	}
+	workspace := cfg.Settings.WorkspaceDir
+	if workspace == "" {
+		workspace = "."
+	}
+	dir := filepath.Join(workspace, "exports", "agents")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return "", err
+	}
+	path := filepath.Join(dir, fmt.Sprintf("%s.agent.json", agent.Name))
+	if err := os.WriteFile(path, data, 0o644); err != nil {
+		return "", err
+	}
+	return path, nil
+}
+
+// ImportAgent adds an agent from a share document with a fresh ID. When an
+// agent with the same name exists, a (2)/(3)… suffix is appended.
+func (a *AppService) ImportAgent(data string) (config.AgentConfig, error) {
+	if len(data) > maxBackupBytes {
+		return config.AgentConfig{}, fmt.Errorf("文件过大")
+	}
+	var share agentShare
+	if err := json.Unmarshal([]byte(data), &share); err != nil {
+		return config.AgentConfig{}, fmt.Errorf("分享文件解析失败: %w", err)
+	}
+	if share.Version > backupSchemaVersion {
+		return config.AgentConfig{}, fmt.Errorf("分享版本 v%d 高于当前支持的 v%d，请先升级应用", share.Version, backupSchemaVersion)
+	}
+	imported := share.Agent
+	imported.ID = ""
+	imported.CreatedAt = time.Time{}
+	if imported.Name == "" {
+		return config.AgentConfig{}, fmt.Errorf("分享文件缺少 Agent 名称")
+	}
+	err := a.S.Store.Update(func(cfg *config.Config) {
+		nameExists := func(name string) bool {
+			for _, ag := range cfg.Agents {
+				if ag.Name == name {
+					return true
+				}
+			}
+			return false
+		}
+		base := imported.Name
+		for n := 2; nameExists(imported.Name); n++ {
+			imported.Name = fmt.Sprintf("%s（%d）", base, n)
+		}
+		imported.ID = newID("agent_")
+		imported.CreatedAt = nowUTC()
+		cfg.Agents = append(cfg.Agents, imported)
+	})
+	if err != nil {
+		return config.AgentConfig{}, err
+	}
+	return imported, nil
+}
+
 // configBackup is the portable backup document. Sessions are intentionally
 // excluded: they live in sessions.db and are never overwritten by an import.
 type configBackup struct {

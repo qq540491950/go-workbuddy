@@ -10,11 +10,24 @@
 // @ts-ignore: Unused imports
 import { Call as $Call, CancellablePromise as $CancellablePromise } from "@wailsio/runtime";
 
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore: Unused imports
+import * as config$0 from "../config/models.js";
+
 /**
  * AppInfo returns static app metadata.
  */
 export function AppInfo(): $CancellablePromise<{ [_ in string]?: string } | null> {
     return $Call.ByID(1810596567);
+}
+
+/**
+ * ExportAgent writes one agent (without secrets of its own — agents carry no
+ * keys) as a shareable JSON file into <workspace>/exports/agents and returns
+ * the file path.
+ */
+export function ExportAgent(agentID: string): $CancellablePromise<string> {
+    return $Call.ByID(2165154587, agentID);
 }
 
 /**
@@ -25,6 +38,14 @@ export function AppInfo(): $CancellablePromise<{ [_ in string]?: string } | null
  */
 export function ExportConfig(includeSecrets: boolean): $CancellablePromise<string> {
     return $Call.ByID(1127465720, includeSecrets);
+}
+
+/**
+ * ImportAgent adds an agent from a share document with a fresh ID. When an
+ * agent with the same name exists, a (2)/(3)… suffix is appended.
+ */
+export function ImportAgent(data: string): $CancellablePromise<config$0.AgentConfig> {
+    return $Call.ByID(806202582, data);
 }
 
 /**

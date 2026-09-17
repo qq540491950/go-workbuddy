@@ -117,6 +117,14 @@ go vet ./internal/... .
 
 已实施：Markdown + 代码块复制、消息级复制、深浅主题、首次运行引导、会话搜索、快捷键、工具调用折叠面板、流式打字指示器。
 
+### 第二十七轮迭代：Agent 单个导出/导入（分享，已实施）
+
+- **导出**：Agent 卡片一键导出为版本化分享文件（`exports/agents/<名称>.agent.json`），不含任何密钥
+- **导入**：顶栏「导入 Agent」读取分享文件，自动分配全新 ID；名称冲突自动加（2）（3）… 后缀；版本校验与解析错误友好提示
+- 供应商引用（providerId）随文件携带，导入后需在模型配置中确认对应供应商存在
+
+测试：导出/导入往返（新 ID、冲突后缀递增、未知 Agent/坏 JSON/版本拒绝）e2e + 全量回归。
+
 ### 第二十六轮迭代：Skills 工作区批量导入（已实施）
 
 - **扫描导入**：Skills 页「从工作区导入」一键扫描 `<工作区>/skills/*/SKILL.md`（agentskills.io 布局），解析 YAML frontmatter 的 name/description；无 frontmatter 时回退一级标题命名
