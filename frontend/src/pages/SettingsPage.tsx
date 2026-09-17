@@ -2,6 +2,9 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
@@ -18,6 +21,8 @@ export function SettingsPage() {
   const [agents, setAgents] = useState<AgentConfig[]>([]);
   const [saving, setSaving] = useState(false);
   const importRef = useRef<HTMLInputElement>(null);
+  const [logOpen, setLogOpen] = useState(false);
+  const [logText, setLogText] = useState("");
   const [a2aStatus, setA2AStatus] = useState<A2AStatus | null>(null);
   const [a2aAgent, setA2AAgent] = useState("");
   const [a2aPort, setA2APort] = useState("8080");
@@ -226,6 +231,39 @@ export function SettingsPage() {
                 {indexStats && indexStats.files > 0 && ` 已索引 ${indexStats.files} 个文件 / ${indexStats.chunks} 个分块${indexStats.model ? `（模型 ${indexStats.model}）` : ""}。`}
               </p>
             </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">诊断</CardTitle>
+          </CardHeader>
+          <CardContent className="grid gap-2">
+            <Button
+              variant="outline"
+              onClick={async () => {
+                try {
+                  const lines = (await App.RecentLogs(200)) ?? [];
+                  setLogText(lines.join("\n"));
+                  setLogOpen(true);
+                } catch (e) {
+                  toast.error(`读取日志失败: ${errText(e)}`);
+                }
+              }}
+            >
+              查看最近日志（200 行）
+            </Button>
+            <Dialog open={logOpen} onOpenChange={setLogOpen}>
+              <DialogContent className="sm:max-w-2xl">
+                <DialogHeader>
+                  <DialogTitle>应用日志（最近 200 行）</DialogTitle>
+                </DialogHeader>
+                <pre className="max-h-[50vh] overflow-auto rounded bg-muted/60 p-3 font-mono text-[11px] leading-relaxed">{logText}</pre>
+              </DialogContent>
+            </Dialog>
+            <p className="text-xs text-muted-foreground">
+              遇到问题时先查看日志（logs/app.log，5MB 自动轮转），反馈问题时可一并附上。
+            </p>
           </CardContent>
         </Card>
 

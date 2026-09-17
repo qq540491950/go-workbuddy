@@ -96,12 +96,14 @@ func main() {
 
 	chatSvc := services.NewChatService(svc, sessions, gormDB)
 	chatSvc.SetToolAuditPath(filepath.Join(cfgDir, "logs", "tools-audit.jsonl"))
+	logSvc := services.NewAppService(svc)
+	logSvc.SetLogPath(filepath.Join(cfgDir, "logs", "app.log"))
 
 	app := application.New(application.Options{
 		Name:        "WorkBuddy Agent",
 		Description: "ADK-powered agent desktop app",
 		Services: []application.Service{
-			application.NewService(services.NewAppService(svc)),
+			application.NewService(logSvc),
 			application.NewService(services.NewConfigService(svc)),
 			application.NewService(services.NewMCPService(svc)),
 			application.NewService(services.NewArtifactService(svc)),

@@ -57,3 +57,18 @@ export function ImportAgent(data: string): $CancellablePromise<config$0.AgentCon
 export function ImportConfig(data: string): $CancellablePromise<void> {
     return $Call.ByID(891138999, data);
 }
+
+/**
+ * RecentLogs returns the last lines of the application log for in-app
+ * diagnostics.
+ */
+export function RecentLogs(tail: number): $CancellablePromise<string[] | null> {
+    return $Call.ByID(2525738928, tail);
+}
+
+/**
+ * SetLogPath points the diagnostics log reader at the app log file.
+ */
+export function SetLogPath(path: string): $CancellablePromise<void> {
+    return $Call.ByID(1981080425, path);
+}

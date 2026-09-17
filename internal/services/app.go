@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"changeme/internal/config"
@@ -14,7 +15,13 @@ import (
 func nowUTC() time.Time { return time.Now().UTC().Truncate(time.Second) }
 
 // AppService exposes generic app info.
-type AppService struct{ S *Services }
+type AppService struct {
+	S       *Services
+	logPath string
+}
+
+// SetLogPath points the diagnostics log reader at the app log file.
+func (a *AppService) SetLogPath(path string) { a.logPath = path }
 
 // NewAppService creates the service.
 func NewAppService(s *Services) *AppService { return &AppService{S: s} }
@@ -37,6 +44,32 @@ const backupSchemaVersion = 1
 
 // maxBackupBytes caps the import payload (10MB, far above any real config).
 const maxBackupBytes = 10 << 20
+
+// maxLogTailLines caps RecentLogs output.
+const maxLogTailLines = 300
+
+// RecentLogs returns the last lines of the application log for in-app
+// diagnostics.
+func (a *AppService) RecentLogs(tail int) ([]string, error) {
+	if a.logPath == "" {
+		return nil, fmt.Errorf("日志路径未配置")
+	}
+	if tail <= 0 || tail > maxLogTailLines {
+		tail = 200
+	}
+	data, err := os.ReadFile(a.logPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return []string{"（日志文件为空或尚未创建）"}, nil
+		}
+		return nil, err
+	}
+	lines := strings.Split(strings.TrimRight(string(data), "\n"), "\n")
+	if len(lines) > tail {
+		lines = lines[len(lines)-tail:]
+	}
+	return lines, nil
+}
 
 // agentShare is the portable per-agent share document. The referenced
 // provider id travels with it so the importer can re-link or flag it.
