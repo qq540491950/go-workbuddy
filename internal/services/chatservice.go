@@ -707,8 +707,18 @@ func (c *ChatService) runTurn(target *config.ChatSession, guardOn bool, msg *gen
 	cfg := c.S.Store.Get()
 	// Per-agent run guardrails (0 = unlimited); teams fall back to unlimited.
 	maxTurnSeconds, maxToolCalls := 0, 0
+	var maxSessionTokens int64
 	if agentCfg := c.targetAgentConfig(cfg, target); agentCfg != nil {
 		maxTurnSeconds, maxToolCalls = agentCfg.MaxTurnSeconds, agentCfg.MaxToolCalls
+		maxSessionTokens = agentCfg.MaxSessionTokens
+	}
+	var budgetBaseline int64
+	budgetExceeded := false
+	if maxSessionTokens > 0 {
+		if st, err := c.SessionStats(sessionID); err == nil {
+			budgetBaseline = st.TokensTotal
+			budgetExceeded = budgetBaseline > maxSessionTokens
+		}
 	}
 
 	// Build the agent tree from the current configuration.
@@ -763,6 +773,11 @@ func (c *ChatService) runTurn(target *config.ChatSession, guardOn bool, msg *gen
 
 	emit := func(ev ChatStreamEvent) { c.emitChat(sessionID, ev) }
 
+	if budgetExceeded {
+		emit(ChatStreamEvent{Kind: "error", Text: fmt.Sprintf("会话 token 预算已满（%d），本轮未执行。", maxSessionTokens)})
+		emit(ChatStreamEvent{Kind: "done"})
+		return nil
+	}
 	if titleFromText != "" {
 		emit(ChatStreamEvent{Kind: "user", Text: titleFromText})
 	}
@@ -820,6 +835,9 @@ func (c *ChatService) runTurn(target *config.ChatSession, guardOn bool, msg *gen
 			turnUsage = u
 			sessionUsage = addUsage(sessionUsage, u)
 		}
+		if maxSessionTokens > 0 && !budgetExceeded && budgetBaseline+sessionUsageTotal(sessionUsage) > maxSessionTokens {
+			budgetExceeded = true
+		}
 		var textBuf strings.Builder
 		toolCallsThisTurn := 0
 		for _, p := range ev.Content.Parts {
@@ -866,6 +884,9 @@ func (c *ChatService) runTurn(target *config.ChatSession, guardOn bool, msg *gen
 				return nil
 			}
 		}
+	}
+	if budgetExceeded {
+		emit(ChatStreamEvent{Kind: "error", Text: fmt.Sprintf("已达会话 token 预算（%d），后续轮次将被拒绝；请开新会话或调整预算。", maxSessionTokens)})
 	}
 	emit(ChatStreamEvent{Kind: "done", SessionUsage: sessionUsage})
 
@@ -1095,6 +1116,13 @@ func (c *ChatService) SessionStats(sessionID string) (*SessionStats, error) {
 	}
 	sort.Slice(st.Daily, func(i, j int) bool { return st.Daily[i].Date < st.Daily[j].Date })
 	return st, nil
+}
+
+func sessionUsageTotal(u *UsageInfo) int64 {
+	if u == nil {
+		return 0
+	}
+	return u.TotalTokens
 }
 
 func mustJSON(v any) []byte {

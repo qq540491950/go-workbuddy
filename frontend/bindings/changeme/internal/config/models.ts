@@ -49,6 +49,13 @@ export interface AgentConfig {
      */
     "maxTurnSeconds"?: number;
     "maxToolCalls"?: number;
+
+    /**
+     * MaxSessionTokens caps cumulative tokens across the whole session
+     * (0 = unlimited). The turn that crosses the budget still completes,
+     * the next one is refused.
+     */
+    "maxSessionTokens"?: number;
 }
 
 /**

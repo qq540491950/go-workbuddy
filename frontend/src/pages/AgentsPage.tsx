@@ -521,6 +521,17 @@ export function AgentsPage() {
                   onCheckedChange={(v) => setEditing({ ...editing, enableGuardrails: v })}
                 />
               </div>
+              <div className="grid gap-1.5">
+                <Label>会话 Token 预算</Label>
+                <Input
+                  type="number"
+                  min={0}
+                  value={editing.maxSessionTokens || ""}
+                  onChange={(e) => setEditing({ ...editing, maxSessionTokens: Number(e.target.value) || 0 })}
+                  placeholder="0（不限制）"
+                />
+                <p className="text-xs text-muted-foreground">会话累计 tokens 超出后拒绝新消息（当前轮正常完成）</p>
+              </div>
               <div className="grid grid-cols-2 gap-3">
                 <div className="grid gap-1.5">
                   <Label>单轮最长运行秒数</Label>

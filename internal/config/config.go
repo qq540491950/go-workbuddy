@@ -92,6 +92,10 @@ type AgentConfig struct {
 	// Run guardrails against runaway loops/cost. 0 = unlimited.
 	MaxTurnSeconds int `json:"maxTurnSeconds,omitempty"`
 	MaxToolCalls   int `json:"maxToolCalls,omitempty"`
+	// MaxSessionTokens caps cumulative tokens across the whole session
+	// (0 = unlimited). The turn that crosses the budget still completes,
+	// the next one is refused.
+	MaxSessionTokens int64 `json:"maxSessionTokens,omitempty"`
 }
 
 // RemoteAgentConfig describes a remote agent reached over the A2A protocol

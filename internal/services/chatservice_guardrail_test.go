@@ -147,3 +147,64 @@ func TestGuardrailUnlimitedKeepsOldBehavior(t *testing.T) {
 		t.Fatalf("answer missing: %+v", msgs)
 	}
 }
+
+// TestGuardrailSessionTokenBudget: cumulative session spend over a budget is
+// allowed to finish the crossing turn, then new user turns are refused.
+func TestGuardrailSessionTokenBudget(t *testing.T) {
+	var modelCalls atomic.Int64
+	chat, events, _ := newGuardrailTestChat(t, 0, 0, func(w http.ResponseWriter, r *http.Request) {
+		modelCalls.Add(1)
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte(`data: {"choices":[],"usage":{"prompt_tokens":300,"completion_tokens":200,"total_tokens":500}}` + "\n\n"))
+		_, _ = w.Write([]byte(sseText("回答") + sseDone))
+	})
+	// Raise the budget to 600 via the agent config.
+	if err := chat.S.Store.Update(func(cfg *config.Config) {
+		cfg.Agents[0].MaxSessionTokens = 600
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	sess, err := chat.NewSession("agent", "a1", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := chat.Send(sess.ID, "第一轮", nil); err != nil {
+		t.Fatal(err)
+	}
+	if modelCalls.Load() != 1 {
+		t.Fatalf("turn 1 model calls = %d", modelCalls.Load())
+	}
+
+	// Turn 2 crosses the budget mid-turn: it completes, then warns.
+	if err := chat.Send(sess.ID, "第二轮", nil); err != nil {
+		t.Fatal(err)
+	}
+	var sawWarn bool
+	for _, ev := range *events {
+		if ev.Kind == "error" && strings.Contains(ev.Text, "已达会话 token 预算") {
+			sawWarn = true
+		}
+	}
+	if !sawWarn {
+		t.Fatalf("crossing-turn warning missing: %+v", *events)
+	}
+
+	// Turn 3 is refused before hitting the model.
+	before := modelCalls.Load()
+	if err := chat.Send(sess.ID, "第三轮", nil); err != nil {
+		t.Fatal(err)
+	}
+	if modelCalls.Load() != before {
+		t.Fatal("refused turn must not call the model")
+	}
+	var sawRefusal bool
+	for _, ev := range *events {
+		if ev.Kind == "error" && strings.Contains(ev.Text, "本轮未执行") {
+			sawRefusal = true
+		}
+	}
+	if !sawRefusal {
+		t.Fatalf("refusal message missing: %+v", *events)
+	}
+}
