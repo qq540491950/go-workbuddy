@@ -11,6 +11,7 @@ export type {
     ChatSession,
     Config,
     MCPServerConfig,
+    ModelInfo,
     ModelProvider,
     Settings,
     SkillConfig,

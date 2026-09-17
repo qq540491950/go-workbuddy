@@ -94,7 +94,8 @@ func (k *Kit) buildLLMAgentWithSubAgents(ac config.AgentConfig, cfg config.Confi
 		case "time":
 			tools = append(tools, TimeTool())
 		case "files":
-			tools = append(tools, ListFilesTool(k.workspace()), ReadFileTool(k.workspace()), WriteFileTool(k.workspace()))
+			tools = append(tools, ListFilesTool(k.workspace()), ReadFileTool(k.workspace()),
+				WriteFileTool(k.workspace(), confirmsTool(ac, "files")))
 		case "knowledge":
 			tools = append(tools, SearchKnowledgeTool(k.workspace()))
 		case "memory":
@@ -325,6 +326,17 @@ func GuardrailsEnabled(ac config.AgentConfig) bool {
 	return ac.EnableGuardrails == nil || *ac.EnableGuardrails
 }
 
+// confirmsTool reports whether a builtin tool category was marked as needing
+// human-in-the-loop confirmation for this agent.
+func confirmsTool(ac config.AgentConfig, category string) bool {
+	for _, c := range ac.ConfirmTools {
+		if c == category {
+			return true
+		}
+	}
+	return false
+}
+
 func firstNonEmpty(vals ...string) string {
 	for _, v := range vals {
 		if strings.TrimSpace(v) != "" {
@@ -463,11 +475,15 @@ type writeResult struct {
 	Bytes  int  `json:"bytes"`
 }
 
-// WriteFileTool writes a file within the workspace.
-func WriteFileTool(workspace string) tool.Tool {
+// WriteFileTool writes a file within the workspace. When requireConfirmation
+// is true the tool asks the human operator to approve each call first (ADK
+// HITL): the run pauses on an adk_request_confirmation interrupt and only
+// proceeds after a FunctionResponse with {"confirmed": true}.
+func WriteFileTool(workspace string, requireConfirmation bool) tool.Tool {
 	t, _ := functiontool.New(functiontool.Config{
-		Name:        "write_workspace_file",
-		Description: "Create or overwrite a text file inside the user's workspace.",
+		Name:                "write_workspace_file",
+		Description:         "Create or overwrite a text file inside the user's workspace.",
+		RequireConfirmation: requireConfirmation,
 	}, func(ctx agent.Context, args writeArgs) (writeResult, error) {
 		root, err := safeWorkspacePath(workspace, args.Path)
 		if err != nil {

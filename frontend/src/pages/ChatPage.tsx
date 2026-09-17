@@ -3,7 +3,7 @@ import { Events } from "@wailsio/runtime";
 import {
   Plus, Send, Square, Trash2, Pencil, MessageSquare, Bot, Users, Loader2,
   Copy, Check, Search, ArrowRight, RefreshCw, Download, Mic, MicOff, Volume2, Square as SquareStop,
-  Paperclip, X, BarChart3, Brain,
+  Paperclip, X, BarChart3, Brain, ShieldAlert,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -28,12 +28,15 @@ import {
 
 type UIMessage = {
   id: string;
-  kind: "user" | "assistant" | "tool_call" | "tool_result" | "error";
+  kind: "user" | "assistant" | "tool_call" | "tool_result" | "confirm" | "error";
   author: string;
   text: string;
   toolName?: string;
   toolArgs?: { [k: string]: any } | null;
   toolResp?: { [k: string]: any } | null;
+  callId?: string;
+  hint?: string;
+  confirmStatus?: "pending" | "approved" | "rejected";
   streaming?: boolean;
   usage?: UsageInfo | null;
   attachments?: AttachmentOut[] | null;
@@ -136,17 +139,30 @@ export function ChatPage() {
     setSessionUsage(null);
     Chat.GetSessionMessages(activeID)
       .then((ms) => {
+        // Pair confirm_request with its confirm_result so pending approvals
+        // stay interactive (e.g. after an app restart).
+        const answered = new Map<string, boolean>();
+        for (const m of ms ?? []) {
+          if (m.kind === "confirm_result" && m.callId) {
+            answered.set(m.callId, m.toolResp?.confirmed === true);
+          }
+        }
         setMessages(
-          (ms ?? []).map((m) => ({
-            id: m.id,
-            kind: (m.kind === "user" ? "user" : m.kind === "tool_call" ? "tool_call" : m.kind === "tool_result" ? "tool_result" : "assistant") as UIMessage["kind"],
-            author: m.author,
-            text: m.text,
-            toolName: m.toolName,
-            toolArgs: m.toolArgs,
-            toolResp: m.toolResp,
-            attachments: m.attachments ?? null,
-          })),
+          (ms ?? [])
+            .filter((m) => m.kind !== "confirm_result")
+            .map((m) => ({
+              id: m.id,
+              kind: (m.kind === "user" ? "user" : m.kind === "tool_call" ? "tool_call" : m.kind === "tool_result" ? "tool_result" : m.kind === "confirm_request" ? "confirm" : "assistant") as UIMessage["kind"],
+              author: m.author,
+              text: m.text,
+              toolName: m.toolName,
+              toolArgs: m.toolArgs,
+              toolResp: m.toolResp,
+              callId: m.callId,
+              hint: m.hint,
+              confirmStatus: m.kind === "confirm_request" ? (answered.has(m.callId!) ? (answered.get(m.callId!) ? "approved" : "rejected") : "pending") as UIMessage["confirmStatus"] : undefined,
+              attachments: m.attachments ?? null,
+            })),
         );
       })
       .catch((e) => toast.error(`加载历史失败: ${errText(e)}`));
@@ -185,6 +201,12 @@ export function ChatPage() {
             return [...prev, { id: nextId(), kind: "tool_call", author: ev.author, text: "", toolName: ev.toolName, toolArgs: ev.toolArgs }];
           case "tool_result":
             return [...prev, { id: nextId(), kind: "tool_result", author: ev.author, text: "", toolName: ev.toolName, toolResp: ev.toolResp }];
+          case "confirm_request":
+            return [...prev, {
+              id: nextId(), kind: "confirm", author: ev.author, text: "",
+              toolName: ev.toolName, toolArgs: ev.toolArgs,
+              callId: ev.callId, hint: ev.hint, confirmStatus: "pending",
+            } as UIMessage];
           case "error":
             return [...prev, { id: nextId(), kind: "error", author: "system", text: ev.text }];
           case "done":
@@ -261,6 +283,21 @@ export function ChatPage() {
 
   const cancel = () => {
     if (activeID) Chat.Cancel(activeID);
+  };
+
+  // answerConfirm resolves a HITL tool-confirmation card. The status flips
+  // optimistically; a failed resume reverts the card to pending.
+  const answerConfirm = async (msgId: string, callId: string | undefined, approved: boolean) => {
+    if (!activeID || !callId || running) return;
+    setRunning(true);
+    setMessages((prev) => prev.map((m) => (m.id === msgId ? { ...m, confirmStatus: approved ? "approved" : "rejected" } : m)));
+    try {
+      await Chat.ConfirmToolCall(activeID, callId, approved);
+    } catch (e) {
+      toast.error(`确认失败: ${errText(e)}`);
+      setMessages((prev) => prev.map((m) => (m.id === msgId && m.kind === "confirm" ? { ...m, confirmStatus: "pending" } : m)));
+      setRunning(false);
+    }
   };
 
   const MAX_ATT_BYTES = 6 * 1024 * 1024;
@@ -588,6 +625,7 @@ export function ChatPage() {
                   costOf={costOf}
                   onEdit={startEdit}
                   canEdit={!running && !!activeID && m.kind === "user" && !messages.slice(i + 1).some((x) => x.kind === "user")}
+                  onConfirm={answerConfirm}
                 />
               );
             })}
@@ -832,6 +870,58 @@ function Onboarding() {
   );
 }
 
+/** ConfirmCard renders a HITL tool-confirmation request with approve/reject. */
+function ConfirmCard({ m, onConfirm }: {
+  m: UIMessage;
+  onConfirm: (msgId: string, callId: string | undefined, approved: boolean) => void;
+}) {
+  const status = m.confirmStatus ?? "pending";
+  return (
+    <div className={cn(
+      "rounded-lg border px-4 py-3",
+      status === "pending" && "border-amber-500/50 bg-amber-500/10",
+      status === "approved" && "border-emerald-500/40 bg-emerald-500/5",
+      status === "rejected" && "border-destructive/40 bg-destructive/5",
+    )}>
+      <div className="flex items-center gap-2">
+        <ShieldAlert className={cn(
+          "h-4 w-4 shrink-0",
+          status === "pending" && "text-amber-600",
+          status === "approved" && "text-emerald-600",
+          status === "rejected" && "text-destructive",
+        )} />
+        <span className="text-sm font-medium">
+          {status === "pending" ? "工具执行确认" : status === "approved" ? "已批准执行" : "已拒绝"}
+        </span>
+        <Badge variant="outline" className="font-mono text-[11px]">{m.toolName}</Badge>
+      </div>
+      {m.hint && <div className="mt-1.5 text-xs text-muted-foreground">{m.hint}</div>}
+      {m.toolArgs && Object.keys(m.toolArgs).length > 0 && (
+        <pre className="mt-2 max-h-32 overflow-auto rounded bg-muted/60 p-2 font-mono text-[11px] leading-relaxed text-muted-foreground">
+          {JSON.stringify(m.toolArgs, null, 2)}
+        </pre>
+      )}
+      {status === "pending" ? (
+        <div className="mt-2.5 flex gap-2">
+          <Button size="sm" className="h-7 px-3 text-xs" onClick={() => onConfirm(m.id, m.callId, true)}>
+            <Check className="mr-1 h-3 w-3" /> 允许执行
+          </Button>
+          <Button size="sm" variant="outline" className="h-7 px-3 text-xs" onClick={() => onConfirm(m.id, m.callId, false)}>
+            <X className="mr-1 h-3 w-3" /> 拒绝
+          </Button>
+        </div>
+      ) : (
+        <div className={cn(
+          "mt-2 text-xs",
+          status === "approved" ? "text-emerald-600" : "text-destructive",
+        )}>
+          {status === "approved" ? "模型已继续执行该工具调用" : "模型已收到拒绝结果"}
+        </div>
+      )}
+    </div>
+  );
+}
+
 /** computeRunningTools marks tool_call messages that have no matching result yet. */
 function computeRunningTools(messages: UIMessage[]): Set<string> {
   const running = new Set<string>();
@@ -848,7 +938,7 @@ function computeRunningTools(messages: UIMessage[]): Set<string> {
   return running;
 }
 
-function MessageBubble({ m, isLastAssistant, onRegenerate, canRegenerate, toolRunning, onSpeak, costOf, onEdit, canEdit }: {
+function MessageBubble({ m, isLastAssistant, onRegenerate, canRegenerate, toolRunning, onSpeak, costOf, onEdit, canEdit, onConfirm }: {
   m: UIMessage;
   isLastAssistant: boolean;
   onRegenerate: () => void;
@@ -858,6 +948,7 @@ function MessageBubble({ m, isLastAssistant, onRegenerate, canRegenerate, toolRu
   costOf: (u?: UsageInfo | null) => string;
   onEdit: (text: string) => void;
   canEdit: boolean;
+  onConfirm: (msgId: string, callId: string | undefined, approved: boolean) => void;
 }) {
   const [copied, setCopied] = useState(false);
   const copyMsg = async () => {
@@ -906,6 +997,9 @@ function MessageBubble({ m, isLastAssistant, onRegenerate, canRegenerate, toolRu
         {m.text}
       </div>
     );
+  }
+  if (m.kind === "confirm") {
+    return <ConfirmCard m={m} onConfirm={onConfirm} />;
   }
   if (m.kind === "tool_call" || m.kind === "tool_result") {
     return (

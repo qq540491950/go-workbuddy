@@ -84,6 +84,11 @@ type AgentConfig struct {
 	// EnableGuardrails masks secrets in user input/model output (default on
 	// when unset). Pointers distinguish "unset" from explicit false.
 	EnableGuardrails *bool `json:"enableGuardrails,omitempty"`
+	// ConfirmTools lists builtin tool categories whose side-effectful calls
+	// need human approval before execution (ADK HITL). Only "files" is
+	// meaningful today: write_workspace_file asks for confirmation while
+	// list/read stay automatic. Empty = never ask.
+	ConfirmTools []string `json:"confirmTools,omitempty"`
 }
 
 // TeamConfig describes an agent team: a lead agent coordinating member agents.

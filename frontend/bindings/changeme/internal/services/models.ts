@@ -70,7 +70,7 @@ export interface ChatMessage {
     "id": string;
 
     /**
-     * user|assistant|tool_call|tool_result
+     * user|assistant|tool_call|tool_result|confirm_request|confirm_result
      */
     "kind": string;
     "author": string;
@@ -78,6 +78,8 @@ export interface ChatMessage {
     "toolName"?: string;
     "toolArgs"?: { [_ in string]?: any } | null;
     "toolResp"?: { [_ in string]?: any } | null;
+    "callId"?: string;
+    "hint"?: string;
     "attachments"?: AttachmentOut[] | null;
     "timestamp": string;
 }
@@ -89,7 +91,7 @@ export interface ChatStreamEvent {
     "sessionId": string;
 
     /**
-     * user|delta|message|tool_call|tool_result|done|error
+     * user|delta|message|tool_call|tool_result|confirm_request|done|error
      */
     "kind": string;
     "author": string;
@@ -97,6 +99,17 @@ export interface ChatStreamEvent {
     "toolName"?: string;
     "toolArgs"?: { [_ in string]?: any } | null;
     "toolResp"?: { [_ in string]?: any } | null;
+
+    /**
+     * CallID identifies the ADK confirmation interrupt this event refers to
+     * (confirm_request events); the answer is sent back via ConfirmToolCall.
+     */
+    "callId"?: string;
+
+    /**
+     * Hint is the model-provided explanation shown on the confirmation card.
+     */
+    "hint"?: string;
 
     /**
      * Usage is set on the final assistant message event of a turn.

@@ -15,7 +15,7 @@
 | Agent 团队 | 多 Agent 协作：自动协调员模式（系统合成协调员分派任务）或指定负责人模式；基于 ADK 的 agent 转移机制（transfer）实现委派 |
 | Skills | 可复用技能指令包，保存为标准 SKILL.md（YAML frontmatter + Markdown），由 ADK Skill Toolset 以渐进式披露方式供模型按需加载 |
 | MCP 服务 | 通过 stdio（本地命令）或 Streamable HTTP（远程）连接 MCP 服务器，发现并列出工具，挂载到 Agent；连接由 ADK MCP Toolset（go-sdk）管理，支持自动重连 |
-| 对话 | 流式输出（SSE）、工具调用/结果实时展示、团队对话中显示各成员输出、随时停止、会话历史持久化（ADK Database Session Service + 纯 Go SQLite 驱动） |
+| 对话 | 流式输出（SSE）、工具调用/结果实时展示、团队对话中显示各成员输出、随时停止、工具执行人工确认（HITL：文件写入可开关，重启后待确认仍可应答）、会话历史持久化（ADK Database Session Service + 纯 Go SQLite 驱动） |
 | 设置 | 工作区目录（限制文件工具的读写范围）等全局配置 |
 
 ## 架构
@@ -116,6 +116,18 @@ go vet ./internal/... .
 ### 参考 Codex / Claude Desktop / WorkBuddy 的设计对齐
 
 已实施：Markdown + 代码块复制、消息级复制、深浅主题、首次运行引导、会话搜索、快捷键、工具调用折叠面板、流式打字指示器。
+
+### 第八轮迭代：工具执行 HITL 确认（已实施）
+
+调研路线图「工具执行 HITL 确认」落地，依据 ADK Go v2.4.0 官方实现（`tool/tool.go` confirmationTool 包装、`tool/toolconfirmation` 协议、`cmd/launcher/console/hitl.go` 官方客户端模式）：
+
+- **工具级确认声明**：Agent 新增「写入文件需人工确认」开关（`confirmTools`，默认关）；开启后 `write_workspace_file` 经 ADK `functiontool.Config.RequireConfirmation` 包装，模型每次调用前先暂停请求批准（列表/读取不受影响）
+- **确认卡片**：运行暂停时对话流实时出现琥珀色确认卡片（原工具名 + 参数 JSON + 提示语），「允许执行 / 拒绝」一键应答；批准后工具真正执行、模型看到执行结果继续生成，拒绝后模型收到拒绝结果并自行调整
+- **恢复引擎统一**：`ChatService` 抽出共享 `runTurn`（Send 与 ConfirmToolCall 共用）；新 API `ConfirmToolCall(sessionID, callID, approved)` 按 ADK 协议回发 `adk_request_confirmation` FunctionResponse，重复应答/未知 ID 会被拒绝
+- **重启可恢复**：确认请求随事件持久化（`LongRunningToolIDs`），重启后加载历史时未应答的确认卡片仍可交互应答
+- 对模型透明：ADK 在恢复后把确认往返折叠为「原调用 + 结果」，模型只感知工具成功或被拒
+
+测试：e2e ×4（批准全链路——文件真正写入 + 模型续答；拒绝——工作区不被触碰 + 模型收到 error；重启后仍可应答并完成写入；参数防护与默认关闭回归）+ 全量 `-race` 通过；修复上一轮遗留的 `wails3 build` 前端严格模式报错（ModelsPage 空值处理）；打包烟雾通过。
 
 ### 第七轮迭代：长期记忆（已实施）
 

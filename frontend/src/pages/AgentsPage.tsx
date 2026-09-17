@@ -340,6 +340,25 @@ export function AgentsPage() {
                   onCheckedChange={(v) => setEditing({ ...editing, enableGuardrails: v })}
                 />
               </div>
+              {(editing.builtinTools ?? []).includes("files") && (
+                <div className="flex items-center justify-between rounded-lg border p-3">
+                  <div>
+                    <div className="text-sm font-medium">写入文件需人工确认</div>
+                    <div className="text-xs text-muted-foreground">
+                      模型调用文件写入前暂停等待你的批准；拒绝时模型收到拒绝结果并自行调整
+                    </div>
+                  </div>
+                  <Switch
+                    checked={(editing.confirmTools ?? []).includes("files")}
+                    onCheckedChange={(v) => {
+                      const next = new Set(editing.confirmTools ?? []);
+                      if (v) next.add("files");
+                      else next.delete("files");
+                      setEditing({ ...editing, confirmTools: [...next] });
+                    }}
+                  />
+                </div>
+              )}
               {skills.length > 0 && (
                 <div className="grid gap-1.5">
                   <Label>附加 Skills</Label>

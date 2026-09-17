@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -16,6 +17,7 @@ import (
 	"google.golang.org/adk/v2/agent"
 	"google.golang.org/adk/v2/runner"
 	"google.golang.org/adk/v2/session"
+	"google.golang.org/adk/v2/tool/toolconfirmation"
 	"google.golang.org/genai"
 
 	"changeme/internal/agentkit"
@@ -55,12 +57,17 @@ type UsageInfo struct {
 // ChatStreamEvent is streamed to the frontend while a run progresses.
 type ChatStreamEvent struct {
 	SessionID string         `json:"sessionId"`
-	Kind      string         `json:"kind"` // user|delta|message|tool_call|tool_result|done|error
+	Kind      string         `json:"kind"` // user|delta|message|tool_call|tool_result|confirm_request|done|error
 	Author    string         `json:"author"`
 	Text      string         `json:"text"`
 	ToolName  string         `json:"toolName,omitempty"`
 	ToolArgs  map[string]any `json:"toolArgs,omitempty"`
 	ToolResp  map[string]any `json:"toolResp,omitempty"`
+	// CallID identifies the ADK confirmation interrupt this event refers to
+	// (confirm_request events); the answer is sent back via ConfirmToolCall.
+	CallID string `json:"callId,omitempty"`
+	// Hint is the model-provided explanation shown on the confirmation card.
+	Hint string `json:"hint,omitempty"`
 	// Usage is set on the final assistant message event of a turn.
 	Usage *UsageInfo `json:"usage,omitempty"`
 	// SessionUsage is the cumulative usage of the session, set on done events.
@@ -83,12 +90,14 @@ func usageOf(ev *session.Event) *UsageInfo {
 // ChatMessage is a rendered historical message.
 type ChatMessage struct {
 	ID          string          `json:"id"`
-	Kind        string          `json:"kind"` // user|assistant|tool_call|tool_result
+	Kind        string          `json:"kind"` // user|assistant|tool_call|tool_result|confirm_request|confirm_result
 	Author      string          `json:"author"`
 	Text        string          `json:"text"`
 	ToolName    string          `json:"toolName,omitempty"`
 	ToolArgs    map[string]any  `json:"toolArgs,omitempty"`
 	ToolResp    map[string]any  `json:"toolResp,omitempty"`
+	CallID      string          `json:"callId,omitempty"`
+	Hint        string          `json:"hint,omitempty"`
 	Attachments []AttachmentOut `json:"attachments,omitempty"`
 	Timestamp   time.Time       `json:"timestamp"`
 }
@@ -266,12 +275,36 @@ func renderEvent(ev *session.Event, seq int) []ChatMessage {
 			continue
 		}
 		switch {
+		case p.FunctionCall != nil && p.FunctionCall.Name == toolconfirmation.FunctionCallName:
+			flushText()
+			m := base
+			m.Kind = "tool_call"
+			m.ToolName = p.FunctionCall.Name
+			m.ToolArgs = p.FunctionCall.Args
+			m.CallID = p.FunctionCall.ID
+			if orig, hint := confirmRequestInfo(p.FunctionCall.Args); orig != nil {
+				m.Kind = "confirm_request"
+				m.ToolName = orig.Name
+				m.ToolArgs = orig.Args
+				m.Hint = hint
+			}
+			m.Author = ev.Author
+			out = append(out, m)
 		case p.FunctionCall != nil:
 			flushText()
 			m := base
 			m.Kind = "tool_call"
 			m.ToolName = p.FunctionCall.Name
 			m.ToolArgs = p.FunctionCall.Args
+			m.Author = ev.Author
+			out = append(out, m)
+		case p.FunctionResponse != nil && p.FunctionResponse.Name == toolconfirmation.FunctionCallName:
+			flushText()
+			m := base
+			m.Kind = "confirm_result"
+			m.CallID = p.FunctionResponse.ID
+			m.ToolName = p.FunctionResponse.Name
+			m.ToolResp = p.FunctionResponse.Response
 			m.Author = ev.Author
 			out = append(out, m)
 		case p.FunctionResponse != nil:
@@ -300,6 +333,31 @@ func renderEvent(ev *session.Event, seq int) []ChatMessage {
 	}
 	flushText()
 	return out
+}
+
+// confirmRequestInfo extracts the original tool call and human-readable hint
+// from an adk_request_confirmation FunctionCall's args. The args survive a
+// JSON roundtrip once persisted, so the originalFunctionCall field may be a
+// *genai.FunctionCall (live) or a generic map (reloaded history).
+func confirmRequestInfo(args map[string]any) (*genai.FunctionCall, string) {
+	orig, err := toolconfirmation.OriginalCallFrom(&genai.FunctionCall{Args: args})
+	if err != nil {
+		return nil, ""
+	}
+	hint := ""
+	if tc, ok := args["toolConfirmation"].(map[string]any); ok {
+		hint, _ = tc["hint"].(string)
+	}
+	return orig, hint
+}
+
+// isConfirmationInterrupt reports whether the part is the adk_request_confirmation
+// interrupt declared long-running on this event (ADK HITL pause point).
+func isConfirmationInterrupt(ev *session.Event, fc *genai.FunctionCall) bool {
+	if fc == nil {
+		return false
+	}
+	return fc.Name == toolconfirmation.FunctionCallName && slices.Contains(ev.LongRunningToolIDs, fc.ID)
 }
 
 // targetAgentConfig returns the AgentConfig behind a session (nil for teams
@@ -503,20 +561,124 @@ func sanitizeExportName(name string) string {
 	return strings.Trim(sb.String(), "-")
 }
 
-// sendTurn resolves the session target, builds the agent tree, runs the turn
-// and streams progress.
-func (c *ChatService) sendTurn(sessionID, text string, attachments []AttachmentIn) error {
-	cfg := c.S.Store.Get()
-	var target *config.ChatSession
+// resolveSessionTarget finds the ChatSession metadata for a session ID.
+func (c *ChatService) resolveSessionTarget(cfg config.Config, sessionID string) *config.ChatSession {
 	for i := range cfg.Sessions {
 		if cfg.Sessions[i].ID == sessionID {
-			target = &cfg.Sessions[i]
-			break
+			return &cfg.Sessions[i]
 		}
 	}
+	return nil
+}
+
+// emitChat delivers a stream event to the test hook or the Wails event bus.
+func (c *ChatService) emitChat(sessionID string, ev ChatStreamEvent) {
+	ev.SessionID = sessionID
+	if appEventHook != nil {
+		appEventHook(ev)
+		return
+	}
+	if app := application.Get(); app != nil {
+		app.Event.Emit(EventChatStream, ev)
+	}
+}
+
+// sendTurn sanitizes the user input (guardrails), builds the message content
+// and hands the turn to runTurn.
+func (c *ChatService) sendTurn(sessionID, text string, attachments []AttachmentIn) error {
+	cfg := c.S.Store.Get()
+	target := c.resolveSessionTarget(cfg, sessionID)
 	if target == nil {
 		return fmt.Errorf("session %q not found", sessionID)
 	}
+
+	// Layered guardrails: sanitize user input; flag injection attempts.
+	agentCfg := c.targetAgentConfig(cfg, target)
+	guardOn := agentCfg == nil || agentkit.GuardrailsEnabled(*agentCfg)
+	userText := text
+	if guardOn {
+		gr := agentkit.ApplyInputGuardrail(text)
+		userText = gr.Text
+		if gr.InjectRisk {
+			c.emitChat(sessionID, ChatStreamEvent{Kind: "error", Author: "guardrail",
+				Text: "⚠️ 检测到疑似提示注入内容（“" + gr.InjectMatch + "”），已原样发送但请谨慎对待模型输出。"})
+		}
+		if gr.Redacted {
+			c.emitChat(sessionID, ChatStreamEvent{Kind: "error", Author: "guardrail",
+				Text: "🔒 已自动遮蔽消息中的疑似密钥/凭据。"})
+		}
+	}
+
+	msg, err := buildUserContent(userText, attachments)
+	if err != nil {
+		return err
+	}
+	return c.runTurn(target, guardOn, msg, text)
+}
+
+// ConfirmToolCall answers a pending ADK tool-confirmation interrupt (HITL):
+// approved=true resumes the original tool call, false rejects it so the model
+// sees the rejection and can adjust.
+func (c *ChatService) ConfirmToolCall(sessionID, callID string, approved bool) error {
+	if strings.TrimSpace(callID) == "" {
+		return fmt.Errorf("缺少确认请求 ID")
+	}
+	resp, err := c.sessions.Get(context.Background(), &session.GetRequest{
+		AppName: c.appName, UserID: c.userID, SessionID: sessionID,
+	})
+	if err != nil {
+		return err
+	}
+	if resp.Session == nil {
+		return fmt.Errorf("session %q not found", sessionID)
+	}
+	pending := false
+	for ev := range resp.Session.Events().All() {
+		if ev == nil || ev.Content == nil || ev.Partial {
+			continue
+		}
+		for _, p := range ev.Content.Parts {
+			if p == nil {
+				continue
+			}
+			if isConfirmationInterrupt(ev, p.FunctionCall) && p.FunctionCall.ID == callID {
+				pending = true
+			}
+			if p.FunctionResponse != nil && p.FunctionResponse.Name == toolconfirmation.FunctionCallName && p.FunctionResponse.ID == callID {
+				return fmt.Errorf("该确认请求已被处理")
+			}
+		}
+	}
+	if !pending {
+		return fmt.Errorf("未找到待确认的工具调用 %s", callID)
+	}
+
+	msg := &genai.Content{
+		Role: genai.RoleUser,
+		Parts: []*genai.Part{{FunctionResponse: &genai.FunctionResponse{
+			ID:       callID,
+			Name:     toolconfirmation.FunctionCallName,
+			Response: map[string]any{"confirmed": approved},
+		}}},
+	}
+	cfg := c.S.Store.Get()
+	target := c.resolveSessionTarget(cfg, sessionID)
+	if target == nil {
+		return fmt.Errorf("session %q not found", sessionID)
+	}
+	agentCfg := c.targetAgentConfig(cfg, target)
+	guardOn := agentCfg == nil || agentkit.GuardrailsEnabled(*agentCfg)
+	return c.runTurn(target, guardOn, msg, "")
+}
+
+// runTurn builds the agent tree for the session target, runs one turn with
+// the given message content and streams progress. It is the shared engine
+// behind Send (user text) and ConfirmToolCall (HITL FunctionResponse resume);
+// titleFromText is non-empty only for genuine user messages (drives the
+// user-bubble event and auto-title).
+func (c *ChatService) runTurn(target *config.ChatSession, guardOn bool, msg *genai.Content, titleFromText string) error {
+	sessionID := target.ID
+	cfg := c.S.Store.Get()
 
 	// Build the agent tree from the current configuration.
 	var root agent.Agent
@@ -557,18 +719,11 @@ func (c *ChatService) sendTurn(sessionID, text string, attachments []AttachmentI
 		return err
 	}
 
-	emit := func(ev ChatStreamEvent) {
-		ev.SessionID = sessionID
-		if appEventHook != nil {
-			appEventHook(ev)
-			return
-		}
-		if app := application.Get(); app != nil {
-			app.Event.Emit(EventChatStream, ev)
-		}
-	}
+	emit := func(ev ChatStreamEvent) { c.emitChat(sessionID, ev) }
 
-	emit(ChatStreamEvent{Kind: "user", Text: text})
+	if titleFromText != "" {
+		emit(ChatStreamEvent{Kind: "user", Text: titleFromText})
+	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -584,27 +739,6 @@ func (c *ChatService) sendTurn(sessionID, text string, attachments []AttachmentI
 		c.mu.Unlock()
 	}()
 
-	// Layered guardrails: sanitize user input; flag injection attempts.
-	agentCfg := c.targetAgentConfig(cfg, target)
-	guardOn := agentCfg == nil || agentkit.GuardrailsEnabled(*agentCfg)
-	userText := text
-	if guardOn {
-		gr := agentkit.ApplyInputGuardrail(text)
-		userText = gr.Text
-		if gr.InjectRisk {
-			emit(ChatStreamEvent{Kind: "error", Author: "guardrail",
-				Text: "⚠️ 检测到疑似提示注入内容（“" + gr.InjectMatch + "”），已原样发送但请谨慎对待模型输出。"})
-		}
-		if gr.Redacted {
-			emit(ChatStreamEvent{Kind: "error", Author: "guardrail",
-				Text: "🔒 已自动遮蔽消息中的疑似密钥/凭据。"})
-		}
-	}
-
-	msg, err := buildUserContent(userText, attachments)
-	if err != nil {
-		return err
-	}
 	var turnUsage *UsageInfo
 	var sessionUsage *UsageInfo
 	for ev, err := range rn.Run(ctx, c.userID, sessionID, msg, agent.RunConfig{
@@ -640,6 +774,17 @@ func (c *ChatService) sendTurn(sessionID, text string, attachments []AttachmentI
 				continue
 			}
 			switch {
+			case p.FunctionCall != nil && isConfirmationInterrupt(ev, p.FunctionCall):
+				// HITL pause point: surface an actionable confirmation
+				// request and let the turn end; the answer arrives via
+				// ConfirmToolCall as a FunctionResponse resume.
+				name, args := p.FunctionCall.Name, p.FunctionCall.Args
+				hint := ""
+				if orig, h := confirmRequestInfo(p.FunctionCall.Args); orig != nil {
+					name, args, hint = orig.Name, orig.Args, h
+				}
+				emit(ChatStreamEvent{Kind: "confirm_request", Author: ev.Author,
+					ToolName: name, ToolArgs: args, CallID: p.FunctionCall.ID, Hint: hint})
 			case p.FunctionCall != nil:
 				emit(ChatStreamEvent{Kind: "tool_call", Author: ev.Author,
 					ToolName: p.FunctionCall.Name, ToolArgs: p.FunctionCall.Args})
@@ -662,20 +807,22 @@ func (c *ChatService) sendTurn(sessionID, text string, attachments []AttachmentI
 	emit(ChatStreamEvent{Kind: "done", SessionUsage: sessionUsage})
 
 	// Auto-title from the first user message.
-	c.S.Store.Update(func(cfg *config.Config) {
-		for i := range cfg.Sessions {
-			if cfg.Sessions[i].ID == sessionID && cfg.Sessions[i].Title == "新对话" {
-				t := []rune(strings.TrimSpace(text))
-				if len(t) > 30 {
-					t = t[:30]
+	if titleFromText != "" {
+		c.S.Store.Update(func(cfg *config.Config) {
+			for i := range cfg.Sessions {
+				if cfg.Sessions[i].ID == sessionID && cfg.Sessions[i].Title == "新对话" {
+					t := []rune(strings.TrimSpace(titleFromText))
+					if len(t) > 30 {
+						t = t[:30]
+					}
+					cfg.Sessions[i].Title = string(t)
 				}
-				cfg.Sessions[i].Title = string(t)
+				if cfg.Sessions[i].ID == sessionID {
+					cfg.Sessions[i].UpdatedAt = nowUTC()
+				}
 			}
-			if cfg.Sessions[i].ID == sessionID {
-				cfg.Sessions[i].UpdatedAt = nowUTC()
-			}
-		}
-	})
+		})
+	}
 	return nil
 }
 

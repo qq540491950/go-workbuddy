@@ -35,6 +35,14 @@ export interface AgentConfig {
      * when unset). Pointers distinguish "unset" from explicit false.
      */
     "enableGuardrails"?: boolean | null;
+
+    /**
+     * ConfirmTools lists builtin tool categories whose side-effectful calls
+     * need human approval before execution (ADK HITL). Only "files" is
+     * meaningful today: write_workspace_file asks for confirmation while
+     * list/read stay automatic. Empty = never ask.
+     */
+    "confirmTools"?: string[] | null;
 }
 
 /**
@@ -115,9 +123,6 @@ export enum MCPTransport {
 };
 
 /**
- * ModelProvider describes a configurable LLM provider endpoint.
- */
-/**
  * ModelInfo describes a model exposed by a provider.
  */
 export interface ModelInfo {
@@ -142,6 +147,9 @@ export interface ModelInfo {
     "priceOut"?: number;
 }
 
+/**
+ * ModelProvider describes a configurable LLM provider endpoint.
+ */
 export interface ModelProvider {
     "id": string;
     "name": string;

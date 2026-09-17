@@ -26,6 +26,15 @@ export function Cancel(sessionID: string): $CancellablePromise<void> {
 }
 
 /**
+ * ConfirmToolCall answers a pending ADK tool-confirmation interrupt (HITL):
+ * approved=true resumes the original tool call, false rejects it so the model
+ * sees the rejection and can adjust.
+ */
+export function ConfirmToolCall(sessionID: string, callID: string, approved: boolean): $CancellablePromise<void> {
+    return $Call.ByID(3936177345, sessionID, callID, approved);
+}
+
+/**
  * DeleteSession removes a chat and its stored events.
  */
 export function DeleteSession(id: string): $CancellablePromise<void> {

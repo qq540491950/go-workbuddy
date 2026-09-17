@@ -73,7 +73,7 @@ export function ModelsPage() {
     if (!editing) return;
     setFetching(true);
     try {
-      const ids = await Config.ListProviderModels(editing);
+      const ids = (await Config.ListProviderModels(editing)) ?? [];
       let added = 0;
       setEditing((prev) => {
         if (!prev) return prev;
