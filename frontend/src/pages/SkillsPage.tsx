@@ -41,6 +41,7 @@ export function SkillsPage() {
   };
 
   const remove = async (s: SkillConfig) => {
+    if (!window.confirm(`确定删除 Skill「${s.name}」？`)) return;
     await Config.DeleteSkill(s.id);
     toast.success(`已删除 ${s.name}`);
     reload();

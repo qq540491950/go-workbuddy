@@ -450,6 +450,7 @@ export function ChatPage() {
   };
 
   const removeSession = async (s: ChatSession) => {
+    if (!window.confirm(`确定删除会话「${s.title}」？该操作不可恢复。`)) return;
     await Chat.DeleteSession(s.id).catch((e) => toast.error(`删除失败: ${errText(e)}`));
     if (s.id === activeID) {
       setActiveID("");

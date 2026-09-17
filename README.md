@@ -142,6 +142,12 @@ go vet ./internal/... .
 
 测试：导入 e2e（frontmatter 解析/标题回退/大小写去重/非 SKILL 文件忽略/幂等重导入）+ 全量回归。
 
+### 第四十轮迭代：危险操作确认（已实施）
+
+删除会话 / Agent / 团队 / 远程 Agent / 供应商 / MCP 服务器 / Skill 一律弹出确认对话框，防止误删不可恢复的数据。
+
+验证：tsc/build 零错误 + 全量回归。
+
 ### 第三十九轮迭代：知识库检索结果可预览（已实施）
 
 - search_knowledge 结果附带 `refs`（工作区相对文件路径，去重排序）；ToolCallCard 路径识别扩展 `refs` 键，检索结果可直接点开「预览」查看原文（Markdown/文本渲染）

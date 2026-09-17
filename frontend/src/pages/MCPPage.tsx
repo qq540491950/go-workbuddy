@@ -102,6 +102,7 @@ export function MCPPage() {
   };
 
   const remove = async (s: MCPServerConfig) => {
+    if (!window.confirm(`确定删除 MCP 服务器「${s.name}」？`)) return;
     await Config.DeleteMCPServer(s.id);
     toast.success(`已删除 ${s.name}`);
     reload();

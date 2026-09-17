@@ -114,6 +114,7 @@ export function ModelsPage() {
   };
 
   const remove = async (p: ModelProvider) => {
+    if (!window.confirm(`确定删除供应商「${p.name}」？`)) return;
     await Config.DeleteProvider(p.id);
     toast.success(`已删除 ${p.name}`);
     reload();

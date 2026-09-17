@@ -121,6 +121,7 @@ export function TeamsPage() {
   };
 
   const remove = async (t: TeamConfig) => {
+    if (!window.confirm(`确定删除团队「${t.name}」？`)) return;
     await Config.DeleteTeam(t.id);
     toast.success(`已删除 ${t.name}`);
     reload();
