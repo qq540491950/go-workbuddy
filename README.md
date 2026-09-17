@@ -92,11 +92,13 @@ go vet ./internal/... .
 
 ## 使用流程
 
-1. **模型配置** → 新增供应商（例：协议选 OpenAI 兼容，Base URL 填 `https://api.deepseek.com/v1`，填 API Key，模型列表填 `deepseek-chat`），点击「测试」验证连通。
-2. **Agents** → 新增 Agent（选择供应商与模型、编写系统提示词、按需挂载 Skills / MCP / 内置工具）。
-3. **Skills / MCP 服务** → 维护可复用技能与外部工具（例：stdio 服务 `npx -y @modelcontextprotocol/server-everything`，点「连接」发现工具）。
-4. **Agent 团队**（可选）→ 选成员组队，开启自动协调员或指定负责人。
-5. **对话** → 新对话选择 Agent 或团队，开始对话；工具调用与团队成员输出会实时展示。
+1. **模型配置** → 新增供应商（例：协议选 OpenAI 兼容，Base URL 填 `https://api.deepseek.com/v1`，填 API Key，可点「拉取」获取模型列表），点击「测试」验证连通（显示延迟）。
+2. **Agents** → 新增 Agent（选择供应商与模型、编写系统提示词（支持 `{{date}}` 等变量）、按需挂载 Skills / MCP / 内置工具；可开启「写入文件需人工确认」与运行护栏）；也可「导入 Agent」分享文件。
+3. **远程 Agent（可选）** → Agents 页「远程 Agent（A2A 协议）」填对方服务地址，「检查连接」自动发现 Agent Card。
+4. **Skills / MCP 服务** → 维护可复用技能（可从工作区 skills/ 批量导入）与外部工具（stdio 或 Streamable HTTP，远程服务器支持 Bearer / API Key / OAuth 2.1 认证）。
+5. **Agent 团队**（可选）→ 选成员组队（可含远程成员），开启自动协调员或指定负责人。
+6. **对话** → 新对话选择 Agent / 团队 / 远程 Agent，开始对话；支持斜杠命令（`/export` `/stats` `/new`…）、消息时间戳、工具耗时、HITL 确认卡片、上下文占用指示；多个会话可并行运行，后台完成会提示。
+7. **设置** → 外观/工作区/语义检索（Embedding）/A2A 服务发布/备份迁移/诊断日志。
 
 ## 视觉测试与体验设计
 
