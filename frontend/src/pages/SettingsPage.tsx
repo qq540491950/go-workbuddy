@@ -204,7 +204,7 @@ export function SettingsPage() {
               placeholder="http://127.0.0.1:7890（留空直连）"
             />
             <p className="text-xs text-muted-foreground">
-              模型请求、知识库向量与 MCP 远程连接统一走该代理；保存并重启应用后生效。
+              模型请求、知识库向量、MCP 远程连接与 A2A 调用统一走该代理（含 Gemini SDK 与 a2a-go 客户端的默认传输层，契约测试钉住）；保存并重启应用后生效。
             </p>
           </CardContent>
         </Card>
