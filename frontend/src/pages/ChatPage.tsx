@@ -90,7 +90,21 @@ export function ChatPage() {
   const [sessions, setSessions] = useState<ChatSession[]>([]);
   const [activeID, setActiveID] = useState("");
   const [messages, setMessages] = useState<UIMessage[]>([]);
-  const [input, setInput] = useState("");
+  // Per-session input drafts: switching sessions never loses what the user
+  // was typing (pairs with parallel background sessions).
+  const [drafts, setDrafts] = useState<Record<string, string>>({});
+  const input = activeID ? (drafts[activeID] ?? "") : "";
+  const setInput = useCallback(
+    (v: string | ((prev: string) => string)) => {
+      if (!activeID) return;
+      setDrafts((prev) => {
+        const cur = prev[activeID] ?? "";
+        const next = typeof v === "function" ? v(cur) : v;
+        return { ...prev, [activeID]: next };
+      });
+    },
+    [activeID],
+  );
   const [runningMap, setRunningMap] = useState<Record<string, boolean>>({});
   const running = !!activeID && !!runningMap[activeID];
   const [agents, setAgents] = useState<AgentConfig[]>([]);
