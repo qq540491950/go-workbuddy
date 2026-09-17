@@ -173,3 +173,27 @@ func TestSettingsA2AAutoStartPersisted(t *testing.T) {
 		t.Fatalf("A2A auto-start settings not persisted: %+v", st)
 	}
 }
+
+// TestSaveSettingsProxyValidation: malformed proxy URLs are rejected at save
+// time with a clear error.
+func TestSaveSettingsProxyValidation(t *testing.T) {
+	app, store, _ := newBackupTestService(t)
+	st := store.Get().Settings
+
+	st.HTTPProxy = "not a url"
+	if err := app.S.Store.Update(func(cfg *config.Config) {}); err != nil {
+		t.Fatal(err)
+	}
+	svc := NewConfigService(app.S)
+	if err := svc.SaveSettings(st); err == nil {
+		t.Fatal("expected invalid proxy rejection")
+	}
+
+	st.HTTPProxy = "http://127.0.0.1:7890"
+	if err := svc.SaveSettings(st); err != nil {
+		t.Fatalf("valid proxy rejected: %v", err)
+	}
+	if store.Get().Settings.HTTPProxy != "http://127.0.0.1:7890" {
+		t.Fatal("proxy not persisted")
+	}
+}

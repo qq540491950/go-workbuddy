@@ -120,6 +120,13 @@ go vet ./internal/... .
 
 已实施：Markdown + 代码块复制、消息级复制、深浅主题、首次运行引导、会话搜索、快捷键、工具调用折叠面板、流式打字指示器。
 
+### 第四十六轮迭代：代理覆盖确认与保存校验（已实施）
+
+- **覆盖确认**：核验 gemini SDK（`&http.Client{}`）、a2a-go JSONRPC 客户端（同）与 MCP streamable（`http.DefaultClient`）均回落到 `http.DefaultTransport` —— 全局代理设置对所有出站流量生效，无需逐客户端接线
+- **保存即校验**：SaveSettings 校验代理地址（scheme http/https + host），格式错误立即报错，不再等到重启后
+
+测试：合法/非法代理保存 e2e + 全量回归。
+
 ### 第四十五轮迭代：模型请求瞬态重试（已实施）
 
 - OpenAI 兼容与 Anthropic 适配器共享 `postWithRetry`：连接失败与 502/503/504 网关错误按固定退避（0.5s/1.5s）自动重试最多 2 次

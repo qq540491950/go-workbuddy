@@ -127,7 +127,8 @@ export function SaveRemoteAgent(r: config$0.RemoteAgentConfig): $CancellableProm
 }
 
 /**
- * SaveSettings persists global settings.
+ * SaveSettings persists global settings, validating the outbound proxy URL
+ * up front so a typo surfaces immediately instead of at next app start.
  */
 export function SaveSettings(s: config$0.Settings): $CancellablePromise<void> {
     return $Call.ByID(2460420529, s);
