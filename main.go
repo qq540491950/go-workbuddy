@@ -122,6 +122,9 @@ func main() {
 		Mac: application.MacOptions{
 			ApplicationShouldTerminateAfterLastWindowClosed: true,
 		},
+		OnShutdown: func() {
+			a2aRPC.StopAll() // graceful: unpublish agents before exit
+		},
 	})
 
 	window := app.Window.NewWithOptions(application.WebviewWindowOptions{

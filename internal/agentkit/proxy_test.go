@@ -125,3 +125,54 @@ func TestGlobalProxyCoversMCPTransport(t *testing.T) {
 		t.Fatalf("proxy not traversed: tools=%v hit=%v", resp.Tools, hitProxy.Load())
 	}
 }
+
+// TestGlobalProxyAppliesToEmptyClients documents/verifies that SDK-style
+// fallback clients (empty &http.Client{} as used by the gemini SDK and the
+// a2a-go JSONRPC client) ride http.DefaultTransport, so the global proxy
+// applies to them too.
+func TestGlobalProxyAppliesToEmptyClients(t *testing.T) {
+	transport, ok := http.DefaultTransport.(*http.Transport)
+	if !ok {
+		t.Skip("default transport is not *http.Transport")
+	}
+	origProxy := transport.Proxy
+	t.Cleanup(func() { transport.Proxy = origProxy })
+
+	var hitProxy atomic.Bool
+	origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(200)
+		_, _ = w.Write([]byte("{}"))
+	}))
+	defer origin.Close()
+
+	proxySrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hitProxy.Store(true)
+		p := httputil.NewSingleHostReverseProxy(mustParseURL(origin.URL))
+		direct := http.DefaultTransport.(*http.Transport).Clone()
+		direct.Proxy = nil
+		p.Transport = direct
+		p.ServeHTTP(w, r)
+	}))
+	defer proxySrv.Close()
+
+	if err := ApplyGlobalProxy(proxySrv.URL); err != nil {
+		t.Fatal(err)
+	}
+	client := &http.Client{} // same shape as the gemini/a2a fallbacks
+	resp, err := client.Get(origin.URL + "/v1beta/models")
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if !hitProxy.Load() {
+		t.Fatal("empty-client requests must traverse the global proxy")
+	}
+}
+
+func mustParseURL(raw string) *url.URL {
+	u, err := url.Parse(raw)
+	if err != nil {
+		panic(err)
+	}
+	return u
+}
