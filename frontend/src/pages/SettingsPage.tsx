@@ -14,7 +14,7 @@ import {
 import { ArtifactPreview } from "@/components/ToolCallCard";
 import { cn } from "@/lib/utils";
 import { ACCENTS, FONT_SCALES, applyTheme, cacheTheme, type ThemePrefs } from "@/lib/theme";
-import { App, A2A, Config, type AgentConfig, type A2AStatus, type KnowledgeFile, type KnowledgeIndexStats, type ModelProvider, type Settings, type StorageInfo, type MemoryInfo, errText, Protocol } from "@/lib/api";
+import { Chat, App, A2A, Config, type AgentConfig, type A2AStatus, type KnowledgeFile, type KnowledgeIndexStats, type ModelProvider, type Settings, type StorageInfo, type MemoryInfo, errText, Protocol } from "@/lib/api";
 
 export function SettingsPage() {
   const [settings, setSettings] = useState<Settings | null>(null);
@@ -404,6 +404,19 @@ export function SettingsPage() {
             <CardTitle className="text-base">诊断</CardTitle>
           </CardHeader>
           <CardContent className="grid gap-2">
+            <Button
+              variant="outline"
+              onClick={async () => {
+                try {
+                  const n = await Chat.ExportAllSessions();
+                  toast.success(`已导出 ${n} 个会话到工作区 exports/`);
+                } catch (e) {
+                  toast.error(`导出失败: ${errText(e)}`);
+                }
+              }}
+            >
+              批量导出全部会话
+            </Button>
             <Button
               variant="outline"
               onClick={async () => {

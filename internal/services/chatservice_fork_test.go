@@ -496,3 +496,54 @@ func TestArchiveSessionRoundTrip(t *testing.T) {
 		}
 	}
 }
+
+// TestExportAllSessions: bulk export writes one Markdown file per session.
+func TestExportAllSessions(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte(sseText("批量导出回答") + sseDone))
+	}))
+	defer srv.Close()
+
+	dir := t.TempDir()
+	store, err := config.Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Update(func(cfg *config.Config) {
+		cfg.Settings.WorkspaceDir = dir
+		cfg.Providers = append(cfg.Providers, config.ModelProvider{
+			ID: "p1", Name: "P", Protocol: config.ProtocolOpenAI,
+			BaseURL: srv.URL, Models: []config.ModelInfo{{ID: "m"}}, IsDefault: true,
+		})
+		cfg.Agents = append(cfg.Agents, config.AgentConfig{ID: "a1", Name: "A", ProviderID: "p1", Model: "m"})
+	}); err != nil {
+		t.Fatal(err)
+	}
+	db, sessions, err := newTestSessionService(filepath.Join(dir, "sessions.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	svc := &Services{Store: store, Kit: agentkit.NewKit(store, mcpmgr.New()), MCP: mcpmgr.New()}
+	chat := NewChatService(svc, sessions, db)
+	s1, err := chat.NewSession("agent", "a1", "会话一")
+	if err != nil {
+		t.Fatal(err)
+	}
+	s2, err := chat.NewSession("agent", "a1", "会话二")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = s2
+	if err := chat.Send(s1.ID, "内容", nil); err != nil {
+		t.Fatal(err)
+	}
+
+	n, err := chat.ExportAllSessions()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n < 2 {
+		t.Fatalf("expected at least 2 exported sessions, got %d", n)
+	}
+}

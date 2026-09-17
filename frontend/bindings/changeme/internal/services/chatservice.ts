@@ -57,6 +57,14 @@ export function EditAndResend(sessionID: string, newText: string): $CancellableP
 }
 
 /**
+ * ExportAllSessions writes every conversation as Markdown into the workspace
+ * exports directory and returns the number of exported sessions.
+ */
+export function ExportAllSessions(): $CancellablePromise<number> {
+    return $Call.ByID(3188107487);
+}
+
+/**
  * ExportSession writes the conversation as Markdown into the workspace export
  * directory and returns the file path.
  */

@@ -642,6 +642,19 @@ func (c *ChatService) ExportSession(sessionID string) (string, error) {
 	return path, nil
 }
 
+// ExportAllSessions writes every conversation as Markdown into the workspace
+// exports directory and returns the number of exported sessions.
+func (c *ChatService) ExportAllSessions() (int, error) {
+	sessions := c.ListSessions()
+	count := 0
+	for _, sess := range sessions {
+		if _, err := c.ExportSession(sess.ID); err == nil {
+			count++
+		}
+	}
+	return count, nil
+}
+
 // ExportSessionHTML renders the conversation as a self-contained styled HTML
 // file (Markdown pipeline via gomarkdown) and returns the file path.
 func (c *ChatService) ExportSessionHTML(sessionID string) (string, error) {
