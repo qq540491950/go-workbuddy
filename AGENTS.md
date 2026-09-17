@@ -1,0 +1,69 @@
+# AGENTS.md — WorkBuddy Agent 工程指南
+
+面向在本仓库工作的编码代理（与人类贡献者）。先读 README.md 的功能总览与各轮迭代记录了解能力边界。
+
+## 项目概要
+
+类 WorkBuddy 的本地 AI Agent 桌面应用：**Google ADK Go v2**（agent 运行时）+ **Wails v3**（桌面壳）+ **React/TS + shadcn/ui**（前端）。
+
+## 常用命令
+
+```bash
+go test ./internal/...                     # 后端全量测试（提交前必须全绿）
+go test -race ./internal/...               # 并发安全回归（改并发/数据库代码后必跑）
+go vet ./internal/... .
+cd frontend && npx tsc --noEmit && npm run build   # 前端类型检查 + 构建
+wails3 generate bindings -f '-tags production' -clean=true -ts -i   # 再生成 Wails 绑定
+wails3 build                               # 生产构建（自动重跑绑定生成 + 前端构建 + Go 编译）
+wails3 package                             # 打包 macOS .app
+cd frontend && npm run stub                # 浏览器视觉回归桩（端口 9246，/stub/index.html）
+```
+
+注意：`wails3 build` 的绑定生成带 `-clean=true`，会**重建**绑定文件 —— 手工改绑定会被覆盖。改 Go 服务后直接跑再生成即可（前端 import 用生成产物）。
+
+## 目录地图
+
+```
+main.go                      # 装配：服务注册、窗口、托盘+全局快捷键、SQLite 会话库、知识索引
+internal/config/             # 配置模型与 JSON 存储（0600 config.json；含默认 Skills 种子、MCP 令牌缓存）
+internal/agentkit/           # ADK 集成核心
+  llm.go                     #   OpenAI 兼容 / Anthropic 自研 model.LLM 适配器（SSE 流式 + 函数调用）
+  kit.go                     #   Agent/团队构建、内置工具装配、SanitizeAgentName
+  semantic.go                #   知识库向量索引（SQLite、增量、混合检索）+ OpenAI 兼容 /embeddings 客户端
+  knowledge.go               #   关键词检索与 search_knowledge 工具
+  remote.go                  #   A2A 远程 Agent（官方 a2a-go）+ Agent Card 解析
+  guardrail.go               #   密钥脱敏 / 提示注入检测
+internal/mcpmgr/             # MCP 服务器生命周期；auth.go = Bearer/API-Key/OAuth 2.1 传输层
+internal/memory/             # 长期记忆（ADK memory.Service，SQLite）
+internal/services/           # Wails 服务（前端可调用 RPC）
+  chatservice.go             #   会话/对话核心：runTurn 共享引擎、HITL 确认、分叉、并行
+  a2aservice.go              #   A2A 服务端（对外发布本地 Agent）
+  app.go                     #   AppInfo、配置备份导出/导入、Agent 分享
+frontend/src/pages/          # Chat / Agents / Teams / Skills / MCP / Models / Settings
+frontend/bindings/           # wails3 生成的 TS 绑定（勿手改，会被 -clean 覆盖）
+frontend/stub/               # 浏览器视觉回归：setTransport 数据桩 + window.__emit 事件注入
+```
+
+## 关键机制（改动前必读）
+
+- **对话引擎**：`ChatService.runTurn` 是 Send / Regenerate / EditAndResend / ConfirmToolCall 的共享引擎。改事件流（`ChatStreamEvent`）时同步改前端 `ChatPage.tsx` 的 switch 与历史渲染 `renderEvent`。
+- **HITL 确认协议**：ADK 以 `adk_request_confirmation` FunctionCall（带 `LongRunningToolIDs`）暂停运行；应答 = 发送 `{ID, Name: "adk_request_confirmation", Response: {"confirmed": bool}}` 的 FunctionResponse 作为下一轮消息。ADK 在恢复后对模型隐藏确认往返。
+- **会话库并发**：`sessions.db` 使用 WAL + busy_timeout(5000) + **单连接**（`SetMaxOpenConns(1)`）。WAL 下延迟事务的快照冲突会绕过 busy_timeout —— 不要移除单连接限制，否则并行会话写库触发 SQLITE_BUSY。
+- **绑定哈希**：方法 ID = FNV-1a32(`changeme/internal/services.<Service>.<Method>`)（生成器自动处理；手工计算仅用于应急）。
+- **A2A 双向**：客户端 = `agentkit.BuildRemoteAgent`（remoteagent v2，AgentCardProvider 每次调用重解析）；服务端 = `a2aservice.go` / 测试中 `a2asrv.NewHandler + adka2a(v2).NewExecutor`（与 ADK launcher 同配方）。Agent Card 必须含 `SupportedInterfaces`（JSONRPC 绑定），否则客户端报 "no supported interfaces"。
+- **假模型服务器**：OpenAI 兼容桩必须同时处理 `"stream":false`（返回普通 chat.completion JSON）与 SSE（A2A executor 以非流式调用模型）。
+- **知识库索引**：`knowledge.index.db` 独立于 sessions.db；按文件 mtime 增量；换 Embedding 模型全量重建；Embedding 故障优雅回退关键词。
+- **导出脱敏**：`ExportConfig(false)` 剥离供应商 API Key 与 MCP AuthToken；`MCPTokens` 任何导出都不携带。
+
+## 约定
+
+- 测试与被测代码同包同目录（`*_test.go`），e2e 用 `httptest` 假服务器（fake SSE 模型 / 假授权服务器 / 内存 A2A 服务端），不依赖外部网络。
+- UI 文案为中文；错误经 `errText()` 透传到 toast。
+- 每轮功能迭代在 README.md「视觉测试与体验设计」章节**顶部**追加「### 第 N 轮迭代：<主题>（已实施）」记录（含依据、实现要点、测试证据）。
+- 提交信息格式：`feat(scope): 主题 — 要点`，正文列出实现与测试清单。
+
+## 已知边界
+
+- 长会话渲染上限 200 条（完整历史持久化，可导出查看）
+- MCP OAuth 令牌缓存在 config.json（0600）；脱敏导出不带令牌
+- 团队负责人必须为本地 Agent（远程 A2A 成员仅作为可转移的子代理）
