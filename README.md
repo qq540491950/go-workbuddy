@@ -753,12 +753,14 @@ go vet ./internal/... .
 8. **自动更新与版本通道**：Sparkle/Wails 更新器集成
 9. **配置导入导出与云备份**
 
-## 发布就绪检查（第二十九轮收官验证）
+## 发布就绪检查（第 29/42/63 轮多轮收官验证，持续维护）
 
 - 后端全量测试（agentkit / config / mcpmgr / memory / services）+ `-race` 全部通过
 - 前端 `tsc` 严格类型检查 + 生产构建零错误
 - `wails3 build` 生产打包成功，启动烟雾通过（进程存活、窗口创建、托盘/快捷键注册无报错、干净退出）
-- 浏览器视觉回归（`frontend/stub/`）覆盖确认卡片、远程 Agent、团队拓扑、设置页等关键界面
+- 浏览器视觉回归（`frontend/stub/`）覆盖确认卡片交互、远程 Agent 管理、团队拓扑、设置页全部新卡片与深色主题
+- 双子代理代码审查（Standards + Spec）已执行并修复全部硬性发现
+- 一键复检：`./scripts/verify.sh` → `VERIFY: ALL GREEN`
 
 ## 生产使用
 
