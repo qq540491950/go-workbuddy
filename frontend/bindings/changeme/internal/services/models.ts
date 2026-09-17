@@ -143,8 +143,28 @@ export interface SessionStats {
     "tokensIn": number;
     "tokensOut": number;
     "tokensTotal": number;
+
+    /**
+     * per-day token/cost breakdown
+     */
+    "daily"?: StatDay[] | null;
     "firstAt"?: string | null;
     "lastAt"?: string | null;
+}
+
+/**
+ * StatDay is one calendar day of usage with an estimated cost using the
+ * session target's current model prices (¥/1M tokens).
+ */
+export interface StatDay {
+    /**
+     * YYYY-MM-DD (local)
+     */
+    "date": string;
+    "promptTokens": number;
+    "completionTokens": number;
+    "totalTokens": number;
+    "estimatedCost": number;
 }
 
 /**

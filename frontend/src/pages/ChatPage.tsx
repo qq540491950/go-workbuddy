@@ -781,6 +781,7 @@ export function ChatPage() {
             <DialogTitle className="text-base">会话统计</DialogTitle>
           </DialogHeader>
           {stats && (
+            <>
             <div className="grid grid-cols-2 gap-2 text-sm">
               {[
                 ["用户消息", stats.messages],
@@ -798,6 +799,32 @@ export function ChatPage() {
                 </div>
               ))}
             </div>
+            {(stats.daily?.length ?? 0) > 0 && (
+              <div className="rounded-lg border p-2.5">
+                <div className="mb-1 text-xs text-muted-foreground">按日明细（成本按当前模型价格估算）</div>
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="text-muted-foreground">
+                      <th className="text-left font-normal">日期</th>
+                      <th className="text-right font-normal">输入</th>
+                      <th className="text-right font-normal">输出</th>
+                      <th className="text-right font-normal">估算成本</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {stats.daily!.map((d) => (
+                      <tr key={d.date}>
+                        <td className="py-0.5">{d.date}</td>
+                        <td className="text-right">{d.promptTokens.toLocaleString()}</td>
+                        <td className="text-right">{d.completionTokens.toLocaleString()}</td>
+                        <td className="text-right">¥{d.estimatedCost.toFixed(4)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+            </>
           )}
         </DialogContent>
       </Dialog>

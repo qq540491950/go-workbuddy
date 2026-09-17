@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -950,19 +951,35 @@ func (c *ChatService) RememberSession(sessionID string) (int, error) {
 
 // SessionStats aggregates observability metrics for one conversation.
 type SessionStats struct {
-	Messages     int        `json:"messages"`
-	ToolCalls    int        `json:"toolCalls"`
-	ToolFailures int        `json:"toolFailures"`
-	AssistantTurns int      `json:"assistantTurns"`
-	TokensIn     int64      `json:"tokensIn"`
-	TokensOut    int64      `json:"tokensOut"`
-	TokensTotal  int64      `json:"tokensTotal"`
-	FirstAt      *time.Time `json:"firstAt,omitempty"`
-	LastAt       *time.Time `json:"lastAt,omitempty"`
+	Messages       int         `json:"messages"`
+	ToolCalls      int         `json:"toolCalls"`
+	ToolFailures   int         `json:"toolFailures"`
+	AssistantTurns int         `json:"assistantTurns"`
+	TokensIn       int64       `json:"tokensIn"`
+	TokensOut      int64       `json:"tokensOut"`
+	TokensTotal    int64       `json:"tokensTotal"`
+	Daily          []StatDay   `json:"daily,omitempty"` // per-day token/cost breakdown
+	FirstAt        *time.Time  `json:"firstAt,omitempty"`
+	LastAt         *time.Time  `json:"lastAt,omitempty"`
+}
+
+// StatDay is one calendar day of usage with an estimated cost using the
+// session target's current model prices (¥/1M tokens).
+type StatDay struct {
+	Date          string  `json:"date"` // YYYY-MM-DD (local)
+	PromptTokens  int64   `json:"promptTokens"`
+	CompletionTokens int64 `json:"completionTokens"`
+	TotalTokens   int64   `json:"totalTokens"`
+	EstimatedCost float64 `json:"estimatedCost"`
 }
 
 // SessionStats computes aggregate metrics from the stored ADK events.
 func (c *ChatService) SessionStats(sessionID string) (*SessionStats, error) {
+	cfg := c.S.Store.Get()
+	target := c.resolveSessionTarget(cfg, sessionID)
+	if target == nil {
+		return nil, fmt.Errorf("session %q not found", sessionID)
+	}
 	resp, err := c.sessions.Get(context.Background(), &session.GetRequest{
 		AppName: c.appName, UserID: c.userID, SessionID: sessionID,
 	})
@@ -973,6 +990,25 @@ func (c *ChatService) SessionStats(sessionID string) (*SessionStats, error) {
 	if resp.Session == nil {
 		return st, nil
 	}
+	// Model prices (¥/1M tokens) come from the session target's CURRENT
+	// model; historical turns that used another model are approximated.
+	priceIn, priceOut := 0.0, 0.0
+	cfgNow := c.S.Store.Get()
+	if ac := c.targetAgentConfig(cfgNow, target); ac != nil {
+		for i := range cfgNow.Providers {
+			if cfgNow.Providers[i].ID != ac.ProviderID {
+				continue
+			}
+			for _, mi := range cfgNow.Providers[i].Models {
+				if mi.ID == ac.Model {
+					priceIn, priceOut = mi.PriceIn, mi.PriceOut
+				}
+			}
+			break
+		}
+	}
+	days := map[string]*StatDay{}
+
 	for ev := range resp.Session.Events().All() {
 		if ev == nil {
 			continue
@@ -997,6 +1033,17 @@ func (c *ChatService) SessionStats(sessionID string) (*SessionStats, error) {
 			st.TokensIn += u.PromptTokens
 			st.TokensOut += u.CompletionTokens
 			st.TokensTotal += u.TotalTokens
+
+			day := ev.Timestamp.Local().Format("2006-01-02")
+			d := days[day]
+			if d == nil {
+				d = &StatDay{Date: day}
+				days[day] = d
+			}
+			d.PromptTokens += u.PromptTokens
+			d.CompletionTokens += u.CompletionTokens
+			d.TotalTokens += u.TotalTokens
+			d.EstimatedCost += float64(u.PromptTokens)/1e6*priceIn + float64(u.CompletionTokens)/1e6*priceOut
 		}
 		if ev.Partial {
 			continue
@@ -1018,6 +1065,10 @@ func (c *ChatService) SessionStats(sessionID string) (*SessionStats, error) {
 			st.AssistantTurns++
 		}
 	}
+	for _, d := range days {
+		st.Daily = append(st.Daily, *d)
+	}
+	sort.Slice(st.Daily, func(i, j int) bool { return st.Daily[i].Date < st.Daily[j].Date })
 	return st, nil
 }
 
