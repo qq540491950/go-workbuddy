@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { MessageSquare, Bot, Users, Sparkles, Blocks, Boxes, Settings as SettingsIcon, Sun, Moon } from "lucide-react";
+import { MessageSquare, Bot, Users, Sparkles, Blocks, Boxes, Settings as SettingsIcon, Sun, Moon, CircleHelp } from "lucide-react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Toaster } from "@/components/ui/sonner";
 import { ChatPage } from "@/pages/ChatPage";
 import { AgentsPage } from "@/pages/AgentsPage";
@@ -26,6 +27,7 @@ type NavKey = (typeof navItems)[number]["key"];
 
 export default function App() {
   const [page, setPage] = useState<NavKey>("chat");
+  const [helpOpen, setHelpOpen] = useState(false);
   const [prefs, setPrefs] = useState<ThemePrefs>(() => cachedTheme());
   const [isDark, setIsDark] = useState(() => applyTheme(cachedTheme()));
   const [version, setVersion] = useState("");
@@ -101,16 +103,50 @@ export default function App() {
         <div className="px-4 text-[11px] text-muted-foreground">
           <div className="mb-2 flex items-center justify-between">
             <span>ADK Go v2 · Wails v3</span>
-            <button
-              title="切换深色/浅色主题"
-              onClick={toggleTheme}
-              className="rounded p-1 hover:bg-sidebar-accent/60"
-            >
-              {isDark ? <Sun className="h-3.5 w-3.5" /> : <Moon className="h-3.5 w-3.5" />}
-            </button>
+            <span className="flex items-center gap-1">
+              <button
+                title="快捷键与命令"
+                onClick={() => setHelpOpen(true)}
+                className="rounded p-1 hover:bg-sidebar-accent/60"
+              >
+                <CircleHelp className="h-3.5 w-3.5" />
+              </button>
+              <button
+                title="切换深色/浅色主题"
+                onClick={toggleTheme}
+                className="rounded p-1 hover:bg-sidebar-accent/60"
+              >
+                {isDark ? <Sun className="h-3.5 w-3.5" /> : <Moon className="h-3.5 w-3.5" />}
+              </button>
+            </span>
           </div>
           {version && <div>v{version}</div>}
         </div>
+
+        <Dialog open={helpOpen} onOpenChange={setHelpOpen}>
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle className="text-base">快捷键与命令</DialogTitle>
+            </DialogHeader>
+            <div className="grid gap-2 text-sm">
+              {[
+                ["⌘/Ctrl + N", "新建对话"],
+                ["⌘/Ctrl + K", "聚焦输入框"],
+                ["Enter", "发送消息"],
+                ["Shift + Enter", "换行"],
+                ["/export", "导出会话 Markdown"],
+                ["/exporthtml", "导出会话 HTML"],
+                ["/stats", "会话统计"],
+                ["/new", "新建对话"],
+              ].map(([k, d]) => (
+                <div key={k} className="flex items-center justify-between rounded-lg border px-3 py-1.5">
+                  <span className="font-mono text-xs">{k}</span>
+                  <span className="text-xs text-muted-foreground">{d}</span>
+                </div>
+              ))}
+            </div>
+          </DialogContent>
+        </Dialog>
       </aside>
 
       <main className="min-w-0 flex-1 overflow-hidden">
