@@ -515,6 +515,16 @@ export function ChatPage() {
     return agents.find((a) => a.id === active.targetId)?.name ?? "Agent";
   }, [active, agents, teams]);
 
+  // contextUsage: how much of the target model's context window the session
+  // has consumed so far (best-effort, based on streamed usage totals).
+  const contextUsage = useMemo(() => {
+    const win = target.model?.contextWindow ?? 0;
+    if (win <= 0 || !sessionUsage || sessionUsage.totalTokens <= 0) return null;
+    const pct = Math.min(100, (sessionUsage.totalTokens / win) * 100);
+    const color = pct >= 80 ? "bg-destructive" : pct >= 50 ? "bg-amber-500" : "bg-emerald-500";
+    return { pct, color, win };
+  }, [target.model, sessionUsage]);
+
   return (
     <div className="flex h-full">
       {/* Sessions */}
@@ -603,6 +613,17 @@ export function ChatPage() {
               <Badge variant="outline" className="font-normal" title={`输入 ${sessionUsage.promptTokens} + 输出 ${sessionUsage.completionTokens} tokens`}>
                 {sessionUsage.totalTokens.toLocaleString()} tokens{costOf(sessionUsage) && ` · ${costOf(sessionUsage)}`}
               </Badge>
+            )}
+            {contextUsage && (
+              <div
+                className="flex items-center gap-1.5"
+                title={`上下文窗口：已用 ${sessionUsage?.totalTokens.toLocaleString()} / ${contextUsage.win.toLocaleString()} tokens（${contextUsage.pct.toFixed(1)}%）`}
+              >
+                <div className="h-1.5 w-20 overflow-hidden rounded-full bg-muted">
+                  <div className={`h-full rounded-full transition-all ${contextUsage.color}`} style={{ width: `${contextUsage.pct}%` }} />
+                </div>
+                <span className="text-[11px] text-muted-foreground">{contextUsage.pct.toFixed(0)}%</span>
+              </div>
             )}
             {active && (
               <>
