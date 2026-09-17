@@ -662,9 +662,12 @@ export function ChatPage() {
                 onClick={() => setActiveID(s.id)}
               >
                 {s.targetType === "team" ? <Users className="h-3.5 w-3.5 shrink-0 text-primary" /> : s.targetType === "remote" ? <Network className="h-3.5 w-3.5 shrink-0 text-primary" /> : <Bot className="h-3.5 w-3.5 shrink-0 text-primary" />}
-                <span className="min-w-0 flex-1 truncate" title={s.forkedFrom ? `分叉自「${sessions.find((x) => x.id === s.forkedFrom)?.title ?? s.forkedFrom}」` : s.title}>
-                  {s.forkedFrom && <GitFork className="mr-1 inline h-3 w-3 text-muted-foreground" />}
-                  {s.title}
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate" title={s.forkedFrom ? `分叉自「${sessions.find((x) => x.id === s.forkedFrom)?.title ?? s.forkedFrom}」` : s.title}>
+                    {s.forkedFrom && <GitFork className="mr-1 inline h-3 w-3 text-muted-foreground" />}
+                    {s.title}
+                  </span>
+                  {s.preview && <span className="block truncate text-[11px] text-muted-foreground">{s.preview}</span>}
                 </span>
                 {s.pinned && <Pin className="h-3 w-3 shrink-0 text-primary" aria-label="已置顶" />}
                 {runningMap[s.id] && <Loader2 className="h-3 w-3 shrink-0 animate-spin text-primary" aria-label="生成中" />}

@@ -250,6 +250,8 @@ type ChatSession struct {
 	ForkedFrom string `json:"forkedFrom,omitempty"`
 	// Pinned sessions sort first in the sidebar.
 	Pinned bool `json:"pinned,omitempty"`
+	// Preview is the tail of the latest assistant reply, for the sidebar.
+	Preview string `json:"preview,omitempty"`
 }
 
 // Store persists Config as JSON and guards concurrent access.

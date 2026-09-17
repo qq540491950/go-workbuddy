@@ -83,6 +83,11 @@ export interface ChatSession {
      * Pinned sessions sort first in the sidebar.
      */
     "pinned"?: boolean;
+
+    /**
+     * Preview is the tail of the latest assistant reply, for the sidebar.
+     */
+    "preview"?: string;
 }
 
 /**

@@ -965,6 +965,7 @@ func (c *ChatService) runTurn(target *config.ChatSession, guardOn bool, msg *gen
 	var turnUsage *UsageInfo
 	var sessionUsage *UsageInfo
 	toolCallsSeen := 0
+	lastReply := ""
 	for ev, err := range rn.Run(ctx, c.userID, sessionID, msg, agent.RunConfig{
 		StreamingMode: agent.StreamingModeSSE,
 	}) {
@@ -1036,6 +1037,7 @@ func (c *ChatService) runTurn(target *config.ChatSession, guardOn bool, msg *gen
 			if guardOn {
 				outText = agentkit.ApplyOutputGuardrail(outText)
 			}
+			lastReply = outText
 			emit(ChatStreamEvent{Kind: "message", Author: ev.Author, Text: outText, Usage: turnUsage})
 			turnUsage = nil
 		}
@@ -1064,19 +1066,27 @@ func (c *ChatService) runTurn(target *config.ChatSession, guardOn bool, msg *gen
 		}
 	}
 
-	// Auto-title from the first user message.
-	if titleFromText != "" {
+	// Sidebar preview + auto-title from the first user message.
+	if lastReply != "" || titleFromText != "" {
 		c.S.Store.Update(func(cfg *config.Config) {
 			for i := range cfg.Sessions {
-				if cfg.Sessions[i].ID == sessionID && cfg.Sessions[i].Title == "新对话" {
+				if cfg.Sessions[i].ID != sessionID {
+					continue
+				}
+				cfg.Sessions[i].UpdatedAt = nowUTC()
+				if lastReply != "" {
+					t := []rune(strings.TrimSpace(lastReply))
+					if len(t) > 80 {
+						t = t[:80]
+					}
+					cfg.Sessions[i].Preview = string(t)
+				}
+				if titleFromText != "" && cfg.Sessions[i].Title == "新对话" {
 					t := []rune(strings.TrimSpace(titleFromText))
 					if len(t) > 30 {
 						t = t[:30]
 					}
 					cfg.Sessions[i].Title = string(t)
-				}
-				if cfg.Sessions[i].ID == sessionID {
-					cfg.Sessions[i].UpdatedAt = nowUTC()
 				}
 			}
 		})
