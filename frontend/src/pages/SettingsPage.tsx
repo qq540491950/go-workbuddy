@@ -10,12 +10,14 @@ import {
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 import { ACCENTS, FONT_SCALES, applyTheme, cacheTheme, type ThemePrefs } from "@/lib/theme";
-import { Config, type ModelProvider, type Settings, errText, Protocol } from "@/lib/api";
+import { App, Config, type ModelProvider, type Settings, errText, Protocol } from "@/lib/api";
+import { useRef } from "react";
 
 export function SettingsPage() {
   const [settings, setSettings] = useState<Settings | null>(null);
   const [providers, setProviders] = useState<ModelProvider[]>([]);
   const [saving, setSaving] = useState(false);
+  const importRef = useRef<HTMLInputElement>(null);
 
   const reload = useCallback(() => {
     Config.GetConfig()
@@ -187,6 +189,68 @@ export function SettingsPage() {
                 配置后，知识库检索（search_knowledge）升级为「向量语义 + 关键词」混合检索；向量索引自动增量构建于本地 SQLite。留空则保持关键词检索。
               </p>
             </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">备份与迁移</CardTitle>
+          </CardHeader>
+          <CardContent className="grid gap-3">
+            <div className="flex flex-wrap gap-2">
+              <Button
+                variant="outline"
+                onClick={async () => {
+                  try {
+                    const p = await App.ExportConfig(true);
+                    toast.success(`已导出（含密钥）: ${p}`);
+                  } catch (e) {
+                    toast.error(`导出失败: ${errText(e)}`);
+                  }
+                }}
+              >
+                导出备份（含密钥）
+              </Button>
+              <Button
+                variant="outline"
+                onClick={async () => {
+                  try {
+                    const p = await App.ExportConfig(false);
+                    toast.success(`已导出（脱敏）: ${p}`);
+                  } catch (e) {
+                    toast.error(`导出失败: ${errText(e)}`);
+                  }
+                }}
+              >
+                导出备份（脱敏）
+              </Button>
+              <Button variant="outline" onClick={() => importRef.current?.click()}>
+                导入备份…
+              </Button>
+              <input
+                ref={importRef}
+                type="file"
+                accept="application/json,.json"
+                className="hidden"
+                onChange={async (e) => {
+                  const f = e.target.files?.[0];
+                  e.target.value = "";
+                  if (!f) return;
+                  if (!window.confirm("导入将覆盖当前供应商/Agent/远程 Agent/团队/Skills/MCP/设置（会话历史保留），确定继续？")) return;
+                  try {
+                    const text = await f.text();
+                    await App.ImportConfig(text);
+                    toast.success("导入成功，已应用备份配置");
+                    reload();
+                  } catch (err) {
+                    toast.error(`导入失败: ${errText(err)}`);
+                  }
+                }}
+              />
+            </div>
+            <p className="text-xs text-muted-foreground">
+              备份写入工作区 exports/ 目录。含密钥备份以 0600 权限保存且可直接恢复；脱敏备份不含 API Key，适合分享或迁移。
+            </p>
           </CardContent>
         </Card>
 

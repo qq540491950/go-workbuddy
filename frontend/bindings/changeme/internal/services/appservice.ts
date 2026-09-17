@@ -16,3 +16,23 @@ import { Call as $Call, CancellablePromise as $CancellablePromise } from "@wails
 export function AppInfo(): $CancellablePromise<{ [_ in string]?: string } | null> {
     return $Call.ByID(1810596567);
 }
+
+/**
+ * ExportConfig writes the current configuration (without chat sessions) as a
+ * portable JSON backup into <workspace>/exports and returns the file path.
+ * With includeSecrets=false all provider API keys are stripped so the file is
+ * safe to share.
+ */
+export function ExportConfig(includeSecrets: boolean): $CancellablePromise<string> {
+    return $Call.ByID(1127465720, includeSecrets);
+}
+
+/**
+ * ImportConfig replaces the current configuration (providers, agents, remote
+ * agents, teams, skills, MCP servers, settings) with the backup's contents.
+ * Chat sessions are preserved and API keys come from the file as-is, so an
+ * unmasked backup restores connectivity directly.
+ */
+export function ImportConfig(data: string): $CancellablePromise<void> {
+    return $Call.ByID(891138999, data);
+}
