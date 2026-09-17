@@ -415,6 +415,11 @@ func (c *ConfigService) SaveSettings(s config.Settings) error {
 	})
 }
 
+// KnowledgeIndexStats reports the semantic knowledge index state for the UI.
+func (c *ConfigService) KnowledgeIndexStats() agentkit.KnowledgeIndexStats {
+	return c.S.Kit.IndexStats()
+}
+
 // SaveRemoteAgent inserts or updates a remote A2A agent.
 func (c *ConfigService) SaveRemoteAgent(r config.RemoteAgentConfig) error {
 	if r.Name == "" {

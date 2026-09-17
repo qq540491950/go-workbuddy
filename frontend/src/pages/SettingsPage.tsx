@@ -10,7 +10,7 @@ import {
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 import { ACCENTS, FONT_SCALES, applyTheme, cacheTheme, type ThemePrefs } from "@/lib/theme";
-import { App, A2A, Config, type AgentConfig, type A2AStatus, type ModelProvider, type Settings, errText, Protocol } from "@/lib/api";
+import { App, A2A, Config, type AgentConfig, type A2AStatus, type KnowledgeIndexStats, type ModelProvider, type Settings, errText, Protocol } from "@/lib/api";
 
 export function SettingsPage() {
   const [settings, setSettings] = useState<Settings | null>(null);
@@ -21,6 +21,7 @@ export function SettingsPage() {
   const [a2aStatus, setA2AStatus] = useState<A2AStatus | null>(null);
   const [a2aAgent, setA2AAgent] = useState("");
   const [a2aPort, setA2APort] = useState("8080");
+  const [indexStats, setIndexStats] = useState<KnowledgeIndexStats | null>(null);
 
   const reload = useCallback(() => {
     Config.GetConfig()
@@ -34,6 +35,7 @@ export function SettingsPage() {
   useEffect(reload, [reload]);
   useEffect(() => {
     A2A.Status().then(setA2AStatus).catch(() => {});
+    Config.KnowledgeIndexStats().then(setIndexStats).catch(() => {});
   }, []);
 
   const update = (patch: Partial<Settings>) => {
@@ -194,6 +196,7 @@ export function SettingsPage() {
               />
               <p className="text-xs text-muted-foreground">
                 配置后，知识库检索（search_knowledge）升级为「向量语义 + 关键词」混合检索；向量索引自动增量构建于本地 SQLite。留空则保持关键词检索。
+                {indexStats && indexStats.files > 0 && ` 已索引 ${indexStats.files} 个文件 / ${indexStats.chunks} 个分块${indexStats.model ? `（模型 ${indexStats.model}）` : ""}。`}
               </p>
             </div>
           </CardContent>

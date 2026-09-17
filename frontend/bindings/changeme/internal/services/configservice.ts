@@ -84,6 +84,13 @@ export function ImportSkillsFromWorkspace(): $CancellablePromise<number> {
 }
 
 /**
+ * KnowledgeIndexStats reports the semantic knowledge index state for the UI.
+ */
+export function KnowledgeIndexStats(): $CancellablePromise<agentkit$0.KnowledgeIndexStats> {
+    return $Call.ByID(1223381284);
+}
+
+/**
  * ListProviderModels fetches the model IDs offered by the provider's list
  * endpoint, so the user can pick instead of typing model ids by hand.
  */

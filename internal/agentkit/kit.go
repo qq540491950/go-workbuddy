@@ -65,6 +65,9 @@ func (k *Kit) SetMemoryTool(t tool.Tool) { k.memory = t }
 // keyword to hybrid semantic retrieval.
 func (k *Kit) SetKnowledgeIndex(idx *KnowledgeIndex) { k.knowledge = idx }
 
+// IndexStats exposes the knowledge index state for observability.
+func (k *Kit) IndexStats() KnowledgeIndexStats { return k.knowledge.Stats() }
+
 // BuildAgent builds an ADK agent for the given agent config.
 func (k *Kit) BuildAgent(ac config.AgentConfig) (agent.Agent, error) {
 	cfg := k.store.Get()

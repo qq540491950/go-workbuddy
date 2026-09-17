@@ -340,6 +340,25 @@ func decodeVector(b []byte, dim int) []float64 {
 	return out
 }
 
+// KnowledgeIndexStats summarizes the persistent index for observability.
+type KnowledgeIndexStats struct {
+	Files  int64  `json:"files"`
+	Chunks int64  `json:"chunks"`
+	Model  string `json:"model,omitempty"`
+}
+
+// Stats returns file/chunk counts (and the embedding model when indexed).
+func (k *KnowledgeIndex) Stats() KnowledgeIndexStats {
+	var st KnowledgeIndexStats
+	if k == nil || k.DB == nil {
+		return st
+	}
+	k.DB.Model(&KnowledgeChunk{}).Count(&st.Chunks)
+	k.DB.Model(&KnowledgeChunk{}).Distinct("file").Count(&st.Files)
+	k.DB.Model(&KnowledgeChunk{}).Distinct("model").Pluck("model", &st.Model)
+	return st
+}
+
 func cosine(a, b []float64) float64 {
 	if len(a) == 0 || len(a) != len(b) {
 		return 0
