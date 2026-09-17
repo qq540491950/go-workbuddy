@@ -15,6 +15,7 @@ import (
 	"iter"
 	"net/http"
 	"strings"
+	"time"
 
 	"google.golang.org/adk/v2/model"
 	"google.golang.org/genai"
@@ -495,15 +496,18 @@ type oaAccumCall struct {
 
 func (o *openaiCompatLLM) post(ctx context.Context, body oaRequest) (*http.Response, error) {
 	payload, _ := json.Marshal(body)
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, o.cfg.BaseURL+"/chat/completions", bytes.NewReader(payload))
-	if err != nil {
-		return nil, err
+	build := func() (*http.Request, error) {
+		httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, o.cfg.BaseURL+"/chat/completions", bytes.NewReader(payload))
+		if err != nil {
+			return nil, err
+		}
+		httpReq.Header.Set("Content-Type", "application/json")
+		if o.cfg.APIKey != "" {
+			httpReq.Header.Set("Authorization", "Bearer "+o.cfg.APIKey)
+		}
+		return httpReq, nil
 	}
-	httpReq.Header.Set("Content-Type", "application/json")
-	if o.cfg.APIKey != "" {
-		httpReq.Header.Set("Authorization", "Bearer "+o.cfg.APIKey)
-	}
-	resp, err := httpClient.Do(httpReq)
+	resp, err := postWithRetry(ctx, build, o.cfg.Model, "openai-compatible")
 	if err != nil {
 		return nil, err
 	}
@@ -818,16 +822,19 @@ func argsToJSON(v any) []byte {
 
 func (a *anthropicLLM) post(ctx context.Context, body anRequest) (*http.Response, error) {
 	payload, _ := json.Marshal(body)
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, a.cfg.BaseURL+"/v1/messages", bytes.NewReader(payload))
-	if err != nil {
-		return nil, err
+	build := func() (*http.Request, error) {
+		httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, a.cfg.BaseURL+"/v1/messages", bytes.NewReader(payload))
+		if err != nil {
+			return nil, err
+		}
+		httpReq.Header.Set("Content-Type", "application/json")
+		httpReq.Header.Set("anthropic-version", "2023-06-01")
+		if a.cfg.APIKey != "" {
+			httpReq.Header.Set("x-api-key", a.cfg.APIKey)
+		}
+		return httpReq, nil
 	}
-	httpReq.Header.Set("Content-Type", "application/json")
-	httpReq.Header.Set("anthropic-version", "2023-06-01")
-	if a.cfg.APIKey != "" {
-		httpReq.Header.Set("x-api-key", a.cfg.APIKey)
-	}
-	resp, err := httpClient.Do(httpReq)
+	resp, err := postWithRetry(ctx, build, a.cfg.Model, "anthropic")
 	if err != nil {
 		return nil, err
 	}
@@ -836,4 +843,39 @@ func (a *anthropicLLM) post(ctx context.Context, body anRequest) (*http.Response
 		return nil, fmt.Errorf("anthropic %s: HTTP %d: %s", a.cfg.Model, resp.StatusCode, readErrBody(resp.Body))
 	}
 	return resp, nil
+}
+
+// retryDelays are the fixed waits between transient-failure retries.
+var retryDelays = []time.Duration{500 * time.Millisecond, 1500 * time.Millisecond}
+
+// postWithRetry executes the request built by build, retrying transient
+// failures (network errors and 502/503/504) up to len(retryDelays) extra
+// times with backoff. Retries only happen when no response bytes have been
+// consumed, so streaming output is never duplicated.
+func postWithRetry(ctx context.Context, build func() (*http.Request, error), model, kind string) (*http.Response, error) {
+	var lastErr error
+	for attempt := 0; ; attempt++ {
+		req, err := build()
+		if err != nil {
+			return nil, err
+		}
+		resp, err := httpClient.Do(req)
+		if err != nil {
+			lastErr = err
+		} else if resp.StatusCode == http.StatusBadGateway || resp.StatusCode == http.StatusServiceUnavailable || resp.StatusCode == http.StatusGatewayTimeout {
+			io.Copy(io.Discard, io.LimitReader(resp.Body, 1<<20))
+			resp.Body.Close()
+			lastErr = fmt.Errorf("%s %s: HTTP %d", kind, model, resp.StatusCode)
+		} else {
+			return resp, nil
+		}
+		if attempt >= len(retryDelays) {
+			return nil, fmt.Errorf("%s: %w", kind, lastErr)
+		}
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(retryDelays[attempt]):
+		}
+	}
 }
