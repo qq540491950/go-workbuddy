@@ -302,6 +302,31 @@ export function ChatPage() {
   const send = async () => {
     const text = input.trim();
     if (!text || !activeID || running) return;
+    // Slash commands run locally without a model round-trip.
+    if (text.startsWith("/")) {
+      const cmd = text.split(/\s+/)[0].toLowerCase();
+      switch (cmd) {
+        case "/export":
+          setInput("");
+          exportSession();
+          return;
+        case "/exporthtml":
+          setInput("");
+          exportHTML();
+          return;
+        case "/stats":
+          setInput("");
+          openStats();
+          return;
+        case "/new":
+          setInput("");
+          setNewChatOpen(true);
+          return;
+        default:
+          toast.error(`未知命令 ${cmd}。可用：/export /exporthtml /stats /new /forget <词>`);
+          return;
+      }
+    }
     setInput("");
     markRunning(activeID, true);
     const wasEditing = editing;
