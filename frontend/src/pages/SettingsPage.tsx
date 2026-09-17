@@ -236,6 +236,39 @@ export function SettingsPage() {
 
         <Card>
           <CardHeader>
+            <CardTitle className="text-base">长会话上下文压缩</CardTitle>
+          </CardHeader>
+          <CardContent className="grid gap-1.5">
+            <div className="grid grid-cols-2 gap-3">
+              <div className="grid gap-1.5">
+                <Label>滑动窗口压缩间隔（轮）</Label>
+                <Input
+                  type="number"
+                  min={0}
+                  value={settings.compactionInterval || ""}
+                  onChange={(e) => setSettings({ ...settings, compactionInterval: Number(e.target.value) || 0 })}
+                  placeholder="0（关闭）"
+                />
+              </div>
+              <div className="grid gap-1.5">
+                <Label>Token 阈值触发</Label>
+                <Input
+                  type="number"
+                  min={0}
+                  value={settings.compactionTokenThreshold || ""}
+                  onChange={(e) => setSettings({ ...settings, compactionTokenThreshold: Number(e.target.value) || 0 })}
+                  placeholder="0（关闭）"
+                />
+              </div>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              每 N 轮自动把更早的对话压缩为摘要（ADK 滑动窗口），或当提示 token 超过阈值时保留尾部、压缩其余。两者都填则同时生效；均为 0 表示关闭。远程 A2A 会话不支持。
+            </p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
             <CardTitle className="text-base">诊断</CardTitle>
           </CardHeader>
           <CardContent className="grid gap-2">

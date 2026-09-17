@@ -199,6 +199,11 @@ type Settings struct {
 	// HTTPProxy is a global outbound proxy URL (e.g. http://127.0.0.1:7890)
 	// applied to model/embedding/MCP requests at startup. Empty = direct.
 	HTTPProxy string `json:"httpProxy,omitempty"`
+	// Context compaction (ADK session/compaction). Interval counts completed
+	// user turns between sliding-window summarizations; TokenThreshold fires
+	// intra-turn tail retention at the given prompt token count. 0 = off.
+	CompactionInterval       int `json:"compactionInterval,omitempty"`
+	CompactionTokenThreshold int `json:"compactionTokenThreshold,omitempty"`
 }
 
 // normalize fills zero values (older config files) with defaults.

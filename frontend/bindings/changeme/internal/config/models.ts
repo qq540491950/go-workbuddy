@@ -318,6 +318,14 @@ export interface Settings {
      * applied to model/embedding/MCP requests at startup. Empty = direct.
      */
     "httpProxy"?: string;
+
+    /**
+     * Context compaction (ADK session/compaction). Interval counts completed
+     * user turns between sliding-window summarizations; TokenThreshold fires
+     * intra-turn tail retention at the given prompt token count. 0 = off.
+     */
+    "compactionInterval"?: number;
+    "compactionTokenThreshold"?: number;
 }
 
 /**

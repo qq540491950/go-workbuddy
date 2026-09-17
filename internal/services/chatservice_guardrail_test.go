@@ -258,3 +258,55 @@ func TestToolAuditTrail(t *testing.T) {
 		t.Fatalf("audit records incomplete: call=%v result=%v\n%s", sawCall, sawResult, data)
 	}
 }
+
+// TestCompactionIntervalSummarizes: with the sliding window enabled the
+// runner performs an extra summarization model call after the turn.
+func TestCompactionIntervalSummarizes(t *testing.T) {
+	var modelCalls atomic.Int64
+	chat, events, _ := newGuardrailTestChat(t, 0, 0, func(w http.ResponseWriter, r *http.Request) {
+		modelCalls.Add(1)
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte(sseText("带压缩的回答") + sseDone))
+	})
+	if err := chat.S.Store.Update(func(cfg *config.Config) {
+		cfg.Settings.CompactionInterval = 1
+		cfg.Settings.CompactionTokenThreshold = 0
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	sess, err := chat.NewSession("agent", "a1", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := chat.Send(sess.ID, "你好", nil); err != nil {
+		t.Fatal(err)
+	}
+	// One answer call + at least one summarization call.
+	if modelCalls.Load() < 2 {
+		t.Fatalf("expected summarization model call, got %d total", modelCalls.Load())
+	}
+	var answered bool
+	for _, ev := range *events {
+		if ev.Kind == "message" && strings.Contains(ev.Text, "带压缩的回答") {
+			answered = true
+		}
+	}
+	if !answered {
+		t.Fatalf("answer missing under compaction: %+v", *events)
+	}
+
+	// Default off: a fresh session with interval 0 makes exactly one call.
+	if err := chat.S.Store.Update(func(cfg *config.Config) {
+		cfg.Settings.CompactionInterval = 0
+	}); err != nil {
+		t.Fatal(err)
+	}
+	before := modelCalls.Load()
+	if err := chat.Send(sess.ID, "再来一次", nil); err != nil {
+		t.Fatal(err)
+	}
+	if modelCalls.Load() != before+1 {
+		t.Fatalf("without compaction expected exactly one extra model call: %d -> %d", before, modelCalls.Load())
+	}
+}

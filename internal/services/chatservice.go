@@ -18,6 +18,7 @@ import (
 	"google.golang.org/adk/v2/agent"
 	"google.golang.org/adk/v2/runner"
 	"google.golang.org/adk/v2/session"
+	"google.golang.org/adk/v2/session/compaction"
 	"google.golang.org/adk/v2/tool/toolconfirmation"
 	"google.golang.org/genai"
 
@@ -764,13 +765,28 @@ func (c *ChatService) runTurn(target *config.ChatSession, guardOn bool, msg *gen
 		return err
 	}
 
-	rn, err := runner.New(runner.Config{
+	runnerCfg := runner.Config{
 		AppName:           c.appName,
 		Agent:             root,
 		SessionService:    c.sessions,
 		MemoryService:     c.S.Memory,
 		AutoCreateSession: true,
-	})
+	}
+	// Context compaction: sliding window over completed turns and/or tail
+	// retention at a token threshold. Local LLM-rooted targets only — the
+	// default summarizer rides the root agent's model, which remote A2A
+	// agents do not have.
+	if target.TargetType != "remote" {
+		se := cfg.Settings
+		if se.CompactionInterval > 0 || se.CompactionTokenThreshold > 0 {
+			runnerCfg.Compaction = &compaction.Config{
+				CompactionInterval: se.CompactionInterval,
+				OverlapSize:        1,
+				TokenThreshold:     se.CompactionTokenThreshold,
+			}
+		}
+	}
+	rn, err := runner.New(runnerCfg)
 	if err != nil {
 		return err
 	}
