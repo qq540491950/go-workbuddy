@@ -63,6 +63,13 @@ function mdToSpeech(md: string): string {
     .trim();
 }
 
+const SLASH_COMMANDS = [
+  { cmd: "/export", desc: "导出会话为 Markdown" },
+  { cmd: "/exporthtml", desc: "导出会话为 HTML" },
+  { cmd: "/stats", desc: "查看会话统计" },
+  { cmd: "/new", desc: "新建对话" },
+];
+
 /** fmtTime renders an ISO timestamp as local HH:MM for hover display. */
 function fmtTime(iso?: string): string {
   if (!iso) return "";
@@ -608,6 +615,11 @@ export function ChatPage() {
 
   const toolDurations = useMemo(() => computeToolDurations(messages), [messages]);
   const runningToolsSet = useMemo(() => computeRunningTools(messages), [messages]);
+  const slashSuggestions = useMemo(() => {
+    if (!input.startsWith("/")) return [];
+    const q = input.toLowerCase();
+    return SLASH_COMMANDS.filter((c) => c.cmd.startsWith(q));
+  }, [input]);
 
   // contextUsage: how much of the target model's context window the session
   // has consumed so far (best-effort, based on streamed usage totals).
@@ -855,6 +867,20 @@ export function ChatPage() {
             }}
           >
             <div className="relative flex-1">
+              {slashSuggestions.length > 0 && (
+                <div className="absolute bottom-full left-0 right-0 mb-2 flex flex-wrap gap-1.5">
+                  {slashSuggestions.map((c) => (
+                    <button
+                      key={c.cmd}
+                      className="rounded-lg border bg-background px-2.5 py-1 text-left text-xs hover:bg-accent"
+                      onClick={() => { setInput(c.cmd + " "); inputRef.current?.focus(); }}
+                    >
+                      <span className="font-mono">{c.cmd}</span>
+                      <span className="ml-1.5 text-muted-foreground">{c.desc}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
               <Textarea
                 ref={inputRef}
                 rows={2}
