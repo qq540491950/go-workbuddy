@@ -71,6 +71,14 @@ func main() {
 	kit.SetMemoryTool(loadmemorytool.New())
 	svc.Memory = memSvc
 
+	// Knowledge vector index (semantic search upgrade; failure degrades to
+	// keyword search, so it must not block startup).
+	if ki, err := agentkit.OpenKnowledgeIndex(filepath.Join(cfgDir, "knowledge.index.db")); err == nil {
+		kit.SetKnowledgeIndex(ki)
+	} else {
+		log.Printf("knowledge index disabled: %v", err)
+	}
+
 	app := application.New(application.Options{
 		Name:        "WorkBuddy Agent",
 		Description: "ADK-powered agent desktop app",

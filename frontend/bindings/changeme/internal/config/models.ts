@@ -212,6 +212,13 @@ export interface Settings {
     "accent": string;
     "fontScale": string;
     "autoSpeak": boolean;
+
+    /**
+     * Semantic knowledge search: an OpenAI-compatible provider id + embedding
+     * model. Empty keeps keyword-only search.
+     */
+    "embeddingProviderId"?: string;
+    "embeddingModel"?: string;
 }
 
 /**

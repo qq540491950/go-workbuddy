@@ -46,9 +46,10 @@ func NewModelFromProvider(p config.ModelProvider, modelID string) (model.LLM, er
 
 // Kit assembles ADK agent trees from app configuration.
 type Kit struct {
-	store  *config.Store
-	mcp    *mcpmgr.Manager
-	memory tool.Tool // long-term memory search tool (nil if memory unavailable)
+	store    *config.Store
+	mcp      *mcpmgr.Manager
+	memory   tool.Tool // long-term memory search tool (nil if memory unavailable)
+	knowledge *KnowledgeIndex // workspace knowledge vector index (nil => keyword search)
 }
 
 // NewKit creates a Kit.
@@ -58,6 +59,11 @@ func NewKit(store *config.Store, mcp *mcpmgr.Manager) *Kit {
 
 // SetMemoryTool attaches the long-term memory search tool.
 func (k *Kit) SetMemoryTool(t tool.Tool) { k.memory = t }
+
+// SetKnowledgeIndex attaches the persistent knowledge vector index; combined
+// with an embedding provider in settings this upgrades search_knowledge from
+// keyword to hybrid semantic retrieval.
+func (k *Kit) SetKnowledgeIndex(idx *KnowledgeIndex) { k.knowledge = idx }
 
 // BuildAgent builds an ADK agent for the given agent config.
 func (k *Kit) BuildAgent(ac config.AgentConfig) (agent.Agent, error) {
@@ -97,7 +103,7 @@ func (k *Kit) buildLLMAgentWithSubAgents(ac config.AgentConfig, cfg config.Confi
 			tools = append(tools, ListFilesTool(k.workspace()), ReadFileTool(k.workspace()),
 				WriteFileTool(k.workspace(), confirmsTool(ac, "files")))
 		case "knowledge":
-			tools = append(tools, SearchKnowledgeTool(k.workspace()))
+			tools = append(tools, SearchKnowledgeTool(k.searchOptions(cfg)))
 		case "memory":
 			if k.memory != nil {
 				tools = append(tools, k.memory)
@@ -240,6 +246,29 @@ func (k *Kit) BuildTeam(tc config.TeamConfig) (agent.Agent, string, error) {
 }
 
 func (k *Kit) workspace() string { return k.store.Get().Settings.WorkspaceDir }
+
+// searchOptions assembles the knowledge tool options from current settings:
+// workspace plus the configured embedding backend, if any.
+func (k *Kit) searchOptions(cfg config.Config) SearchOptions {
+	opts := SearchOptions{Workspace: cfg.Settings.WorkspaceDir, Index: k.knowledge}
+	if cfg.Settings.EmbeddingProviderID == "" || cfg.Settings.EmbeddingModel == "" {
+		return opts // keyword-only
+	}
+	for i := range cfg.Providers {
+		if cfg.Providers[i].ID == cfg.Settings.EmbeddingProviderID {
+			if cfg.Providers[i].Protocol == config.ProtocolAnthropic || cfg.Providers[i].Protocol == config.ProtocolGemini {
+				return opts // embeddings endpoint is OpenAI-compatible only
+			}
+			opts.Embedding = &EmbeddingConfig{
+				BaseURL: cfg.Providers[i].BaseURL,
+				APIKey:  cfg.Providers[i].APIKey,
+				Model:   cfg.Settings.EmbeddingModel,
+			}
+			break
+		}
+	}
+	return opts
+}
 
 // skillToolset builds an ADK skill toolset covering the selected skills by
 // materializing them as SKILL.md under the app skills directory.

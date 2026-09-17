@@ -22,9 +22,9 @@ type queryArgs struct {
 	Query string `json:"query" jsonschema:"search keywords, space separated"`
 }
 
-// SearchKnowledge searches markdown/text files under <workspace>/knowledge
-// for lines matching the query keywords and returns scored snippets.
-func SearchKnowledgeTool(workspace string) tool.Tool {
+// SearchKnowledgeTool searches the workspace knowledge base: hybrid
+// semantic+keyword when an embedding backend is wired in, keyword otherwise.
+func SearchKnowledgeTool(opts SearchOptions) tool.Tool {
 	t, _ := functiontool.New(functiontool.Config{
 		Name:        "search_knowledge",
 		Description: "Search the user's knowledge base (markdown/text files under the workspace 'knowledge' folder). Returns the most relevant file excerpts.",
@@ -32,7 +32,7 @@ func SearchKnowledgeTool(workspace string) tool.Tool {
 		if strings.TrimSpace(args.Query) == "" {
 			return filesResult{}, os.ErrInvalid
 		}
-		res, err := searchKnowledge(workspace, args.Query)
+		res, err := searchHybrid(opts, args.Query)
 		if err != nil {
 			return filesResult{}, err
 		}

@@ -10,14 +10,20 @@ import {
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 import { ACCENTS, FONT_SCALES, applyTheme, cacheTheme, type ThemePrefs } from "@/lib/theme";
-import { Config, type Settings, errText } from "@/lib/api";
+import { Config, type ModelProvider, type Settings, errText, Protocol } from "@/lib/api";
 
 export function SettingsPage() {
   const [settings, setSettings] = useState<Settings | null>(null);
+  const [providers, setProviders] = useState<ModelProvider[]>([]);
   const [saving, setSaving] = useState(false);
 
   const reload = useCallback(() => {
-    Config.GetConfig().then((c) => setSettings(c.settings)).catch((e) => toast.error(errText(e)));
+    Config.GetConfig()
+      .then((c) => {
+        setSettings(c.settings);
+        setProviders(c.providers ?? []);
+      })
+      .catch((e) => toast.error(errText(e)));
   }, []);
   useEffect(reload, [reload]);
 
@@ -145,6 +151,40 @@ export function SettingsPage() {
               />
               <p className="text-xs text-muted-foreground">
                 开启「工作区文件读写」内置工具的 Agent 只能访问该目录内的文件；「产物预览」也仅限该目录。
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">知识库语义检索</CardTitle>
+          </CardHeader>
+          <CardContent className="grid gap-4">
+            <div className="grid gap-1.5">
+              <Label>Embedding 供应商</Label>
+              <Select
+                value={settings.embeddingProviderId || "none"}
+                onValueChange={(v) => update({ embeddingProviderId: v === "none" ? "" : v })}
+              >
+                <SelectTrigger className="w-72"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">关闭（仅关键词检索）</SelectItem>
+                  {providers.filter((p) => (p.protocol ?? Protocol.ProtocolOpenAI) === Protocol.ProtocolOpenAI).map((p) => (
+                    <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="grid gap-1.5">
+              <Label>Embedding 模型</Label>
+              <Input
+                value={settings.embeddingModel}
+                onChange={(e) => setSettings({ ...settings, embeddingModel: e.target.value })}
+                placeholder="text-embedding-3-small / BAAI/bge-large-zh-v1.5"
+              />
+              <p className="text-xs text-muted-foreground">
+                配置后，知识库检索（search_knowledge）升级为「向量语义 + 关键词」混合检索；向量索引自动增量构建于本地 SQLite。留空则保持关键词检索。
               </p>
             </div>
           </CardContent>

@@ -145,6 +145,10 @@ type Settings struct {
 	Accent    string `json:"accent"`
 	FontScale string `json:"fontScale"`
 	AutoSpeak bool   `json:"autoSpeak"`
+	// Semantic knowledge search: an OpenAI-compatible provider id + embedding
+	// model. Empty keeps keyword-only search.
+	EmbeddingProviderID string `json:"embeddingProviderId,omitempty"`
+	EmbeddingModel      string `json:"embeddingModel,omitempty"`
 }
 
 // normalize fills zero values (older config files) with defaults.

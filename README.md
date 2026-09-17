@@ -117,6 +117,18 @@ go vet ./internal/... .
 
 已实施：Markdown + 代码块复制、消息级复制、深浅主题、首次运行引导、会话搜索、快捷键、工具调用折叠面板、流式打字指示器。
 
+### 第九轮迭代：知识库语义检索（已实施）
+
+调研路线图「语义化检索（嵌入向量）替代关键词 RAG-lite」落地，依据 OpenAI Embeddings API 权威规范（`POST {base}/embeddings`、`data[].embedding`、余弦相似度推荐）：
+
+- **混合检索**：设置页配置 Embedding 供应商（OpenAI 兼容协议）+ 模型后，`search_knowledge` 升级为「向量语义 75% + 关键词 25%」混合评分；未配置时保持纯关键词行为（零破坏）
+- **本地向量索引**：`knowledge.index.db`（SQLite，与会话库同目录）按文件增量构建（mtime 感知，仅重新嵌入变更文件）；删除文件自动清理；**更换 Embedding 模型自动全量重建**（不同模型的向量不可比）
+- **切块策略**：700 字符滑动窗口 + 100 重叠，优先在换行处断开，保证片段可读
+- **工程鲁棒性**：Embedding 服务故障优雅回退关键词并附提示；协议契约测试固定请求/响应形状（乱序 `index` 恢复、Bearer 鉴权、批量上限）
+- 检索结果直接返回语义片段与「语义相关度 %」，比关键词行摘要信息量更高
+
+测试：agentkit 单测/e2e ×5（排序命中与缓存、增量索引、模型切换重建、双路回退、切块边界）+ 协议契约 + 全链路 e2e（ChatService → search_knowledge → 语义检索结果进入模型上下文）+ 全量 `-race` 通过。
+
 ### 第八轮迭代：工具执行 HITL 确认（已实施）
 
 调研路线图「工具执行 HITL 确认」落地，依据 ADK Go v2.4.0 官方实现（`tool/tool.go` confirmationTool 包装、`tool/toolconfirmation` 协议、`cmd/launcher/console/hitl.go` 官方客户端模式）：
