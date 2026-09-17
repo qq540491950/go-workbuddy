@@ -539,6 +539,9 @@ wails3 build && wails3 package   # 产物 bin/WorkBuddy Agent.app
 ### 已知边界
 - 语音识别依赖 Web Speech API（macOS WKWebView 可用性随系统版本变化，不支持时按钮自动禁用）
 - 长会话渲染上限 200 条（完整历史已持久化，可导出 Markdown 查看）
+- MCP OAuth 令牌缓存在本机 config.json（0600），不随任何导出携带；丢失后重新授权即可
+- 团队负责人必须为本地 Agent（远程 A2A 成员仅作为可转移的子代理参与）
+- HTTP 代理设置在启动时注入，修改后需重启应用生效
 
 ## 数据存储
 
@@ -551,17 +554,30 @@ wails3 build && wails3 package   # 产物 bin/WorkBuddy Agent.app
 ## 目录结构
 
 ```
-main.go                    # 应用入口：服务注册、窗口、SQLite 会话服务
+main.go                    # 应用入口：服务注册、窗口、托盘+全局快捷键、SQLite 会话库、
+                           # 知识索引、代理注入、A2A 自启动
 internal/
-  config/                  # 配置模型与 JSON 存储（含默认 Skills 种子）
+  config/                  # 配置模型与 JSON 存储（0600；含 MCP OAuth 令牌缓存、默认 Skills 种子）
   agentkit/                # ADK 集成核心
     llm.go                 #   model.LLM 适配器（OpenAI 兼容 / Anthropic）
-    kit.go                 #   Agent/团队构建、内置工具、Skill 物化
-  mcpmgr/                  # MCP 服务器管理（连接状态、工具发现）
-  services/                # Wails 服务（前端可调用 API）
+    kit.go                 #   Agent/团队构建、内置工具装配、提示词模板变量、SanitizeAgentName
+    semantic.go            #   知识库向量索引（SQLite 增量）+ OpenAI 兼容 /embeddings 客户端
+    knowledge.go           #   search_knowledge 工具（语义+关键词混合检索）
+    remote.go              #   A2A 远程 Agent（官方 a2a-go）+ Agent Card 解析
+    guardrail.go           #   密钥脱敏 / 提示注入检测
+  mcpmgr/                  # MCP 服务器生命周期（连接状态、工具发现）
+    auth.go                #   Bearer / API Key / OAuth 2.1 授权码+PKCE 传输层
+  memory/                  # 长期记忆（ADK memory.Service，SQLite）
+  services/                # Wails 服务（前端可调用 RPC）
+    chatservice.go         #   会话/对话核心：runTurn 共享引擎、HITL 确认、分叉、并行、护栏
+    a2aservice.go          #   A2A 服务端（对外发布本地 Agent）
+    app.go                 #   AppInfo、配置备份导出/导入、Agent 分享、日志诊断
 frontend/
-  src/pages/               # 对话 / Agents / 团队 / Skills / MCP / 模型 / 设置
+  src/pages/               # 对话 / Agents(含远程) / 团队 / Skills / MCP / 模型 / 设置
   src/components/ui/       # shadcn/ui 组件
-  bindings/                # wails3 生成的 TS 绑定（构建时自动更新）
+  src/components/ToolCallCard.tsx  # 工具卡片 + 产物预览 + 路径提取
+  stub/                    # 浏览器视觉回归桩（setTransport IPC 数据桩，npm run stub）
+  bindings/                # wails3 生成的 TS 绑定（构建时自动再生成，勿手改）
 build/                     # 各平台打包资源（Info.plist / 图标 / Taskfile）
+AGENTS.md                  # 面向编码代理的工程指南（命令/机制/约定）
 ```
