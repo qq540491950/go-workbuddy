@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { Plus, Trash2, Bot } from "lucide-react";
+import { Plus, Trash2, Bot, Network, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -16,7 +16,8 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import {
-  Config, type AgentConfig, type ModelProvider, type SkillConfig, type MCPServerConfig, errText } from "@/lib/api";
+  Config, type AgentConfig, type ModelProvider, type SkillConfig, type MCPServerConfig,
+  type RemoteAgentConfig, type RemoteAgentInfo, errText } from "@/lib/api";
 
 const agentTemplates: { label: string; make: () => AgentConfig }[] = [
   {
@@ -94,6 +95,10 @@ export function AgentsPage() {
   const [skills, setSkills] = useState<SkillConfig[]>([]);
   const [servers, setServers] = useState<MCPServerConfig[]>([]);
   const [editing, setEditing] = useState<AgentConfig | null>(null);
+  const [remotes, setRemotes] = useState<RemoteAgentConfig[]>([]);
+  const [remoteEditing, setRemoteEditing] = useState<RemoteAgentConfig | null>(null);
+  const [remoteCheck, setRemoteCheck] = useState<RemoteAgentInfo | null>(null);
+  const [checking, setChecking] = useState(false);
 
   const reload = useCallback(() => {
     Config.GetConfig().then((c) => {
@@ -101,6 +106,7 @@ export function AgentsPage() {
       setProviders(c.providers ?? []);
       setSkills(c.skills ?? []);
       setServers(c.mcpServers ?? []);
+      setRemotes(c.remoteAgents ?? []);
     });
   }, []);
   useEffect(reload, [reload]);
@@ -130,6 +136,45 @@ export function AgentsPage() {
   const remove = async (a: AgentConfig) => {
     await Config.DeleteAgent(a.id);
     toast.success(`已删除 ${a.name}`);
+    reload();
+  };
+
+  const saveRemote = async () => {
+    if (!remoteEditing) return;
+    if (!remoteEditing.name.trim() || !remoteEditing.cardUrl.trim()) {
+      toast.error("请填写名称与 Card URL");
+      return;
+    }
+    try {
+      await Config.SaveRemoteAgent(remoteEditing);
+      toast.success("远程 Agent 已保存");
+      setRemoteEditing(null);
+      setRemoteCheck(null);
+      reload();
+    } catch (e) {
+      toast.error(`保存失败: ${errText(e)}`);
+    }
+  };
+
+  const checkRemote = async () => {
+    if (!remoteEditing?.cardUrl.trim()) {
+      toast.error("请先填写 Card URL");
+      return;
+    }
+    setChecking(true);
+    setRemoteCheck(null);
+    try {
+      setRemoteCheck(await Config.CheckRemoteAgent(remoteEditing.cardUrl.trim()));
+    } catch (e) {
+      toast.error(`连接失败: ${errText(e)}`);
+    } finally {
+      setChecking(false);
+    }
+  };
+
+  const removeRemote = async (r: RemoteAgentConfig) => {
+    await Config.DeleteRemoteAgent(r.id);
+    toast.success(`已删除 ${r.name}`);
     reload();
   };
 
@@ -219,6 +264,106 @@ export function AgentsPage() {
           );
         })}
       </div>
+
+      <div className="mt-6 mb-3 flex items-center justify-between">
+        <div>
+          <h2 className="text-base font-semibold flex items-center gap-2">
+            <Network className="h-4 w-4 text-primary" /> 远程 Agent（A2A 协议）
+          </h2>
+          <p className="text-sm text-muted-foreground">连接远程 A2A Agent（Agent Card 自动发现），可直接对话</p>
+        </div>
+        <Button
+          variant="outline"
+          onClick={() => {
+            setRemoteCheck(null);
+            setRemoteEditing({ id: "", name: "", description: "", cardUrl: "", createdAt: "" });
+          }}
+        >
+          <Plus className="mr-1 h-4 w-4" /> 新增远程 Agent
+        </Button>
+      </div>
+      <div className="grid gap-3 md:grid-cols-2">
+        {remotes.length === 0 && (
+          <Card className="md:col-span-2">
+            <CardContent className="p-6 text-center text-sm text-muted-foreground">
+              还没有远程 Agent。填写对方的 A2A 服务地址即可连接（例如 http://localhost:8080）。
+            </CardContent>
+          </Card>
+        )}
+        {remotes.map((r) => (
+          <Card key={r.id}>
+            <CardContent className="p-4">
+              <div className="flex items-start justify-between">
+                <div className="flex items-center gap-2">
+                  <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary/10">
+                    <Network className="h-4 w-4 text-primary" />
+                  </div>
+                  <div>
+                    <div className="font-medium">{r.name}</div>
+                    <div className="max-w-[240px] truncate text-xs text-muted-foreground" title={r.cardUrl}>{r.cardUrl}</div>
+                  </div>
+                </div>
+                <div className="flex items-center gap-1">
+                  <Button variant="outline" size="sm" onClick={() => { setRemoteCheck(null); setRemoteEditing(r); }}>
+                    编辑
+                  </Button>
+                  <Button variant="ghost" size="icon" onClick={() => removeRemote(r)}>
+                    <Trash2 className="h-4 w-4 text-muted-foreground" />
+                  </Button>
+                </div>
+              </div>
+              {r.description && (
+                <p className="mt-2 line-clamp-2 text-sm text-muted-foreground">{r.description}</p>
+              )}
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+
+      <Dialog open={!!remoteEditing} onOpenChange={(v) => !v && setRemoteEditing(null)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>{remoteEditing?.id ? "编辑远程 Agent" : "新增远程 Agent"}</DialogTitle>
+          </DialogHeader>
+          {remoteEditing && (
+            <div className="grid gap-4 py-2">
+              <div className="grid gap-1.5">
+                <Label>名称</Label>
+                <Input value={remoteEditing.name} onChange={(e) => setRemoteEditing({ ...remoteEditing, name: e.target.value })} placeholder="例如 远程研究助手" />
+              </div>
+              <div className="grid gap-1.5">
+                <Label>描述</Label>
+                <Input value={remoteEditing.description} onChange={(e) => setRemoteEditing({ ...remoteEditing, description: e.target.value })} placeholder="可选" />
+              </div>
+              <div className="grid gap-1.5">
+                <Label>A2A 服务地址（Agent Card 基址）</Label>
+                <Input
+                  value={remoteEditing.cardUrl}
+                  onChange={(e) => { setRemoteEditing({ ...remoteEditing, cardUrl: e.target.value }); setRemoteCheck(null); }}
+                  placeholder="http://localhost:8080"
+                />
+                <p className="text-xs text-muted-foreground">从 /.well-known/agent-card.json 自动发现能力，JSON-RPC 调用。</p>
+              </div>
+              {remoteCheck && (
+                <div className="rounded-lg border bg-muted/40 p-3 text-sm">
+                  <div className="font-medium">✓ {remoteCheck.name} <span className="text-xs text-muted-foreground">v{remoteCheck.version}</span></div>
+                  {remoteCheck.description && <div className="mt-1 text-xs text-muted-foreground">{remoteCheck.description}</div>}
+                  <div className="mt-1 text-xs text-muted-foreground">
+                    流式：{remoteCheck.streaming ? "支持" : "不支持"}
+                    {(remoteCheck.skills?.length ?? 0) > 0 && ` · 技能：${remoteCheck.skills!.join("、")}`}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={checkRemote} disabled={checking}>
+              {checking && <Loader2 className="mr-1 h-3 w-3 animate-spin" />} 检查连接
+            </Button>
+            <Button onClick={saveRemote}>保存</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={!!editing} onOpenChange={(v) => !v && setEditing(null)}>
         <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-xl">

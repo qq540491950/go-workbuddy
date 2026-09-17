@@ -91,6 +91,17 @@ type AgentConfig struct {
 	ConfirmTools []string `json:"confirmTools,omitempty"`
 }
 
+// RemoteAgentConfig describes a remote agent reached over the A2A protocol
+// (Agent-To-Agent, a2aproject/a2a-go). The agent card is discovered from
+// CardURL's well-known location.
+type RemoteAgentConfig struct {
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	CardURL     string `json:"cardUrl"`
+	CreatedAt   time.Time `json:"createdAt"`
+}
+
 // TeamConfig describes an agent team: a lead agent coordinating member agents.
 type TeamConfig struct {
 	ID             string   `json:"id"`
@@ -166,13 +177,14 @@ func (s *Settings) normalize() {
 
 // Config is the root configuration document persisted to disk.
 type Config struct {
-	Settings   Settings         `json:"settings"`
-	Providers  []ModelProvider  `json:"providers"`
-	Agents     []AgentConfig    `json:"agents"`
-	Teams      []TeamConfig     `json:"teams"`
-	Skills     []SkillConfig    `json:"skills"`
-	MCPServers []MCPServerConfig `json:"mcpServers"`
-	Sessions   []ChatSession    `json:"sessions"`
+	Settings     Settings            `json:"settings"`
+	Providers    []ModelProvider     `json:"providers"`
+	Agents       []AgentConfig       `json:"agents"`
+	RemoteAgents []RemoteAgentConfig `json:"remoteAgents,omitempty"`
+	Teams        []TeamConfig        `json:"teams"`
+	Skills       []SkillConfig       `json:"skills"`
+	MCPServers   []MCPServerConfig   `json:"mcpServers"`
+	Sessions     []ChatSession       `json:"sessions"`
 }
 
 // ChatSession is a chat conversation bound to an agent or a team.

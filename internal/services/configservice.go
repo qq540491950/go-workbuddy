@@ -320,3 +320,52 @@ func (c *ConfigService) SaveSettings(s config.Settings) error {
 		cfg.Settings = s
 	})
 }
+
+// SaveRemoteAgent inserts or updates a remote A2A agent.
+func (c *ConfigService) SaveRemoteAgent(r config.RemoteAgentConfig) error {
+	if r.Name == "" {
+		return fmt.Errorf("remote agent name is required")
+	}
+	if r.CardURL == "" {
+		return fmt.Errorf("card url is required")
+	}
+	if r.ID == "" {
+		r.ID = newID("ra_")
+		r.CreatedAt = nowUTC()
+	}
+	return c.S.Store.Update(func(cfg *config.Config) {
+		replaced := false
+		for i := range cfg.RemoteAgents {
+			if cfg.RemoteAgents[i].ID == r.ID {
+				r.CreatedAt = cfg.RemoteAgents[i].CreatedAt
+				cfg.RemoteAgents[i] = r
+				replaced = true
+				break
+			}
+		}
+		if !replaced {
+			cfg.RemoteAgents = append(cfg.RemoteAgents, r)
+		}
+	})
+}
+
+// DeleteRemoteAgent removes a remote agent by id.
+func (c *ConfigService) DeleteRemoteAgent(id string) error {
+	return c.S.Store.Update(func(cfg *config.Config) {
+		out := cfg.RemoteAgents[:0]
+		for _, r := range cfg.RemoteAgents {
+			if r.ID != id {
+				out = append(out, r)
+			}
+		}
+		cfg.RemoteAgents = out
+	})
+}
+
+// CheckRemoteAgent resolves the A2A agent card advertised at the URL and
+// returns a summary for the UI connectivity check.
+func (c *ConfigService) CheckRemoteAgent(cardURL string) (*agentkit.RemoteAgentInfo, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	return agentkit.CheckRemoteAgent(ctx, cardURL)
+}

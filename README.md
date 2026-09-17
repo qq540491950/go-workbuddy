@@ -117,6 +117,17 @@ go vet ./internal/... .
 
 已实施：Markdown + 代码块复制、消息级复制、深浅主题、首次运行引导、会话搜索、快捷键、工具调用折叠面板、流式打字指示器。
 
+### 第十轮迭代：A2A 远程 Agent 互操作（已实施）
+
+调研路线图「A2A 协议互操作（连接远程 Agent）」落地，依据 ADK Go v2.4.0 官方 `agent/remoteagent/v2` + 官方 `a2aproject/a2a-go v2`（Agent-to-Agent 协议标准）：
+
+- **远程 Agent 接入**：Agents 页新增「远程 Agent（A2A 协议）」管理——填写对方 A2A 服务地址即可连接；「检查连接」自动发现 Agent Card（`/.well-known/agent-card.json`），展示名称/版本/描述/流式能力/技能清单
+- **直接对话**：新建对话支持「远程 Agent」类型；消息经 JSON-RPC 跨进程往返，远程回复照常流式渲染并入 SQLite 会话历史
+- **官方栈实现**：客户端用 ADK `remoteagent.NewA2A`（每次调用重新解析卡片，远端更新无需重启）；测试服务端用 `a2asrv.NewHandler + adka2a.NewExecutor`（与 ADK launcher 同一配方）托管真实 llmagent
+- 卡片校验含 `SupportedInterfaces`（JSONRPC 绑定）与来源一致性校验，配置错误会得到明确报错
+
+测试：进程内 A2A 全链路 e2e（本地 ChatService → ADK 远程 Agent → 官方 A2A 服务端 → 托管 llmagent → 假模型 → 双侧 SQLite）+ 卡片发现校验 + 全量回归与 `-race`；打包构建零错误、启动烟雾通过。
+
 ### 第九轮迭代：知识库语义检索（已实施）
 
 调研路线图「语义化检索（嵌入向量）替代关键词 RAG-lite」落地，依据 OpenAI Embeddings API 权威规范（`POST {base}/embeddings`、`data[].embedding`、余弦相似度推荐）：

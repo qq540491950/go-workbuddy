@@ -78,7 +78,7 @@ export function ListSessions(): $CancellablePromise<config$0.ChatSession[] | nul
 }
 
 /**
- * NewSession creates a chat bound to an agent or team.
+ * NewSession creates a chat bound to an agent, remote A2A agent or team.
  */
 export function NewSession(targetType: string, targetID: string, title: string): $CancellablePromise<config$0.ChatSession> {
     return $Call.ByID(3793260767, targetType, targetID, title);

@@ -159,9 +159,9 @@ func NewChatService(s *Services, sessions session.Service, db *gorm.DB) *ChatSer
 	}
 }
 
-// NewSession creates a chat bound to an agent or team.
+// NewSession creates a chat bound to an agent, remote A2A agent or team.
 func (c *ChatService) NewSession(targetType, targetID, title string) (config.ChatSession, error) {
-	if targetType != "agent" && targetType != "team" {
+	if targetType != "agent" && targetType != "team" && targetType != "remote" {
 		return config.ChatSession{}, fmt.Errorf("invalid target type %q", targetType)
 	}
 	if title == "" {
@@ -683,7 +683,8 @@ func (c *ChatService) runTurn(target *config.ChatSession, guardOn bool, msg *gen
 	// Build the agent tree from the current configuration.
 	var root agent.Agent
 	var err error
-	if target.TargetType == "team" {
+	switch target.TargetType {
+	case "team":
 		for _, t := range cfg.Teams {
 			if t.ID == target.TargetID {
 				root, _, err = c.S.Kit.BuildTeam(t)
@@ -693,7 +694,17 @@ func (c *ChatService) runTurn(target *config.ChatSession, guardOn bool, msg *gen
 		if root == nil {
 			return fmt.Errorf("team %q not found", target.TargetID)
 		}
-	} else {
+	case "remote":
+		for _, r := range cfg.RemoteAgents {
+			if r.ID == target.TargetID {
+				root, err = agentkit.BuildRemoteAgent(r)
+				break
+			}
+		}
+		if root == nil {
+			return fmt.Errorf("remote agent %q not found", target.TargetID)
+		}
+	default:
 		for _, a := range cfg.Agents {
 			if a.ID == target.TargetID {
 				root, err = c.S.Kit.BuildAgent(a)

@@ -3,6 +3,7 @@ module changeme
 go 1.26.6
 
 require (
+	github.com/a2aproject/a2a-go/v2 v2.5.0
 	github.com/glebarez/sqlite v1.11.0
 	github.com/modelcontextprotocol/go-sdk v1.7.0
 	github.com/wailsapp/wails/v3 v3.0.0-beta.20
@@ -51,6 +52,7 @@ require (
 	go.opentelemetry.io/otel/trace v1.46.0 // indirect
 	golang.org/x/crypto v0.55.0 // indirect
 	golang.org/x/exp v0.0.0-20260410095643-746e56fc9e2f // indirect
+	golang.org/x/mod v0.38.0 // indirect
 	golang.org/x/net v0.58.0 // indirect
 	golang.org/x/oauth2 v0.36.0 // indirect
 	golang.org/x/sync v0.22.0 // indirect

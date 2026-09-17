@@ -13,6 +13,7 @@ export type {
     MCPServerConfig,
     ModelInfo,
     ModelProvider,
+    RemoteAgentConfig,
     Settings,
     SkillConfig,
     TeamConfig

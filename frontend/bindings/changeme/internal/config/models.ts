@@ -68,6 +68,7 @@ export interface Config {
     "settings": Settings;
     "providers": ModelProvider[] | null;
     "agents": AgentConfig[] | null;
+    "remoteAgents"?: RemoteAgentConfig[] | null;
     "teams": TeamConfig[] | null;
     "skills": SkillConfig[] | null;
     "mcpServers": MCPServerConfig[] | null;
@@ -196,6 +197,19 @@ export enum Protocol {
      */
     ProtocolGemini = "gemini",
 };
+
+/**
+ * RemoteAgentConfig describes a remote agent reached over the A2A protocol
+ * (Agent-To-Agent, a2aproject/a2a-go). The agent card is discovered from
+ * CardURL's well-known location.
+ */
+export interface RemoteAgentConfig {
+    "id": string;
+    "name": string;
+    "description": string;
+    "cardUrl": string;
+    "createdAt": string;
+}
 
 /**
  * Settings holds global application settings.

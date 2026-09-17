@@ -22,8 +22,8 @@ import { MessageMarkdown, CopyButton } from "@/components/MessageMarkdown";
 import { ToolCallCard } from "@/components/ToolCallCard";
 import {
   Chat, Config, errText,
-  type AgentConfig, type ChatSession, type TeamConfig, type UsageInfo, type ModelProvider, type ModelInfo,
-  type AttachmentIn, type AttachmentOut, type SessionStats,
+  type AgentConfig, type ChatSession, type TeamConfig, type RemoteAgentConfig, type UsageInfo,
+  type ModelProvider, type ModelInfo, type AttachmentIn, type AttachmentOut, type SessionStats,
 } from "@/lib/api";
 
 type UIMessage = {
@@ -85,11 +85,12 @@ export function ChatPage() {
   const [running, setRunning] = useState(false);
   const [agents, setAgents] = useState<AgentConfig[]>([]);
   const [teams, setTeams] = useState<TeamConfig[]>([]);
+  const [remotes, setRemotes] = useState<RemoteAgentConfig[]>([]);
   const [providerCount, setProviderCount] = useState(0);
   const [providerList, setProviderList] = useState<ModelProvider[]>([]);
   const [search, setSearch] = useState("");
   const [newChatOpen, setNewChatOpen] = useState(false);
-  const [newType, setNewType] = useState<"agent" | "team">("agent");
+  const [newType, setNewType] = useState<"agent" | "team" | "remote">("agent");
   const [newTarget, setNewTarget] = useState("");
   const [renaming, setRenaming] = useState<ChatSession | null>(null);
   const [renameText, setRenameText] = useState("");
@@ -119,6 +120,7 @@ export function ChatPage() {
       .then((c) => {
         setAgents(c.agents ?? []);
         setTeams(c.teams ?? []);
+        setRemotes(c.remoteAgents ?? []);
         setProviderCount((c.providers ?? []).length);
         setProviderList(c.providers ?? []);
         setAutoSpeak(!!c.settings?.autoSpeak);
@@ -773,27 +775,34 @@ export function ChatPage() {
           <div className="grid gap-4 py-2">
             <div className="grid gap-1.5">
               <label className="text-sm">类型</label>
-              <Select value={newType} onValueChange={(v) => { setNewType(v as "agent" | "team"); setNewTarget(""); }}>
+              <Select value={newType} onValueChange={(v) => { setNewType(v as "agent" | "team" | "remote"); setNewTarget(""); }}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="agent">单个 Agent</SelectItem>
                   <SelectItem value="team">Agent 团队</SelectItem>
+                  <SelectItem value="remote">远程 Agent（A2A）</SelectItem>
                 </SelectContent>
               </Select>
             </div>
             <div className="grid gap-1.5">
-              <label className="text-sm">{newType === "agent" ? "选择 Agent" : "选择团队"}</label>
+              <label className="text-sm">
+                {newType === "agent" ? "选择 Agent" : newType === "team" ? "选择团队" : "选择远程 Agent"}
+              </label>
               <Select value={newTarget || undefined} onValueChange={setNewTarget}>
                 <SelectTrigger><SelectValue placeholder="请选择" /></SelectTrigger>
                 <SelectContent>
                   {newType === "agent"
                     ? agents.map((a) => <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>)
-                    : teams.map((t) => <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>)}
+                    : newType === "team"
+                      ? teams.map((t) => <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>)
+                      : remotes.map((r) => <SelectItem key={r.id} value={r.id}>{r.name}</SelectItem>)}
                 </SelectContent>
               </Select>
-              {((newType === "agent" && agents.length === 0) || (newType === "team" && teams.length === 0)) && (
+              {((newType === "agent" && agents.length === 0) ||
+                (newType === "team" && teams.length === 0) ||
+                (newType === "remote" && remotes.length === 0)) && (
                 <p className="text-xs text-muted-foreground">
-                  没有可选目标，请先在侧边栏创建 {newType === "agent" ? "Agent" : "团队"}。
+                  没有可选目标，请先在侧边栏创建 {newType === "agent" ? "Agent" : newType === "team" ? "团队" : "远程 Agent（Agents 页）"}。
                 </p>
               )}
             </div>

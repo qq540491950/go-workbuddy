@@ -12,7 +12,18 @@ import { Call as $Call, CancellablePromise as $CancellablePromise } from "@wails
 
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
+import * as agentkit$0 from "../agentkit/models.js";
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore: Unused imports
 import * as config$0 from "../config/models.js";
+
+/**
+ * CheckRemoteAgent resolves the A2A agent card advertised at the URL and
+ * returns a summary for the UI connectivity check.
+ */
+export function CheckRemoteAgent(cardURL: string): $CancellablePromise<agentkit$0.RemoteAgentInfo | null> {
+    return $Call.ByID(2938592074, cardURL);
+}
 
 /**
  * DeleteAgent removes an agent and detaches it from teams.
@@ -33,6 +44,13 @@ export function DeleteMCPServer(id: string): $CancellablePromise<void> {
  */
 export function DeleteProvider(id: string): $CancellablePromise<void> {
     return $Call.ByID(3002230555, id);
+}
+
+/**
+ * DeleteRemoteAgent removes a remote agent by id.
+ */
+export function DeleteRemoteAgent(id: string): $CancellablePromise<void> {
+    return $Call.ByID(3402173829, id);
 }
 
 /**
@@ -83,6 +101,13 @@ export function SaveMCPServer(s: config$0.MCPServerConfig): $CancellablePromise<
  */
 export function SaveProvider(p: config$0.ModelProvider): $CancellablePromise<void> {
     return $Call.ByID(488827929, p);
+}
+
+/**
+ * SaveRemoteAgent inserts or updates a remote A2A agent.
+ */
+export function SaveRemoteAgent(r: config$0.RemoteAgentConfig): $CancellablePromise<void> {
+    return $Call.ByID(1907280799, r);
 }
 
 /**

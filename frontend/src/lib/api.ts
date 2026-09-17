@@ -3,6 +3,7 @@ import * as services from "../../bindings/changeme/internal/services";
 import * as configModels from "../../bindings/changeme/internal/config/models";
 import * as mcpModels from "../../bindings/changeme/internal/mcpmgr/models";
 import * as serviceModels from "../../bindings/changeme/internal/services/models";
+import * as agentkitModels from "../../bindings/changeme/internal/agentkit/models";
 
 export const App = services.AppService;
 export const Chat = services.ChatService;
@@ -33,6 +34,8 @@ export type AgentConfig = configModels.AgentConfig;
 export type TeamConfig = configModels.TeamConfig;
 export type SkillConfig = configModels.SkillConfig;
 export type MCPServerConfig = configModels.MCPServerConfig;
+export type RemoteAgentConfig = configModels.RemoteAgentConfig;
+export type RemoteAgentInfo = agentkitModels.RemoteAgentInfo;
 export type Settings = configModels.Settings;
 export type ChatSession = configModels.ChatSession;
 
