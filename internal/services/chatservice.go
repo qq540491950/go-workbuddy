@@ -249,13 +249,21 @@ func (c *ChatService) SearchSessions(query string) []config.ChatSession {
 // ArchiveSession toggles the archived flag of a session (archived sessions
 // are hidden from the default sidebar list but never deleted).
 func (c *ChatService) ArchiveSession(id string, archived bool) error {
-	return c.S.Store.Update(func(cfg *config.Config) {
+	err := c.S.Store.Update(func(cfg *config.Config) {
 		for i := range cfg.Sessions {
 			if cfg.Sessions[i].ID == id {
 				cfg.Sessions[i].Archived = archived
 			}
 		}
 	})
+	if err == nil {
+		phase := "session_archived"
+		if !archived {
+			phase = "session_unarchived"
+		}
+		c.audit(id, phase, "system", "session", mustJSON(map[string]bool{"archived": archived}), "")
+	}
+	return err
 }
 
 // PinSession toggles the pinned flag of a session.

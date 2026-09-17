@@ -443,7 +443,8 @@ func TestSessionLifecycleAudit(t *testing.T) {
 	}
 }
 
-// TestArchiveSessionRoundTrip: archive/unarchive toggles the persisted flag.
+// TestArchiveSessionRoundTrip: archive/unarchive toggles the persisted flag
+// and writes both phases to the audit trail.
 func TestArchiveSessionRoundTrip(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/event-stream")
@@ -465,12 +466,17 @@ func TestArchiveSessionRoundTrip(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
+	auditPath := filepath.Join(dir, "audit.jsonl")
 	db, sessions, err := newTestSessionService(filepath.Join(dir, "sessions.db"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	svc := &Services{Store: store, Kit: agentkit.NewKit(store, mcpmgr.New()), MCP: mcpmgr.New()}
 	chat := NewChatService(svc, sessions, db)
+	chat.SetToolAuditPath(auditPath)
+	if err := store.Update(func(cfg *config.Config) { cfg.Settings.ToolsAudit = true }); err != nil {
+		t.Fatal(err)
+	}
 	sess, err := chat.NewSession("agent", "a1", "")
 	if err != nil {
 		t.Fatal(err)
@@ -494,6 +500,13 @@ func TestArchiveSessionRoundTrip(t *testing.T) {
 		if s.ID == sess.ID && s.Archived {
 			t.Fatal("unarchive failed")
 		}
+	}
+	audit, err := os.ReadFile(auditPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(audit), "session_archived") || !strings.Contains(string(audit), "session_unarchived") {
+		t.Fatalf("archive phases missing from audit:\n%s", audit)
 	}
 }
 
