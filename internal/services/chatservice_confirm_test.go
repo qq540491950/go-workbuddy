@@ -422,3 +422,49 @@ func TestToolAuditRecordsConfirmation(t *testing.T) {
 	}
 	_ = workspace
 }
+
+// TestExportMarkdownIncludesHITL: the Markdown export carries the confirm
+// request/decision trail of an approved HITL loop.
+func TestExportMarkdownIncludesHITL(t *testing.T) {
+	turn := 0
+	var callID string
+	chat, _, workspace, _ := newConfirmTestChat(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		turn++
+		if turn == 1 {
+			_, _ = w.Write([]byte(sseToolCall("c1", "write_workspace_file", `"{\"path\":\"hitl-md.txt\",\"content\":\"v\"}"`) + sseDone))
+			return
+		}
+		_, _ = w.Write([]byte(sseText("好的") + sseDone))
+	})
+	events := hookEvents(t)
+
+	sess, err := chat.NewSession("agent", "agent_c", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := chat.Send(sess.ID, "写 hitl-md.txt", nil); err != nil {
+		t.Fatal(err)
+	}
+	for _, ev := range *events {
+		if ev.Kind == "confirm_request" {
+			callID = ev.CallID
+		}
+	}
+	if err := chat.ConfirmToolCall(sess.ID, callID, true); err != nil {
+		t.Fatal(err)
+	}
+
+	path, err := chat.ExportSession(sess.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), "HITL 确认请求") || !strings.Contains(string(data), "批准") {
+		t.Fatalf("markdown export missing HITL trail:\n%s", data)
+	}
+	_ = workspace
+}

@@ -617,6 +617,14 @@ func (c *ChatService) ExportSession(sessionID string) (string, error) {
 		case "tool_result":
 			resp, _ := json.Marshal(m.ToolResp)
 			fmt.Fprintf(&sb, "> ✅ 工具结果 **%s** `%s`\n\n", m.ToolName, string(resp))
+		case "confirm_request":
+			fmt.Fprintf(&sb, "> 🛡️ **HITL 确认请求** **%s** `%s`\n\n", m.ToolName, m.CallID)
+		case "confirm_result":
+			decision := "拒绝"
+			if m.ToolResp["confirmed"] == true {
+				decision = "批准"
+			}
+			fmt.Fprintf(&sb, "> 🛡️ **HITL 决策**: %s\n\n", decision)
 		case "message":
 			// compatibility with older renders
 			fmt.Fprintf(&sb, "## 🤖 %s\n\n%s\n\n", m.Author, m.Text)
