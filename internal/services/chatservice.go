@@ -140,13 +140,17 @@ func buildUserContent(text string, atts []AttachmentIn) (*genai.Content, error) 
 type ChatService struct {
 	S *Services
 
-	mu       sync.Mutex
-	cancels  map[string]context.CancelFunc
-	sessions session.Service
-	db       *gorm.DB // shared SQLite handle for event trimming (Regenerate)
-	appName  string
-	userID   string
+	mu        sync.Mutex
+	cancels   map[string]context.CancelFunc
+	sessions  session.Service
+	db        *gorm.DB // shared SQLite handle for event trimming (Regenerate)
+	appName   string
+	userID    string
+	auditPath string // JSONL tool-audit trail; empty = disabled
 }
+
+// SetToolAuditPath enables the JSONL tool-call audit trail at path.
+func (c *ChatService) SetToolAuditPath(path string) { c.auditPath = path }
 
 // NewChatService creates the service. db may be nil (disables Regenerate trimming).
 func NewChatService(s *Services, sessions session.Service, db *gorm.DB) *ChatService {
@@ -858,9 +862,14 @@ func (c *ChatService) runTurn(target *config.ChatSession, guardOn bool, msg *gen
 					ToolName: name, ToolArgs: args, CallID: p.FunctionCall.ID, Hint: hint})
 			case p.FunctionCall != nil:
 				toolCallsThisTurn++
+				c.audit(sessionID, "call", ev.Author, p.FunctionCall.Name, mustJSON(p.FunctionCall.Args), "")
 				emit(ChatStreamEvent{Kind: "tool_call", Author: ev.Author,
 					ToolName: p.FunctionCall.Name, ToolArgs: p.FunctionCall.Args})
 			case p.FunctionResponse != nil:
+				c.audit(sessionID, "result", ev.Author, p.FunctionResponse.Name,
+					mustJSON(p.FunctionResponse.Response), resultErrorOf(p.FunctionResponse.Response))
+				emit(ChatStreamEvent{Kind: "tool_result", Author: ev.Author,
+					ToolName: p.FunctionResponse.Name, ToolResp: p.FunctionResponse.Response})
 				emit(ChatStreamEvent{Kind: "tool_result", Author: ev.Author,
 					ToolName: p.FunctionResponse.Name, ToolResp: p.FunctionResponse.Response})
 			case p.Text != "" && !p.Thought:
@@ -1116,6 +1125,36 @@ func (c *ChatService) SessionStats(sessionID string) (*SessionStats, error) {
 	}
 	sort.Slice(st.Daily, func(i, j int) bool { return st.Daily[i].Date < st.Daily[j].Date })
 	return st, nil
+}
+
+// audit appends one JSONL line for the tool audit trail. Failures are
+// silently ignored: auditing must never break the conversation.
+func (c *ChatService) audit(sessionID, phase, author, tool string, payload []byte, errMsg string) {
+	if c.auditPath == "" || !c.S.Store.Get().Settings.ToolsAudit {
+		return
+	}
+	rec, _ := json.Marshal(map[string]any{
+		"ts": nowUTC(), "sessionId": sessionID, "phase": phase,
+		"author": author, "tool": tool, "error": errMsg,
+		"payload": json.RawMessage(payload),
+	})
+	f, err := os.OpenFile(c.auditPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o640)
+	if err != nil {
+		return
+	}
+	defer f.Close()
+	_, _ = f.Write(append(rec, '\n'))
+}
+
+// resultErrorOf extracts the error field from a tool response payload.
+func resultErrorOf(resp map[string]any) string {
+	if resp == nil {
+		return ""
+	}
+	if e, ok := resp["error"].(string); ok {
+		return e
+	}
+	return ""
 }
 
 func sessionUsageTotal(u *UsageInfo) int64 {

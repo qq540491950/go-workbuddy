@@ -137,3 +137,10 @@ export function Send(sessionID: string, text: string, attachments: $models.Attac
 export function SessionStats(sessionID: string): $CancellablePromise<$models.SessionStats | null> {
     return $Call.ByID(568481502, sessionID);
 }
+
+/**
+ * SetToolAuditPath enables the JSONL tool-call audit trail at path.
+ */
+export function SetToolAuditPath(path: string): $CancellablePromise<void> {
+    return $Call.ByID(790566707, path);
+}

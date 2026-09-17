@@ -145,6 +145,16 @@ export function SettingsPage() {
                 onCheckedChange={(v) => update({ autoSpeak: v })}
               />
             </div>
+            <div className="flex items-center justify-between rounded-lg border p-3">
+              <div>
+                <div className="text-sm font-medium">工具调用审计日志</div>
+                <div className="text-xs text-muted-foreground">将每次工具调用/结果以 JSONL 追加到应用日志目录（tools-audit.jsonl）</div>
+              </div>
+              <Switch
+                checked={settings.toolsAudit}
+                onCheckedChange={(v) => update({ toolsAudit: v })}
+              />
+            </div>
           </CardContent>
         </Card>
 

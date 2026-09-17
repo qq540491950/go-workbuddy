@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync/atomic"
@@ -206,5 +207,54 @@ func TestGuardrailSessionTokenBudget(t *testing.T) {
 	}
 	if !sawRefusal {
 		t.Fatalf("refusal message missing: %+v", *events)
+	}
+}
+
+// TestToolAuditTrail: with the audit enabled, a tool loop writes call and
+// result records to the JSONL file; disabled sessions write nothing.
+func TestToolAuditTrail(t *testing.T) {
+	auditPath := filepath.Join(t.TempDir(), "tools-audit.jsonl")
+	turn := 0
+	chat, _, _ := newGuardrailTestChat(t, 0, 0, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		turn++
+		if turn == 1 {
+			_, _ = w.Write([]byte(sseToolCall("c1", "get_current_time", `"{}"`) + sseDone))
+			return
+		}
+		_, _ = w.Write([]byte(sseText("查询完成") + sseDone))
+	})
+	chat.SetToolAuditPath(auditPath)
+
+	if err := chat.S.Store.Update(func(cfg *config.Config) {
+		cfg.Settings.ToolsAudit = true
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	sess, err := chat.NewSession("agent", "a1", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := chat.Send(sess.ID, "查询时间", nil); err != nil {
+		t.Fatal(err)
+	}
+
+	data, err := os.ReadFile(auditPath)
+	if err != nil {
+		t.Fatalf("audit file missing: %v", err)
+	}
+	lines := strings.Split(strings.TrimSpace(string(data)), "\n")
+	var sawCall, sawResult bool
+	for _, ln := range lines {
+		if strings.Contains(ln, `"phase":"call"`) && strings.Contains(ln, `"get_current_time"`) && strings.Contains(ln, sess.ID) {
+			sawCall = true
+		}
+		if strings.Contains(ln, `"phase":"result"`) && strings.Contains(ln, "timezone") {
+			sawResult = true
+		}
+	}
+	if !sawCall || !sawResult {
+		t.Fatalf("audit records incomplete: call=%v result=%v\n%s", sawCall, sawResult, data)
 	}
 }

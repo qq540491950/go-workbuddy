@@ -87,6 +87,9 @@ func main() {
 	// begun serving already via the settings hook below.
 	a2aRPC := services.NewA2AService(svc, sessions)
 
+	chatSvc := services.NewChatService(svc, sessions, gormDB)
+	chatSvc.SetToolAuditPath(filepath.Join(cfgDir, "logs", "tools-audit.jsonl"))
+
 	app := application.New(application.Options{
 		Name:        "WorkBuddy Agent",
 		Description: "ADK-powered agent desktop app",
@@ -95,7 +98,7 @@ func main() {
 			application.NewService(services.NewConfigService(svc)),
 			application.NewService(services.NewMCPService(svc)),
 			application.NewService(services.NewArtifactService(svc)),
-			application.NewService(services.NewChatService(svc, sessions, gormDB)),
+			application.NewService(chatSvc),
 			application.NewService(a2aRPC),
 		},
 		Assets: application.AssetOptions{

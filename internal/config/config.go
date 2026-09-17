@@ -193,6 +193,9 @@ type Settings struct {
 	A2AAutoStart bool   `json:"a2aAutoStart,omitempty"`
 	A2AAgentID   string `json:"a2aAgentId,omitempty"`
 	A2APort      int    `json:"a2aPort,omitempty"`
+	// ToolsAudit writes a JSONL audit trail of every tool call/result to the
+	// app logs directory.
+	ToolsAudit bool `json:"toolsAudit,omitempty"`
 }
 
 // normalize fills zero values (older config files) with defaults.

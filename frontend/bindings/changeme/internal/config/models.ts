@@ -306,6 +306,12 @@ export interface Settings {
     "a2aAutoStart"?: boolean;
     "a2aAgentId"?: string;
     "a2aPort"?: number;
+
+    /**
+     * ToolsAudit writes a JSONL audit trail of every tool call/result to the
+     * app logs directory.
+     */
+    "toolsAudit"?: boolean;
 }
 
 /**
