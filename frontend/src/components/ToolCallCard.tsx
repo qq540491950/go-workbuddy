@@ -29,10 +29,11 @@ type ToolCallProps = {
   args?: { [k: string]: any } | null;
   resp?: { [k: string]: any } | null;
   running: boolean;
+  durationMs?: number;
 };
 
 /** ToolCallCard renders one tool invocation with live status visualization. */
-export function ToolCallCard({ name, args, resp, running }: ToolCallProps) {
+export function ToolCallCard({ name, args, resp, running, durationMs }: ToolCallProps) {
   const [open, setOpen] = useState(false);
   const failed = useMemo(() => {
     if (!resp) return false;
@@ -73,6 +74,9 @@ export function ToolCallCard({ name, args, resp, running }: ToolCallProps) {
           {running ? "调用中" : failed ? "失败" : "完成"}
         </Badge>
         <span className="font-mono text-xs">{name}</span>
+        {durationMs != null && (
+          <span className="shrink-0 text-[11px] text-muted-foreground">{(durationMs / 1000).toFixed(1)}s</span>
+        )}
         <span className="hidden min-w-0 flex-1 items-center gap-1 overflow-hidden sm:flex">
           {argChips.map(({ k, text }) => (
             <span key={k} className="truncate rounded bg-background px-1.5 py-0.5 text-[11px] text-muted-foreground" title={`${k}: ${text}`}>

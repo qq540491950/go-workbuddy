@@ -38,6 +38,7 @@ type UIMessage = {
   hint?: string;
   confirmStatus?: "pending" | "approved" | "rejected";
   timestamp?: string;
+  durationMs?: number;
   streaming?: boolean;
   usage?: UsageInfo | null;
   attachments?: AttachmentOut[] | null;
@@ -226,9 +227,9 @@ export function ChatPage() {
             return [...prev, { id: nextId(), kind: "assistant", author: ev.author, text: ev.text, usage: ev.usage ?? null, timestamp: new Date().toISOString() }];
           }
           case "tool_call":
-            return [...prev, { id: nextId(), kind: "tool_call", author: ev.author, text: "", toolName: ev.toolName, toolArgs: ev.toolArgs }];
+            return [...prev, { id: nextId(), kind: "tool_call", author: ev.author, text: "", toolName: ev.toolName, toolArgs: ev.toolArgs, timestamp: new Date().toISOString() }];
           case "tool_result":
-            return [...prev, { id: nextId(), kind: "tool_result", author: ev.author, text: "", toolName: ev.toolName, toolResp: ev.toolResp }];
+            return [...prev, { id: nextId(), kind: "tool_result", author: ev.author, text: "", toolName: ev.toolName, toolResp: ev.toolResp, timestamp: new Date().toISOString() }];
           case "confirm_request":
             return [...prev, {
               id: nextId(), kind: "confirm", author: ev.author, text: "",
@@ -535,6 +536,8 @@ export function ChatPage() {
     return agents.find((a) => a.id === active.targetId)?.name ?? "Agent";
   }, [active, agents, teams]);
 
+  const toolDurations = useMemo(() => computeToolDurations(messages), [messages]);
+
   // contextUsage: how much of the target model's context window the session
   // has consumed so far (best-effort, based on streamed usage totals).
   const contextUsage = useMemo(() => {
@@ -725,6 +728,7 @@ export function ChatPage() {
                   onRegenerate={regenerate}
                   canRegenerate={!running && !!activeID}
                   toolRunning={m.kind === "tool_call" ? runningTools.has(m.id) : false}
+                  durationMs={toolDurations.get(m.id)}
                   onSpeak={() => speak(m.text)}
                   costOf={costOf}
                   onEdit={startEdit}
@@ -1037,6 +1041,7 @@ function Onboarding() {
 function ConfirmCard({ m, onConfirm }: {
   m: UIMessage;
   onConfirm: (msgId: string, callId: string | undefined, approved: boolean) => void;
+  durationMs?: number;
 }) {
   const status = m.confirmStatus ?? "pending";
   return (
@@ -1085,6 +1090,26 @@ function ConfirmCard({ m, onConfirm }: {
   );
 }
 
+/** computeToolDurations pairs tool_result with its call to derive durations. */
+function computeToolDurations(messages: UIMessage[]): Map<string, number> {
+  const map = new Map<string, number>();
+  const pending: { id: string; toolName: string; ts: number }[] = [];
+  for (const m of messages) {
+    if (m.kind !== "tool_call" && m.kind !== "tool_result") continue;
+    const ts = m.timestamp ? Date.parse(m.timestamp) : Date.now();
+    if (m.kind === "tool_call") {
+      pending.push({ id: m.id, toolName: m.toolName ?? "", ts });
+    } else {
+      const idx = [...pending].reverse().findIndex((p) => p.toolName === m.toolName);
+      if (idx >= 0) {
+        const call = pending.splice(pending.length - 1 - idx, 1)[0];
+        map.set(m.id, Math.max(0, ts - call.ts));
+      }
+    }
+  }
+  return map;
+}
+
 /** computeRunningTools marks tool_call messages that have no matching result yet. */
 function computeRunningTools(messages: UIMessage[]): Set<string> {
   const running = new Set<string>();
@@ -1101,7 +1126,7 @@ function computeRunningTools(messages: UIMessage[]): Set<string> {
   return running;
 }
 
-function MessageBubble({ m, isLastAssistant, onRegenerate, canRegenerate, toolRunning, onSpeak, costOf, onEdit, canEdit, onConfirm }: {
+function MessageBubble({ m, isLastAssistant, onRegenerate, canRegenerate, toolRunning, onSpeak, costOf, onEdit, canEdit, onConfirm, durationMs }: {
   m: UIMessage;
   isLastAssistant: boolean;
   onRegenerate: () => void;
@@ -1112,6 +1137,7 @@ function MessageBubble({ m, isLastAssistant, onRegenerate, canRegenerate, toolRu
   onEdit: (text: string) => void;
   canEdit: boolean;
   onConfirm: (msgId: string, callId: string | undefined, approved: boolean) => void;
+  durationMs?: number;
 }) {
   const [copied, setCopied] = useState(false);
   const copyMsg = async () => {
@@ -1174,6 +1200,7 @@ function MessageBubble({ m, isLastAssistant, onRegenerate, canRegenerate, toolRu
         args={m.toolArgs}
         resp={m.toolResp}
         running={m.kind === "tool_call" && toolRunning}
+        durationMs={m.kind === "tool_result" ? m.durationMs : undefined}
       />
     );
   }
