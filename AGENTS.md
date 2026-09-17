@@ -8,6 +8,8 @@
 
 ## 常用命令
 
+一键全量验证（测试 + race + 前端 + 打包）：`./scripts/verify.sh`
+
 ```bash
 go test ./internal/...                     # 后端全量测试（提交前必须全绿）
 go test -race ./internal/...               # 并发安全回归（改并发/数据库代码后必跑）
