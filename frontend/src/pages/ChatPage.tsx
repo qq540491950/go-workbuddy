@@ -551,6 +551,7 @@ export function ChatPage() {
   }, [active, agents, teams]);
 
   const toolDurations = useMemo(() => computeToolDurations(messages), [messages]);
+  const runningToolsSet = useMemo(() => computeRunningTools(messages), [messages]);
 
   // contextUsage: how much of the target model's context window the session
   // has consumed so far (best-effort, based on streamed usage totals).
@@ -733,7 +734,6 @@ export function ChatPage() {
               </div>
             )}
             {messages.slice(-RENDER_LIMIT).map((m, i, arr) => {
-              const runningTools = computeRunningTools(messages);
               return (
                 <MessageBubble
                   key={m.id}
@@ -741,7 +741,7 @@ export function ChatPage() {
                   isLastAssistant={m.kind === "assistant" && i === arr.length - 1}
                   onRegenerate={regenerate}
                   canRegenerate={!running && !!activeID}
-                  toolRunning={m.kind === "tool_call" ? runningTools.has(m.id) : false}
+                  toolRunning={m.kind === "tool_call" ? runningToolsSet.has(m.id) : false}
                   durationMs={toolDurations.get(m.id)}
                   onSpeak={() => speak(m.text)}
                   costOf={costOf}
