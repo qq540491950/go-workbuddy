@@ -3,7 +3,7 @@ import { Events } from "@wailsio/runtime";
 import {
   Plus, Send, Square, Trash2, Pencil, MessageSquare, Bot, Users, Loader2,
   Copy, Check, Search, ArrowRight, RefreshCw, Download, Mic, MicOff, Volume2, Square as SquareStop,
-  Paperclip, X, BarChart3, Brain, ShieldAlert, Network, GitFork,
+  Paperclip, X, BarChart3, Brain, ShieldAlert, Network, GitFork, Pin, PinOff,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -560,8 +560,19 @@ export function ChatPage() {
                   {s.forkedFrom && <GitFork className="mr-1 inline h-3 w-3 text-muted-foreground" />}
                   {s.title}
                 </span>
+                {s.pinned && <Pin className="h-3 w-3 shrink-0 text-primary" aria-label="已置顶" />}
                 {runningMap[s.id] && <Loader2 className="h-3 w-3 shrink-0 animate-spin text-primary" aria-label="生成中" />}
                 <span className="hidden shrink-0 items-center gap-0.5 group-hover:flex">
+                  <button
+                    className="rounded p-0.5 hover:bg-background"
+                    title={s.pinned ? "取消置顶" : "置顶此会话"}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      Chat.PinSession(s.id, !s.pinned).then(reloadSessions).catch(() => {});
+                    }}
+                  >
+                    {s.pinned ? <PinOff className="h-3 w-3" /> : <Pin className="h-3 w-3" />}
+                  </button>
                   <button
                     className="rounded p-0.5 hover:bg-background"
                     title="分叉此会话（复制完整历史为独立新会话）"

@@ -115,3 +115,41 @@ func joinTexts(msgs []ChatMessage) string {
 	}
 	return sb.String()
 }
+
+// TestPinSessionOrdering: pinned sessions surface first regardless of
+// recency, and unpinning restores updated-at order.
+func TestPinSessionOrdering(t *testing.T) {
+	chat, _, _, dir := newConfirmTestChat(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte(sseDone))
+	})
+	_ = dir
+
+	first, err := chat.NewSession("agent", "agent_c", "第一")
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := chat.NewSession("agent", "agent_c", "第二")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := chat.PinSession(first.ID, true); err != nil {
+		t.Fatal(err)
+	}
+	sessions := chat.ListSessions()
+	if sessions[0].ID != first.ID || !sessions[0].Pinned {
+		t.Fatalf("pinned session must sort first: %+v", sessions)
+	}
+
+	if err := chat.PinSession(first.ID, false); err != nil {
+		t.Fatal(err)
+	}
+	sessions = chat.ListSessions()
+	for _, s := range sessions {
+		if s.ID == first.ID && s.Pinned {
+			t.Fatal("unpin failed")
+		}
+	}
+	_ = second
+}

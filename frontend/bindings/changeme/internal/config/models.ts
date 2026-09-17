@@ -71,6 +71,11 @@ export interface ChatSession {
      * ForkSession (branching). Empty for organic sessions.
      */
     "forkedFrom"?: string;
+
+    /**
+     * Pinned sessions sort first in the sidebar.
+     */
+    "pinned"?: boolean;
 }
 
 /**

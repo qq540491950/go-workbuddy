@@ -80,7 +80,7 @@ export function IsRunning(sessionID: string): $CancellablePromise<boolean> {
 }
 
 /**
- * ListSessions returns all chat sessions, newest first.
+ * ListSessions returns all chat sessions, pinned first, then newest first.
  */
 export function ListSessions(): $CancellablePromise<config$0.ChatSession[] | null> {
     return $Call.ByID(1516353476);
@@ -91,6 +91,13 @@ export function ListSessions(): $CancellablePromise<config$0.ChatSession[] | nul
  */
 export function NewSession(targetType: string, targetID: string, title: string): $CancellablePromise<config$0.ChatSession> {
     return $Call.ByID(3793260767, targetType, targetID, title);
+}
+
+/**
+ * PinSession toggles the pinned flag of a session.
+ */
+export function PinSession(id: string, pinned: boolean): $CancellablePromise<void> {
+    return $Call.ByID(3339634620, id, pinned);
 }
 
 /**

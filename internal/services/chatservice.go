@@ -189,9 +189,29 @@ func (c *ChatService) NewSession(targetType, targetID, title string) (config.Cha
 	return cs, err
 }
 
-// ListSessions returns all chat sessions, newest first.
+// ListSessions returns all chat sessions, pinned first, then newest first.
 func (c *ChatService) ListSessions() []config.ChatSession {
-	return c.S.Store.Get().Sessions
+	sessions := c.S.Store.Get().Sessions
+	sorted := make([]config.ChatSession, len(sessions))
+	copy(sorted, sessions)
+	sort.SliceStable(sorted, func(i, j int) bool {
+		if sorted[i].Pinned != sorted[j].Pinned {
+			return sorted[i].Pinned
+		}
+		return sorted[i].UpdatedAt.After(sorted[j].UpdatedAt)
+	})
+	return sorted
+}
+
+// PinSession toggles the pinned flag of a session.
+func (c *ChatService) PinSession(id string, pinned bool) error {
+	return c.S.Store.Update(func(cfg *config.Config) {
+		for i := range cfg.Sessions {
+			if cfg.Sessions[i].ID == id {
+				cfg.Sessions[i].Pinned = pinned
+			}
+		}
+	})
 }
 
 // RenameSession updates a session title.

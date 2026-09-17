@@ -226,6 +226,8 @@ type ChatSession struct {
 	// ForkedFrom is the original session ID when this chat was created via
 	// ForkSession (branching). Empty for organic sessions.
 	ForkedFrom string `json:"forkedFrom,omitempty"`
+	// Pinned sessions sort first in the sidebar.
+	Pinned bool `json:"pinned,omitempty"`
 }
 
 // Store persists Config as JSON and guards concurrent access.
