@@ -22,6 +22,7 @@ export type {
     ArtifactInfo,
     AttachmentIn,
     AttachmentOut,
+    AuthorStat,
     ChatMessage,
     ChatStreamEvent,
     SessionStats,

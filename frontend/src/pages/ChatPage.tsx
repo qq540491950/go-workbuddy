@@ -865,6 +865,31 @@ export function ChatPage() {
                 </div>
               ))}
             </div>
+            {(stats.authors?.length ?? 0) > 1 && (
+              <div className="rounded-lg border p-2.5">
+                <div className="mb-1 text-xs text-muted-foreground">成员时间线</div>
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="text-muted-foreground">
+                      <th className="text-left font-normal">成员</th>
+                      <th className="text-right font-normal">轮次</th>
+                      <th className="text-right font-normal">工具调用</th>
+                      <th className="text-right font-normal">tokens</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {stats.authors!.map((a) => (
+                      <tr key={a.author}>
+                        <td className="py-0.5">{a.author}</td>
+                        <td className="text-right">{a.turns}</td>
+                        <td className="text-right">{a.toolCalls}</td>
+                        <td className="text-right">{a.tokens.toLocaleString()}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
             {(stats.daily?.length ?? 0) > 0 && (
               <div className="rounded-lg border p-2.5">
                 <div className="mb-1 text-xs text-muted-foreground">按日明细（成本按当前模型价格估算）</div>

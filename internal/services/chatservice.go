@@ -1036,9 +1036,19 @@ type SessionStats struct {
 	TokensIn       int64       `json:"tokensIn"`
 	TokensOut      int64       `json:"tokensOut"`
 	TokensTotal    int64       `json:"tokensTotal"`
-	Daily          []StatDay   `json:"daily,omitempty"` // per-day token/cost breakdown
+	Daily          []StatDay   `json:"daily,omitempty"`  // per-day token/cost breakdown
+	Authors        []AuthorStat `json:"authors,omitempty"` // per-participant breakdown (team timelines)
 	FirstAt        *time.Time  `json:"firstAt,omitempty"`
 	LastAt         *time.Time  `json:"lastAt,omitempty"`
+}
+
+// AuthorStat breaks usage down per conversation participant (team members,
+// remote agents); "user" is excluded.
+type AuthorStat struct {
+	Author    string `json:"author"`
+	Turns     int    `json:"turns"`
+	ToolCalls int    `json:"toolCalls"`
+	Tokens    int64  `json:"tokens"`
 }
 
 // StatDay is one calendar day of usage with an estimated cost using the
@@ -1086,6 +1096,7 @@ func (c *ChatService) SessionStats(sessionID string) (*SessionStats, error) {
 		}
 	}
 	days := map[string]*StatDay{}
+	authors := map[string]*AuthorStat{}
 
 	for ev := range resp.Session.Events().All() {
 		if ev == nil {
@@ -1112,6 +1123,13 @@ func (c *ChatService) SessionStats(sessionID string) (*SessionStats, error) {
 			st.TokensOut += u.CompletionTokens
 			st.TokensTotal += u.TotalTokens
 
+			as := authors[ev.Author]
+			if as == nil {
+				as = &AuthorStat{Author: ev.Author}
+				authors[ev.Author] = as
+			}
+			as.Tokens += u.TotalTokens
+
 			day := ev.Timestamp.Local().Format("2006-01-02")
 			d := days[day]
 			if d == nil {
@@ -1133,6 +1151,9 @@ func (c *ChatService) SessionStats(sessionID string) (*SessionStats, error) {
 			switch {
 			case p.FunctionCall != nil:
 				st.ToolCalls++
+				if as := authors[ev.Author]; as != nil {
+					as.ToolCalls++
+				}
 			case p.FunctionResponse != nil:
 				if strings.Contains(string(mustJSON(p.FunctionResponse.Response)), `"error"`) {
 					st.ToolFailures++
@@ -1141,8 +1162,16 @@ func (c *ChatService) SessionStats(sessionID string) (*SessionStats, error) {
 		}
 		if ev.TurnComplete && !ev.Partial {
 			st.AssistantTurns++
+			if as := authors[ev.Author]; as != nil {
+				as.Turns++
+			}
 		}
 	}
+	for name, as := range authors {
+		as.Author = name
+		st.Authors = append(st.Authors, *as)
+	}
+	sort.Slice(st.Authors, func(i, j int) bool { return st.Authors[i].Author < st.Authors[j].Author })
 	for _, d := range days {
 		st.Daily = append(st.Daily, *d)
 	}

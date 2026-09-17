@@ -74,6 +74,17 @@ export interface AttachmentOut {
 }
 
 /**
+ * AuthorStat breaks usage down per conversation participant (team members,
+ * remote agents); "user" is excluded.
+ */
+export interface AuthorStat {
+    "author": string;
+    "turns": number;
+    "toolCalls": number;
+    "tokens": number;
+}
+
+/**
  * ChatMessage is a rendered historical message.
  */
 export interface ChatMessage {
@@ -148,6 +159,11 @@ export interface SessionStats {
      * per-day token/cost breakdown
      */
     "daily"?: StatDay[] | null;
+
+    /**
+     * per-participant breakdown (team timelines)
+     */
+    "authors"?: AuthorStat[] | null;
     "firstAt"?: string | null;
     "lastAt"?: string | null;
 }

@@ -72,6 +72,10 @@ func TestSessionStatsDailyCost(t *testing.T) {
 	if d.PromptTokens != 1000000 || d.CompletionTokens != 500000 {
 		t.Fatalf("day tokens wrong: %+v", d)
 	}
+	// Per-author breakdown: single assistant author owns all tokens.
+	if len(st.Authors) != 1 || st.Authors[0].Author != "a" || st.Authors[0].Tokens != 1500000 || st.Authors[0].Turns != 1 {
+		t.Fatalf("author stats wrong: %+v", st.Authors)
+	}
 	wantCost := float64(1000000)/1e6*2 + float64(500000)/1e6*8 // 2 + 4 = 6
 	if diff := d.EstimatedCost - wantCost; diff > 0.0001 || diff < -0.0001 {
 		t.Fatalf("cost wrong: got %v want %v", d.EstimatedCost, wantCost)
