@@ -184,8 +184,9 @@ export function TestKnowledgeSearch(query: string): $CancellablePromise<string> 
 
 /**
  * TestProvider performs a minimal round-trip against the provider with the
- * chosen model to verify reachability and credentials.
+ * chosen model to verify reachability and credentials. Returns the elapsed
+ * latency in milliseconds for display.
  */
-export function TestProvider(p: config$0.ModelProvider, model: string): $CancellablePromise<void> {
+export function TestProvider(p: config$0.ModelProvider, model: string): $CancellablePromise<number> {
     return $Call.ByID(1354150776, p, model);
 }

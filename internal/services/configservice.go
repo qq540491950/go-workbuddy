@@ -102,11 +102,12 @@ func (c *ConfigService) ListProviderModels(p config.ModelProvider) ([]string, er
 }
 
 // TestProvider performs a minimal round-trip against the provider with the
-// chosen model to verify reachability and credentials.
-func (c *ConfigService) TestProvider(p config.ModelProvider, model string) error {
+// chosen model to verify reachability and credentials. Returns the elapsed
+// latency in milliseconds for display.
+func (c *ConfigService) TestProvider(p config.ModelProvider, model string) (int64, error) {
 	m, err := agentkit.NewModelFromProvider(p, model)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
@@ -114,15 +115,16 @@ func (c *ConfigService) TestProvider(p config.ModelProvider, model string) error
 		Contents: []*genai.Content{genai.NewContentFromText("ping", genai.RoleUser)},
 		Config:   &genai.GenerateContentConfig{MaxOutputTokens: 16},
 	}
+	start := time.Now()
 	for resp, err := range m.GenerateContent(ctx, req, false) {
 		if err != nil {
-			return err
+			return 0, err
 		}
 		if resp != nil && resp.Content != nil {
-			return nil
+			return time.Since(start).Milliseconds(), nil
 		}
 	}
-	return fmt.Errorf("no response from model")
+	return 0, fmt.Errorf("no response from model")
 }
 
 // SaveAgent inserts or updates an agent.

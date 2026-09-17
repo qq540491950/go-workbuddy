@@ -128,8 +128,8 @@ export function ModelsPage() {
     }
     setTesting(true);
     try {
-      await Config.TestProvider(p, model);
-      toast.success(`连接成功 (${model})`);
+      const ms = await Config.TestProvider(p, model);
+      toast.success(`连接成功 (${model}) · ${ms}ms`);
     } catch (e) {
       toast.error(`连接失败: ${errText(e)}`);
     } finally {
