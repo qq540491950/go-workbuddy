@@ -915,6 +915,7 @@ func (c *ChatService) ForkSession(sessionID string) (config.ChatSession, error) 
 		TargetID:   src.TargetID,
 		CreatedAt:  nowUTC(),
 		UpdatedAt:  nowUTC(),
+		ForkedFrom: sessionID,
 	}
 	err := c.S.Store.Update(func(cfg *config.Config) {
 		cfg.Sessions = append([]config.ChatSession{branch}, cfg.Sessions...)

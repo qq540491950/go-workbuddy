@@ -201,14 +201,17 @@ type Config struct {
 	Sessions     []ChatSession       `json:"sessions"`
 }
 
-// ChatSession is a chat conversation bound to an agent or a team.
+// ChatSession is a chat conversation bound to an agent, remote agent or team.
 type ChatSession struct {
 	ID         string    `json:"id"`
 	Title      string    `json:"title"`
-	TargetType string    `json:"targetType"` // "agent" | "team"
+	TargetType string    `json:"targetType"` // "agent" | "team" | "remote"
 	TargetID   string    `json:"targetId"`
 	CreatedAt  time.Time `json:"createdAt"`
 	UpdatedAt  time.Time `json:"updatedAt"`
+	// ForkedFrom is the original session ID when this chat was created via
+	// ForkSession (branching). Empty for organic sessions.
+	ForkedFrom string `json:"forkedFrom,omitempty"`
 }
 
 // Store persists Config as JSON and guards concurrent access.

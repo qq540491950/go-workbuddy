@@ -546,7 +546,10 @@ export function ChatPage() {
                 onClick={() => setActiveID(s.id)}
               >
                 {s.targetType === "team" ? <Users className="h-3.5 w-3.5 shrink-0 text-primary" /> : s.targetType === "remote" ? <Network className="h-3.5 w-3.5 shrink-0 text-primary" /> : <Bot className="h-3.5 w-3.5 shrink-0 text-primary" />}
-                <span className="min-w-0 flex-1 truncate">{s.title}</span>
+                <span className="min-w-0 flex-1 truncate" title={s.forkedFrom ? `分叉自「${sessions.find((x) => x.id === s.forkedFrom)?.title ?? s.forkedFrom}」` : s.title}>
+                  {s.forkedFrom && <GitFork className="mr-1 inline h-3 w-3 text-muted-foreground" />}
+                  {s.title}
+                </span>
                 {runningMap[s.id] && <Loader2 className="h-3 w-3 shrink-0 animate-spin text-primary" aria-label="生成中" />}
                 <span className="hidden shrink-0 items-center gap-0.5 group-hover:flex">
                   <button

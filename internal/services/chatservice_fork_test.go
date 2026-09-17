@@ -68,6 +68,9 @@ func TestForkSession(t *testing.T) {
 	if branch.ID == orig.ID || branch.TargetType != "agent" || branch.TargetID != "a1" {
 		t.Fatalf("fork metadata wrong: %+v", branch)
 	}
+	if branch.ForkedFrom != orig.ID {
+		t.Fatalf("fork lineage missing: %+v", branch)
+	}
 	if !strings.Contains(branch.Title, "分支") {
 		t.Fatalf("fork title should carry suffix: %q", branch.Title)
 	}

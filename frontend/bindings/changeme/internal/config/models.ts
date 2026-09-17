@@ -52,19 +52,25 @@ export interface AgentConfig {
 }
 
 /**
- * ChatSession is a chat conversation bound to an agent or a team.
+ * ChatSession is a chat conversation bound to an agent, remote agent or team.
  */
 export interface ChatSession {
     "id": string;
     "title": string;
 
     /**
-     * "agent" | "team"
+     * "agent" | "team" | "remote"
      */
     "targetType": string;
     "targetId": string;
     "createdAt": string;
     "updatedAt": string;
+
+    /**
+     * ForkedFrom is the original session ID when this chat was created via
+     * ForkSession (branching). Empty for organic sessions.
+     */
+    "forkedFrom"?: string;
 }
 
 /**
