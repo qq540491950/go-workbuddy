@@ -3,6 +3,7 @@ package agentkit
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -59,5 +60,18 @@ func TestSanitizeAgentName(t *testing.T) {
 	}
 	if sanitizeAgentName("Weekly Bot!") != "weekly_bot" {
 		t.Error("unexpected sanitize result")
+	}
+}
+
+func TestApplyPromptVars(t *testing.T) {
+	out := applyPromptVars("今天 {{date}} {{time}}，工作区 {{workspace}}。", "/tmp/ws")
+	if !strings.HasPrefix(out, "今天 ") || !strings.Contains(out, "，工作区 /tmp/ws。") {
+		t.Fatalf("vars unresolved: %q", out)
+	}
+	if strings.Contains(out, "{{") {
+		t.Fatalf("leftover placeholders: %q", out)
+	}
+	if got := applyPromptVars("no vars", ""); got != "no vars" {
+		t.Fatalf("plain prompt mutated: %q", got)
 	}
 }

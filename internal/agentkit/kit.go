@@ -143,7 +143,7 @@ func (k *Kit) buildLLMAgentWithSubAgents(ac config.AgentConfig, cfg config.Confi
 // InstructionProvider so braces in user prompts are never treated as state
 // placeholders.
 func (k *Kit) llmConfig(ac config.AgentConfig, m model.LLM, tools []tool.Tool, toolsets []tool.Toolset) llmagent.Config {
-	instruction := ac.SystemPrompt
+	instruction := applyPromptVars(ac.SystemPrompt, k.workspace())
 	if strings.TrimSpace(instruction) == "" {
 		instruction = "You are a helpful assistant."
 	}
@@ -320,6 +320,19 @@ func (k *Kit) skillToolset(ids []string, cfg config.Config) tool.Toolset {
 		return nil
 	}
 	return ts
+}
+
+// applyPromptVars resolves template variables in system prompts:
+// {{date}}, {{time}}, {{datetime}} and {{workspace}} (resolved at each agent
+// build, i.e. per turn, so long-running apps stay current).
+func applyPromptVars(prompt, workspace string) string {
+	now := time.Now()
+	return strings.NewReplacer(
+		"{{datetime}}", now.Format("2006-01-02 15:04"),
+		"{{date}}", now.Format("2006-01-02"),
+		"{{time}}", now.Format("15:04"),
+		"{{workspace}}", workspace,
+	).Replace(prompt)
 }
 
 // SanitizeAgentName makes a safe ADK agent name (identifier-like). Exported
