@@ -678,6 +678,8 @@ pre code{background:none;padding:0}
 blockquote{border-left:4px solid #d0d7de;margin:0;padding:.2rem 1rem;color:#57606a;background:#f6f8fa;border-radius:0 8px 8px 0}
 table{border-collapse:collapse}td,th{border:1px solid #d0d7de;padding:.35rem .6rem}
 img{max-width:100%%}
+@media (prefers-color-scheme:dark){body{background:#0d1117;color:#e6edf3}h1{border-color:#30363d}code{background:#161b22}pre{background:#161b22}blockquote{border-color:#30363d;background:#161b22;color:#8b949e}td,th{border-color:#30363d}}
+@media print{body{max-width:none;margin:0}}
 </style>
 </head>
 <body>

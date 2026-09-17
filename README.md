@@ -120,6 +120,12 @@ go vet ./internal/... .
 
 已实施：Markdown + 代码块复制、消息级复制、深浅主题、首次运行引导、会话搜索、快捷键、工具调用折叠面板、流式打字指示器。
 
+### 第五十九轮迭代：HTML 导出深色与打印适配（已实施）
+
+- HTML 导出模板新增 `prefers-color-scheme: dark` 深色样式与 `@media print` 打印优化，跟随系统外观或直接打印分发
+
+验证：HTML 导出 e2e 回归 + 构建零错误。
+
 ### 第五十八轮迭代：A2A 服务多 Agent 并发发布（已实施）
 
 - A2AService 重构为多服务器模型：可同时发布多个本地 Agent（各自独立端口与 Agent Card，`Status` 返回全部运行条目）
