@@ -184,6 +184,14 @@ export interface StatDay {
 }
 
 /**
+ * StorageInfo reports on-disk sizes of the app databases.
+ */
+export interface StorageInfo {
+    "sessionsDbBytes": number;
+    "knowledgeDbBytes": number;
+}
+
+/**
  * UsageInfo reports token consumption for a turn or a whole session.
  */
 export interface UsageInfo {

@@ -13,6 +13,13 @@ import { Call as $Call, CancellablePromise as $CancellablePromise } from "@wails
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
 import * as config$0 from "../config/models.js";
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore: Unused imports
+import * as gorm$0 from "../../../gorm.io/gorm/models.js";
+
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore: Unused imports
+import * as $models from "./models.js";
 
 /**
  * AppInfo returns static app metadata.
@@ -71,4 +78,27 @@ export function RecentLogs(tail: number): $CancellablePromise<string[] | null> {
  */
 export function SetLogPath(path: string): $CancellablePromise<void> {
     return $Call.ByID(1981080425, path);
+}
+
+/**
+ * SetStoragePaths records the database file locations for storage stats.
+ */
+export function SetStoragePaths(sessionsDB: string, knowledgeDB: string, gormDB: gorm$0.DB | null): $CancellablePromise<void> {
+    return $Call.ByID(3799940595, sessionsDB, knowledgeDB, gormDB);
+}
+
+/**
+ * StorageStats returns the current database file sizes (-1 when absent).
+ */
+export function StorageStats(): $CancellablePromise<$models.StorageInfo> {
+    return $Call.ByID(2975759144);
+}
+
+/**
+ * VacuumSessions compacts the sessions database (reclaims space from
+ * trimmed/regenerated history). Safe while no run is active; callers race
+ * only on transient "database is locked" style errors which we surface.
+ */
+export function VacuumSessions(): $CancellablePromise<void> {
+    return $Call.ByID(1366346498);
 }

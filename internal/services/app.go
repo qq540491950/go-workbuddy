@@ -8,6 +8,8 @@ import (
 	"strings"
 	"time"
 
+	"gorm.io/gorm"
+
 	"changeme/internal/config"
 	"changeme/internal/mcpmgr"
 )
@@ -16,12 +18,20 @@ func nowUTC() time.Time { return time.Now().UTC().Truncate(time.Second) }
 
 // AppService exposes generic app info.
 type AppService struct {
-	S       *Services
-	logPath string
+	S           *Services
+	logPath     string
+	sessionsDB  string
+	knowledgeDB string
+	gormDB      *gorm.DB
 }
 
 // SetLogPath points the diagnostics log reader at the app log file.
 func (a *AppService) SetLogPath(path string) { a.logPath = path }
+
+// SetStoragePaths records the database file locations for storage stats.
+func (a *AppService) SetStoragePaths(sessionsDB, knowledgeDB string, gormDB *gorm.DB) {
+	a.sessionsDB, a.knowledgeDB, a.gormDB = sessionsDB, knowledgeDB, gormDB
+}
 
 // NewAppService creates the service.
 func NewAppService(s *Services) *AppService { return &AppService{S: s} }
@@ -69,6 +79,34 @@ func (a *AppService) RecentLogs(tail int) ([]string, error) {
 		lines = lines[len(lines)-tail:]
 	}
 	return lines, nil
+}
+
+// StorageInfo reports on-disk sizes of the app databases.
+type StorageInfo struct {
+	SessionsDBBytes  int64 `json:"sessionsDbBytes"`
+	KnowledgeDBBytes int64 `json:"knowledgeDbBytes"`
+}
+
+// StorageStats returns the current database file sizes (-1 when absent).
+func (a *AppService) StorageStats() StorageInfo {
+	info := StorageInfo{SessionsDBBytes: -1, KnowledgeDBBytes: -1}
+	if st, err := os.Stat(a.sessionsDB); err == nil {
+		info.SessionsDBBytes = st.Size()
+	}
+	if st, err := os.Stat(a.knowledgeDB); err == nil {
+		info.KnowledgeDBBytes = st.Size()
+	}
+	return info
+}
+
+// VacuumSessions compacts the sessions database (reclaims space from
+// trimmed/regenerated history). Safe while no run is active; callers race
+// only on transient "database is locked" style errors which we surface.
+func (a *AppService) VacuumSessions() error {
+	if a.gormDB == nil {
+		return fmt.Errorf("会话数据库不可用")
+	}
+	return a.gormDB.Exec("VACUUM").Error
 }
 
 // agentShare is the portable per-agent share document. The referenced

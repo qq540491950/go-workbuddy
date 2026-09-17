@@ -13,7 +13,7 @@ import {
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 import { ACCENTS, FONT_SCALES, applyTheme, cacheTheme, type ThemePrefs } from "@/lib/theme";
-import { App, A2A, Config, type AgentConfig, type A2AStatus, type KnowledgeIndexStats, type ModelProvider, type Settings, errText, Protocol } from "@/lib/api";
+import { App, A2A, Config, type AgentConfig, type A2AStatus, type KnowledgeIndexStats, type ModelProvider, type StorageInfo, type Settings, errText, Protocol } from "@/lib/api";
 
 export function SettingsPage() {
   const [settings, setSettings] = useState<Settings | null>(null);
@@ -23,6 +23,7 @@ export function SettingsPage() {
   const importRef = useRef<HTMLInputElement>(null);
   const [logOpen, setLogOpen] = useState(false);
   const [logText, setLogText] = useState("");
+  const [storage, setStorage] = useState<StorageInfo | null>(null);
   const [a2aStatus, setA2AStatus] = useState<A2AStatus | null>(null);
   const [a2aAgent, setA2AAgent] = useState("");
   const [a2aPort, setA2APort] = useState("8080");
@@ -41,6 +42,7 @@ export function SettingsPage() {
   useEffect(() => {
     A2A.Status().then(setA2AStatus).catch(() => {});
     Config.KnowledgeIndexStats().then(setIndexStats).catch(() => {});
+    App.StorageStats().then(setStorage).catch(() => {});
   }, []);
 
   const update = (patch: Partial<Settings>) => {
@@ -313,9 +315,27 @@ export function SettingsPage() {
                 <pre className="max-h-[50vh] overflow-auto rounded bg-muted/60 p-3 font-mono text-[11px] leading-relaxed">{logText}</pre>
               </DialogContent>
             </Dialog>
-            <p className="text-xs text-muted-foreground">
-              遇到问题时先查看日志（logs/app.log，5MB 自动轮转），反馈问题时可一并附上。
-            </p>
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-xs text-muted-foreground">
+                遇到问题时先查看日志（logs/app.log，5MB 自动轮转），反馈问题时可一并附上。
+                {storage && storage.sessionsDbBytes >= 0 && (
+                  <>
+                    会话库 {(storage.sessionsDbBytes / 1024 / 1024).toFixed(1)} MB
+                    {storage.knowledgeDbBytes >= 0 && ` · 知识索引 ${(storage.knowledgeDbBytes / 1024).toFixed(0)} KB`}
+                  </>
+                )}
+              </p>
+              <Button variant="outline" size="sm" className="shrink-0" onClick={async () => {
+                try {
+                  await App.VacuumSessions();
+                  toast.success("会话库已压缩整理");
+                } catch (e) {
+                  toast.error(`压缩失败: ${errText(e)}`);
+                }
+              }}>
+                压缩会话库
+              </Button>
+            </div>
           </CardContent>
         </Card>
 

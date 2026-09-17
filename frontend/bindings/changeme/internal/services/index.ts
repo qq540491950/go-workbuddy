@@ -27,5 +27,6 @@ export type {
     ChatStreamEvent,
     SessionStats,
     StatDay,
+    StorageInfo,
     UsageInfo
 } from "./models.js";

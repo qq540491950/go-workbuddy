@@ -52,3 +52,38 @@ func itoaTest(n int) string {
 	}
 	return d
 }
+
+// TestStorageStatsAndVacuum: sizes are reported from real files and VACUUM
+// runs without error on the live sessions database.
+func TestStorageStatsAndVacuum(t *testing.T) {
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "sessions.db")
+	kPath := filepath.Join(dir, "knowledge.index.db")
+	db, _, err := newTestSessionService(dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	app := &AppService{S: &Services{}}
+	app.SetStoragePaths(dbPath, kPath, db)
+
+	info := app.StorageStats()
+	if info.SessionsDBBytes <= 0 {
+		t.Fatalf("sessions db size missing: %+v", info)
+	}
+	if info.KnowledgeDBBytes != -1 {
+		t.Fatalf("absent knowledge db should report -1: %+v", info)
+	}
+	if err := os.WriteFile(kPath, []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if info = app.StorageStats(); info.KnowledgeDBBytes != 1 {
+		t.Fatalf("knowledge db size wrong: %+v", info)
+	}
+	if err := app.VacuumSessions(); err != nil {
+		t.Fatalf("vacuum failed: %v", err)
+	}
+	// Database still usable afterwards: count query works.
+	if err := db.Exec("SELECT count(*) FROM sqlite_master").Error; err != nil {
+		t.Fatalf("db unusable after vacuum: %v", err)
+	}
+}

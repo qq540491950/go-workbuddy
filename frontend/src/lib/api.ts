@@ -39,6 +39,7 @@ export type MCPServerConfig = configModels.MCPServerConfig;
 export type RemoteAgentConfig = configModels.RemoteAgentConfig;
 export type RemoteAgentInfo = agentkitModels.RemoteAgentInfo;
 export type KnowledgeIndexStats = agentkitModels.KnowledgeIndexStats;
+export type StorageInfo = serviceModels.StorageInfo;
 export type Settings = configModels.Settings;
 export type ChatSession = configModels.ChatSession;
 
