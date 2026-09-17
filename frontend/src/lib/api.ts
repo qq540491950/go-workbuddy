@@ -6,6 +6,8 @@ import * as serviceModels from "../../bindings/changeme/internal/services/models
 import * as agentkitModels from "../../bindings/changeme/internal/agentkit/models";
 
 export const App = services.AppService;
+export const A2A = services.A2AService;
+export type A2AStatus = serviceModels.A2AStatus;
 export const Chat = services.ChatService;
 export const Config = services.ConfigService;
 export const MCP = services.MCPService;

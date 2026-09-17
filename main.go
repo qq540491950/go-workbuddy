@@ -91,6 +91,7 @@ func main() {
 			application.NewService(services.NewMCPService(svc)),
 			application.NewService(services.NewArtifactService(svc)),
 			application.NewService(services.NewChatService(svc, sessions, gormDB)),
+			application.NewService(services.NewA2AService(svc, sessions)),
 		},
 		Assets: application.AssetOptions{
 			Handler: application.AssetFileServerFS(assets),

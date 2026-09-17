@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -10,24 +10,31 @@ import {
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 import { ACCENTS, FONT_SCALES, applyTheme, cacheTheme, type ThemePrefs } from "@/lib/theme";
-import { App, Config, type ModelProvider, type Settings, errText, Protocol } from "@/lib/api";
-import { useRef } from "react";
+import { App, A2A, Config, type AgentConfig, type A2AStatus, type ModelProvider, type Settings, errText, Protocol } from "@/lib/api";
 
 export function SettingsPage() {
   const [settings, setSettings] = useState<Settings | null>(null);
   const [providers, setProviders] = useState<ModelProvider[]>([]);
+  const [agents, setAgents] = useState<AgentConfig[]>([]);
   const [saving, setSaving] = useState(false);
   const importRef = useRef<HTMLInputElement>(null);
+  const [a2aStatus, setA2AStatus] = useState<A2AStatus | null>(null);
+  const [a2aAgent, setA2AAgent] = useState("");
+  const [a2aPort, setA2APort] = useState("8080");
 
   const reload = useCallback(() => {
     Config.GetConfig()
       .then((c) => {
         setSettings(c.settings);
         setProviders(c.providers ?? []);
+        setAgents(c.agents ?? []);
       })
       .catch((e) => toast.error(errText(e)));
   }, []);
   useEffect(reload, [reload]);
+  useEffect(() => {
+    A2A.Status().then(setA2AStatus).catch(() => {});
+  }, []);
 
   const update = (patch: Partial<Settings>) => {
     if (!settings) return;
@@ -250,6 +257,71 @@ export function SettingsPage() {
             </div>
             <p className="text-xs text-muted-foreground">
               备份写入工作区 exports/ 目录。含密钥备份以 0600 权限保存且可直接恢复；脱敏备份不含 API Key，适合分享或迁移。
+            </p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">A2A 服务（对外提供远程 Agent）</CardTitle>
+          </CardHeader>
+          <CardContent className="grid gap-3">
+            <div className="grid grid-cols-2 gap-3">
+              <div className="grid gap-1.5">
+                <Label>发布的 Agent</Label>
+                <Select value={a2aAgent || undefined} onValueChange={setA2AAgent}>
+                  <SelectTrigger><SelectValue placeholder="选择 Agent" /></SelectTrigger>
+                  <SelectContent>
+                    {agents.map((a) => (
+                      <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="grid gap-1.5">
+                <Label>端口</Label>
+                <Input value={a2aPort} onChange={(e) => setA2APort(e.target.value)} placeholder="8080" />
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              {!a2aStatus?.running ? (
+                <Button
+                  onClick={async () => {
+                    if (!a2aAgent) { toast.error("请选择要发布的 Agent"); return; }
+                    try {
+                      setA2AStatus(await A2A.Start(a2aAgent, Number(a2aPort) || 0));
+                      toast.success("A2A 服务已启动");
+                    } catch (e) {
+                      toast.error(`启动失败: ${errText(e)}`);
+                    }
+                  }}
+                >
+                  启动服务
+                </Button>
+              ) : (
+                <Button
+                  variant="outline"
+                  onClick={async () => {
+                    try {
+                      await A2A.Stop();
+                      setA2AStatus(await A2A.Status());
+                      toast.success("A2A 服务已停止");
+                    } catch (e) {
+                      toast.error(`停止失败: ${errText(e)}`);
+                    }
+                  }}
+                >
+                  停止服务
+                </Button>
+              )}
+              {a2aStatus?.running && (
+                <span className="text-xs text-muted-foreground">
+                  运行中：<span className="font-mono">{a2aStatus.url}</span> · 发布 {a2aStatus.agentName}
+                </span>
+              )}
+            </div>
+            <p className="text-xs text-muted-foreground">
+              启动后其他 A2A 客户端可通过该地址发现并调用此 Agent（仅监听本机地址）；服务为运行态，重启应用后需重新启动。
             </p>
           </CardContent>
         </Card>
