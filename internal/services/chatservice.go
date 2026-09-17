@@ -22,6 +22,9 @@ import (
 	"google.golang.org/adk/v2/tool/toolconfirmation"
 	"google.golang.org/genai"
 
+	"github.com/gomarkdown/markdown"
+	htmlrenderer "github.com/gomarkdown/markdown/html"
+
 	"changeme/internal/agentkit"
 	"changeme/internal/config"
 )
@@ -580,6 +583,84 @@ func (c *ChatService) ExportSession(sessionID string) (string, error) {
 	}
 	path := filepath.Join(dir, fmt.Sprintf("%s-%s.md", base, sessionID[len(sessionID)-6:]))
 	if err := os.WriteFile(path, []byte(sb.String()), 0o644); err != nil {
+		return "", err
+	}
+	return path, nil
+}
+
+// ExportSessionHTML renders the conversation as a self-contained styled HTML
+// file (Markdown pipeline via gomarkdown) and returns the file path.
+func (c *ChatService) ExportSessionHTML(sessionID string) (string, error) {
+	cfg := c.S.Store.Get()
+	var meta *config.ChatSession
+	for i := range cfg.Sessions {
+		if cfg.Sessions[i].ID == sessionID {
+			meta = &cfg.Sessions[i]
+			break
+		}
+	}
+	if meta == nil {
+		return "", fmt.Errorf("session %q not found", sessionID)
+	}
+	msgs, err := c.GetSessionMessages(sessionID)
+	if err != nil {
+		return "", err
+	}
+
+	var body strings.Builder
+	fmt.Fprintf(&body, "# %s\n\n", meta.Title)
+	fmt.Fprintf(&body, "- 对象: %s `%s`\n\n", map[bool]string{true: "团队", false: "Agent"}[meta.TargetType == "team"], meta.TargetID)
+	for _, m := range msgs {
+		switch m.Kind {
+		case "user":
+			fmt.Fprintf(&body, "## 🧑 用户\n\n%s\n\n", m.Text)
+		case "assistant":
+			fmt.Fprintf(&body, "## 🤖 %s\n\n%s\n\n", m.Author, m.Text)
+		case "tool_call":
+			args, _ := json.Marshal(m.ToolArgs)
+			fmt.Fprintf(&body, "> 🔧 工具调用 **%s** `%s`\n\n", m.ToolName, string(args))
+		case "tool_result":
+			resp, _ := json.Marshal(m.ToolResp)
+			fmt.Fprintf(&body, "> ✅ 工具结果 **%s** `%s`\n\n", m.ToolName, string(resp))
+		case "confirm_request":
+			fmt.Fprintf(&body, "> 🛡️ **HITL 确认** %s（`%s`）\n\n", m.ToolName, m.CallID)
+		}
+	}
+
+	html := markdown.ToHTML([]byte(body.String()), nil, htmlrenderer.NewRenderer(htmlrenderer.RendererOptions{Flags: htmlrenderer.CommonFlags}))
+	page := fmt.Sprintf(`<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>%s</title>
+<style>
+body{max-width:860px;margin:2rem auto;padding:0 1rem;font-family:-apple-system,'Segoe UI',sans-serif;line-height:1.65;color:#1f2328}
+h1{border-bottom:2px solid #d0d7de;padding-bottom:.4rem}
+h2{margin-top:2rem;font-size:1.15rem}
+code{background:#f0f2f4;border-radius:4px;padding:.1em .35em;font-size:.9em}
+pre{background:#f6f8fa;padding:.8rem;border-radius:8px;overflow:auto}
+pre code{background:none;padding:0}
+blockquote{border-left:4px solid #d0d7de;margin:0;padding:.2rem 1rem;color:#57606a;background:#f6f8fa;border-radius:0 8px 8px 0}
+table{border-collapse:collapse}td,th{border:1px solid #d0d7de;padding:.35rem .6rem}
+img{max-width:100%%}
+</style>
+</head>
+<body>
+%s
+</body>
+</html>`, meta.Title, string(html))
+
+	workspace := cfg.Settings.WorkspaceDir
+	if workspace == "" {
+		workspace = "."
+	}
+	dir := filepath.Join(workspace, "exports")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return "", err
+	}
+	path := filepath.Join(dir, fmt.Sprintf("%s-%s.html", sanitizeExportName(meta.Title), sessionID[len(sessionID)-6:]))
+	if err := os.WriteFile(path, []byte(page), 0o644); err != nil {
 		return "", err
 	}
 	return path, nil

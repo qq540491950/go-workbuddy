@@ -3,7 +3,7 @@ import { Events } from "@wailsio/runtime";
 import {
   Plus, Send, Square, Trash2, Pencil, MessageSquare, Bot, Users, Loader2,
   Copy, Check, Search, ArrowRight, RefreshCw, Download, Mic, MicOff, Volume2, Square as SquareStop,
-  Paperclip, X, BarChart3, Brain, ShieldAlert, Network, GitFork, Pin, PinOff,
+  Paperclip, X, BarChart3, Brain, ShieldAlert, Network, GitFork, Pin, PinOff, FileCode2,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -444,6 +444,16 @@ export function ChatPage() {
     }
   };
 
+  const exportHTML = async () => {
+    if (!activeID) return;
+    try {
+      const path = await Chat.ExportSessionHTML(activeID);
+      toast.success(`已导出 HTML: ${path}`);
+    } catch (e) {
+      toast.error(`导出失败: ${errText(e)}`);
+    }
+  };
+
   const createSession = async () => {
     if (!newTarget) {
       toast.error("请选择目标");
@@ -681,6 +691,12 @@ export function ChatPage() {
             )}
             {active && (
               <>
+                <Button
+                  variant="ghost" size="icon" title="导出为自包含 HTML（样式化渲染）"
+                  onClick={exportHTML}
+                >
+                  <FileCode2 className="h-4 w-4" />
+                </Button>
                 <Button
                   variant="ghost" size="icon" title="存入长期记忆（供其他对话召回）"
                   onClick={async () => {

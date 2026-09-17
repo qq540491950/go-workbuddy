@@ -57,6 +57,14 @@ export function ExportSession(sessionID: string): $CancellablePromise<string> {
 }
 
 /**
+ * ExportSessionHTML renders the conversation as a self-contained styled HTML
+ * file (Markdown pipeline via gomarkdown) and returns the file path.
+ */
+export function ExportSessionHTML(sessionID: string): $CancellablePromise<string> {
+    return $Call.ByID(1629366468, sessionID);
+}
+
+/**
  * ForkSession duplicates a session's full ADK event history into a new chat
  * (branching): the user can regenerate/edit/confirm differently in the fork
  * without touching the original timeline.
