@@ -30,6 +30,14 @@ export function CheckRemoteAgent(cardURL: string): $CancellablePromise<agentkit$
 }
 
 /**
+ * CreateKnowledgeFile writes a new knowledge file (traversal-guarded, refuses
+ * to overwrite existing files).
+ */
+export function CreateKnowledgeFile(name: string, content: string): $CancellablePromise<string> {
+    return $Call.ByID(1369738313, name, content);
+}
+
+/**
  * DeleteAgent removes an agent and detaches it from teams.
  */
 export function DeleteAgent(id: string): $CancellablePromise<void> {

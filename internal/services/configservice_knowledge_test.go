@@ -106,3 +106,39 @@ func TestKnowledgeFileManagement(t *testing.T) {
 		t.Fatal("sanity")
 	}
 }
+
+// TestCreateKnowledgeFile: creation succeeds, refuses duplicates, refuses
+// traversal names, and refuses empty content.
+func TestCreateKnowledgeFile(t *testing.T) {
+	dir := t.TempDir()
+	workspace := t.TempDir()
+	store, err := config.Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Update(func(cfg *config.Config) { cfg.Settings.WorkspaceDir = workspace }); err != nil {
+		t.Fatal(err)
+	}
+	svc := &ConfigService{S: &Services{Store: store}}
+
+	name, err := svc.CreateKnowledgeFile("notes.md", "第一条知识")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if name != "notes.md" {
+		t.Fatalf("unexpected name: %q", name)
+	}
+	data, err := os.ReadFile(filepath.Join(workspace, "knowledge", "notes.md"))
+	if err != nil || string(data) != "第一条知识" {
+		t.Fatalf("file content wrong: %q %v", data, err)
+	}
+	if _, err := svc.CreateKnowledgeFile("notes.md", "again"); err == nil {
+		t.Fatal("expected duplicate rejection")
+	}
+	if _, err := svc.CreateKnowledgeFile("../evil.md", "x"); err == nil {
+		t.Fatal("expected traversal rejection")
+	}
+	if _, err := svc.CreateKnowledgeFile("empty.md", "  "); err == nil {
+		t.Fatal("expected empty content rejection")
+	}
+}

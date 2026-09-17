@@ -488,6 +488,32 @@ func (c *ConfigService) ListKnowledgeFiles() ([]KnowledgeFile, error) {
 	return out, nil
 }
 
+// CreateKnowledgeFile writes a new knowledge file (traversal-guarded, refuses
+// to overwrite existing files).
+func (c *ConfigService) CreateKnowledgeFile(name, content string) (string, error) {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return "", fmt.Errorf("文件名不能为空")
+	}
+	p, err := c.safeKnowledgePath(name)
+	if err != nil {
+		return "", err
+	}
+	if _, err := os.Stat(p); err == nil {
+		return "", fmt.Errorf("文件已存在: %s", name)
+	}
+	if strings.TrimSpace(content) == "" {
+		return "", fmt.Errorf("内容不能为空")
+	}
+	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+		return "", err
+	}
+	if err := os.WriteFile(p, []byte(content), 0o644); err != nil {
+		return "", err
+	}
+	return name, nil
+}
+
 // DeleteKnowledgeFile removes one knowledge file by name (traversal-guarded).
 func (c *ConfigService) DeleteKnowledgeFile(name string) error {
 	p, err := c.safeKnowledgePath(name)

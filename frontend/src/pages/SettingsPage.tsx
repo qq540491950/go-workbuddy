@@ -35,6 +35,8 @@ export function SettingsPage() {
   const [kbTestResult, setKbTestResult] = useState("");
   const [kbFiles, setKbFiles] = useState<KnowledgeFile[]>([]);
   const [kbPreviewPath, setKbPreviewPath] = useState<string | null>(null);
+  const [kbNewName, setKbNewName] = useState("");
+  const [kbNewContent, setKbNewContent] = useState("");
 
   const reload = useCallback(() => {
     Config.GetConfig()
@@ -237,43 +239,36 @@ export function SettingsPage() {
                 onChange={(e) => setSettings({ ...settings, embeddingModel: e.target.value })}
                 placeholder="text-embedding-3-small / BAAI/bge-large-zh-v1.5"
               />
-              {kbFiles.length > 0 && (
-                <div className="rounded-lg border p-2">
-                  <div className="mb-1 text-xs text-muted-foreground">knowledge/ 目录文件</div>
-                  <div className="grid gap-1">
-                    {kbFiles.map((f) => (
-                      <div key={f.name} className="flex items-center justify-between gap-2 text-xs">
-                        <button
-                          className="truncate font-mono text-left underline-offset-2 hover:underline"
-                          title="预览文件"
-                          onClick={() => setKbPreviewPath(`knowledge/${f.name}`)}
-                        >
-                          {f.name}
-                        </button>
-                        <span className="shrink-0 text-muted-foreground">
-                          {(f.sizeBytes / 1024).toFixed(1)} KB · {f.modTime}
-                        </span>
-                        <button
-                          className="shrink-0 rounded p-0.5 text-muted-foreground hover:text-destructive"
-                          title={`删除 ${f.name}`}
-                          onClick={async () => {
-                            if (!window.confirm(`删除知识文件「${f.name}」？索引将同步移除该文件。`)) return;
-                            try {
-                              await Config.DeleteKnowledgeFile(f.name);
-                              setKbFiles((prev) => (prev ?? []).filter((x) => x.name !== f.name));
-                              toast.success("已删除（下次检索自动从索引移除）");
-                            } catch (e) {
-                              toast.error(`删除失败: ${errText(e)}`);
-                            }
-                          }}
-                        >
-                          ✕
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
+            </div>
+            <div className="grid gap-1.5 rounded-lg border p-2.5">
+              <div className="grid grid-cols-2 gap-2">
+                <Input value={kbNewName} onChange={(e) => setKbNewName(e.target.value)} placeholder="文件名（如 meeting-notes.md）" />
+                <Input value={kbNewContent} onChange={(e) => setKbNewContent(e.target.value)} placeholder="初始内容（可选）" />
+              </div>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  onClick={async () => {
+                    try {
+                      await Config.CreateKnowledgeFile(kbNewName.trim(), kbNewContent);
+                      setKbNewName("");
+                      setKbNewContent("");
+                      const files = await Config.ListKnowledgeFiles();
+                      setKbFiles(files ?? []);
+                      toast.success("已创建");
+                    } catch (e) {
+                      toast.error(`创建失败: ${errText(e)}`);
+                    }
+                  }}
+                >
+                  新建知识文件
+                </Button>
+                {kbFiles.map((f) => (
+                  <Button key={f.name} variant="ghost" size="sm" title="预览文件" onClick={() => setKbPreviewPath(`knowledge/${f.name}`)}>
+                    {f.name}
+                  </Button>
+                ))}
+              </div>
               <div className="grid gap-1.5">
                 <div className="flex items-center gap-2">
                   <Input
@@ -295,29 +290,44 @@ export function SettingsPage() {
                   <pre className="max-h-40 overflow-auto rounded bg-muted/60 p-2 text-[11px] leading-relaxed text-muted-foreground">{kbTestResult}</pre>
                 )}
               </div>
-              <div className="flex items-center justify-between gap-2">
-                <p className="text-xs text-muted-foreground">
-                  配置后，知识库检索（search_knowledge）升级为「向量语义 + 关键词」混合检索；向量索引自动增量构建于本地 SQLite。留空则保持关键词检索。
-                  {indexStats && indexStats.files > 0 && ` 已索引 ${indexStats.files} 个文件 / ${indexStats.chunks} 个分块${indexStats.model ? `（模型 ${indexStats.model}）` : ""}。`}
-                </p>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="shrink-0"
-                  onClick={async () => {
-                    try {
-                      await Config.ResetKnowledgeIndex();
-                      const st = await Config.KnowledgeIndexStats();
-                      setIndexStats(st);
-                      toast.success("索引已清空，下次检索将自动重建");
-                    } catch (e) {
-                      toast.error(`重置失败: ${errText(e)}`);
-                    }
-                  }}
-                >
-                  重建索引
-                </Button>
-              </div>
+              {kbFiles.length > 0 && (
+                <div className="grid gap-1 rounded-lg border p-2">
+                  {kbFiles.map((f) => (
+                    <div key={f.name} className="flex items-center justify-between gap-2 text-xs">
+                      <button
+                        className="truncate font-mono text-left underline-offset-2 hover:underline"
+                        title="预览文件"
+                        onClick={() => setKbPreviewPath(`knowledge/${f.name}`)}
+                      >
+                        {f.name}
+                      </button>
+                      <span className="shrink-0 text-muted-foreground">
+                        {(f.sizeBytes / 1024).toFixed(1)} KB · {f.modTime}
+                      </span>
+                      <button
+                        className="shrink-0 rounded p-0.5 text-muted-foreground hover:text-destructive"
+                        title={`删除 ${f.name}`}
+                        onClick={async () => {
+                          if (!window.confirm(`删除知识文件「${f.name}」？索引将同步移除该文件。`)) return;
+                          try {
+                            await Config.DeleteKnowledgeFile(f.name);
+                            setKbFiles((prev) => (prev ?? []).filter((x) => x.name !== f.name));
+                            toast.success("已删除（下次检索自动从索引移除）");
+                          } catch (e) {
+                            toast.error(`删除失败: ${errText(e)}`);
+                          }
+                        }}
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <p className="text-xs text-muted-foreground">
+                配置后，知识库检索（search_knowledge）升级为「向量语义 + 关键词」混合检索；向量索引自动增量构建于本地 SQLite。留空则保持关键词检索。
+                {indexStats && indexStats.files > 0 && ` 已索引 ${indexStats.files} 个文件 / ${indexStats.chunks} 个分块${indexStats.model ? `（模型 ${indexStats.model}）` : ""}。`}
+              </p>
             </div>
           </CardContent>
         </Card>
