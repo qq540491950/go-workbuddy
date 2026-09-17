@@ -100,6 +100,7 @@ export function AgentsPage() {
   const [remoteCheck, setRemoteCheck] = useState<RemoteAgentInfo | null>(null);
   const [checking, setChecking] = useState(false);
   const agentImportRef = useRef<HTMLInputElement>(null);
+  const remoteImportRef = useRef<HTMLInputElement>(null);
 
   const reload = useCallback(() => {
     Config.GetConfig().then((c) => {
@@ -312,6 +313,30 @@ export function AgentsPage() {
         </div>
         <Button
           variant="outline"
+          onClick={() => remoteImportRef.current?.click()}
+        >
+          <FolderDown className="mr-1 h-4 w-4" /> 导入
+        </Button>
+        <input
+          ref={remoteImportRef}
+          type="file"
+          accept="application/json,.json"
+          className="hidden"
+          onChange={async (e) => {
+            const f = e.target.files?.[0];
+            e.target.value = "";
+            if (!f) return;
+            try {
+              const imported = await App.ImportRemoteAgent(await f.text());
+              toast.success(`已导入远程 Agent「${imported.name}」`);
+              reload();
+            } catch (err) {
+              toast.error(`导入失败: ${errText(err)}`);
+            }
+          }}
+        />
+        <Button
+          variant="outline"
           onClick={() => {
             setRemoteCheck(null);
             setRemoteEditing({ id: "", name: "", description: "", cardUrl: "", createdAt: "" });
@@ -342,6 +367,20 @@ export function AgentsPage() {
                   </div>
                 </div>
                 <div className="flex items-center gap-1">
+                  <Button
+                    variant="ghost" size="icon"
+                    title="导出为分享文件"
+                    onClick={async () => {
+                      try {
+                        const p = await App.ExportRemoteAgent(r.id);
+                        toast.success(`已导出: ${p}`);
+                      } catch (err) {
+                        toast.error(`导出失败: ${errText(err)}`);
+                      }
+                    }}
+                  >
+                    <Upload className="h-4 w-4 text-muted-foreground" />
+                  </Button>
                   <Button variant="outline" size="sm" onClick={() => { setRemoteCheck(null); setRemoteEditing(r); }}>
                     编辑
                   </Button>

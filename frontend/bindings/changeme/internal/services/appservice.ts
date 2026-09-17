@@ -48,6 +48,14 @@ export function ExportConfig(includeSecrets: boolean): $CancellablePromise<strin
 }
 
 /**
+ * ExportRemoteAgent writes one remote A2A agent as a shareable JSON file
+ * into <workspace>/exports/remotes and returns the file path.
+ */
+export function ExportRemoteAgent(id: string): $CancellablePromise<string> {
+    return $Call.ByID(2620729205, id);
+}
+
+/**
  * ImportAgent adds an agent from a share document with a fresh ID. When an
  * agent with the same name exists, a (2)/(3)… suffix is appended.
  */
@@ -63,6 +71,14 @@ export function ImportAgent(data: string): $CancellablePromise<config$0.AgentCon
  */
 export function ImportConfig(data: string): $CancellablePromise<void> {
     return $Call.ByID(891138999, data);
+}
+
+/**
+ * ImportRemoteAgent adds a remote agent from a share document with a fresh
+ * ID; name conflicts get a numeric suffix.
+ */
+export function ImportRemoteAgent(data: string): $CancellablePromise<config$0.RemoteAgentConfig> {
+    return $Call.ByID(3155378256, data);
 }
 
 /**

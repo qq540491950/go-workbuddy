@@ -192,6 +192,90 @@ func (a *AppService) ImportAgent(data string) (config.AgentConfig, error) {
 	return imported, nil
 }
 
+// remoteShare is the portable per-remote-agent share document.
+type remoteShare struct {
+	Version int                    `json:"version"`
+	Remote  *config.RemoteAgentConfig `json:"remote"`
+}
+
+// ExportRemoteAgent writes one remote A2A agent as a shareable JSON file
+// into <workspace>/exports/remotes and returns the file path.
+func (a *AppService) ExportRemoteAgent(id string) (string, error) {
+	cfg := a.S.Store.Get()
+	var remote *config.RemoteAgentConfig
+	for i := range cfg.RemoteAgents {
+		if cfg.RemoteAgents[i].ID == id {
+			remote = &cfg.RemoteAgents[i]
+			break
+		}
+	}
+	if remote == nil {
+		return "", fmt.Errorf("remote agent %q not found", id)
+	}
+	data, err := json.MarshalIndent(remoteShare{Version: backupSchemaVersion, Remote: remote}, "", "  ")
+	if err != nil {
+		return "", err
+	}
+	workspace := cfg.Settings.WorkspaceDir
+	if workspace == "" {
+		workspace = "."
+	}
+	dir := filepath.Join(workspace, "exports", "remotes")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return "", err
+	}
+	path := filepath.Join(dir, fmt.Sprintf("%s.remote.json", remote.Name))
+	if err := os.WriteFile(path, data, 0o644); err != nil {
+		return "", err
+	}
+	return path, nil
+}
+
+// ImportRemoteAgent adds a remote agent from a share document with a fresh
+// ID; name conflicts get a numeric suffix.
+func (a *AppService) ImportRemoteAgent(data string) (config.RemoteAgentConfig, error) {
+	if len(data) > maxBackupBytes {
+		return config.RemoteAgentConfig{}, fmt.Errorf("文件过大")
+	}
+	var share remoteShare
+	if err := json.Unmarshal([]byte(data), &share); err != nil {
+		return config.RemoteAgentConfig{}, fmt.Errorf("分享文件解析失败: %w", err)
+	}
+	if share.Version > backupSchemaVersion {
+		return config.RemoteAgentConfig{}, fmt.Errorf("分享版本 v%d 高于当前支持的 v%d，请先升级应用", share.Version, backupSchemaVersion)
+	}
+	if share.Remote == nil {
+		return config.RemoteAgentConfig{}, fmt.Errorf("分享文件缺少 remote 字段")
+	}
+	imported := *share.Remote
+	imported.ID = ""
+	imported.CreatedAt = time.Time{}
+	if imported.Name == "" {
+		return config.RemoteAgentConfig{}, fmt.Errorf("分享文件缺少名称")
+	}
+	err := a.S.Store.Update(func(cfg *config.Config) {
+		nameExists := func(name string) bool {
+			for _, r := range cfg.RemoteAgents {
+				if r.Name == name {
+					return true
+				}
+			}
+			return false
+		}
+		base := imported.Name
+		for n := 2; nameExists(imported.Name); n++ {
+			imported.Name = fmt.Sprintf("%s（%d）", base, n)
+		}
+		imported.ID = newID("ra_")
+		imported.CreatedAt = nowUTC()
+		cfg.RemoteAgents = append(cfg.RemoteAgents, imported)
+	})
+	if err != nil {
+		return config.RemoteAgentConfig{}, err
+	}
+	return imported, nil
+}
+
 // configBackup is the portable backup document. Sessions are intentionally
 // excluded: they live in sessions.db and are never overwritten by an import.
 type configBackup struct {

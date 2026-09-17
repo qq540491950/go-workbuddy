@@ -60,3 +60,33 @@ func TestAgentShareRoundTrip(t *testing.T) {
 	_ = store
 	_ = workspace
 }
+
+// TestRemoteAgentShareRoundTrip mirrors the agent share flow for remote A2A
+// agents: export -> import with fresh ID, conflict suffix, validation.
+func TestRemoteAgentShareRoundTrip(t *testing.T) {
+	app, store, _ := newBackupTestService(t)
+
+	path, err := app.ExportRemoteAgent("ra_1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	first, err := app.ImportRemoteAgent(string(data))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.ID == "ra_1" || first.ID == "" {
+		t.Fatalf("imported remote must get a fresh ID: %q", first.ID)
+	}
+	if first.Name != "R（2）" {
+		t.Fatalf("name conflict suffix missing: %q", first.Name)
+	}
+	_ = store
+	if _, err := app.ExportRemoteAgent("missing"); err == nil {
+		t.Fatal("expected error exporting unknown remote agent")
+	}
+}
