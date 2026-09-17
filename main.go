@@ -173,6 +173,8 @@ func setupSystemTray(app *application.App, window *application.WebviewWindow) {
 	tray := app.SystemTray.New()
 	tray.SetIcon(trayIcon)
 	tray.SetTooltip("WorkBuddy Agent")
+	// 左键直接切换主窗口显隐（smart default），右键弹出菜单。
+	tray.AttachWindow(window).WindowOffset(8)
 
 	menu := app.NewMenu()
 	menu.Add("显示/隐藏 WorkBuddy").OnClick(func(*application.Context) {

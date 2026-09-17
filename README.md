@@ -148,6 +148,13 @@ go vet ./internal/... .
 
 测试：发布/幂等/停止清空 e2e 更新 + 全量 `-race` + 打包零错误。
 
+### 第六十五轮迭代：托盘左键快速切换窗口（已实施）
+
+- 托盘图标接入 `AttachWindow` smart defaults：**左键**直接显示/隐藏主窗口，**右键**弹出菜单（显示隐藏/退出）
+- 窗口位置跟随托盘偏移（WindowOffset 8），唤起即聚焦
+
+验证：`./scripts/verify.sh` ALL GREEN + 打包启动烟雾。
+
 ### 第六十四轮迭代：一键验证脚本（已实施）
 
 - `scripts/verify.sh`：整合 go vet / 全量测试 / `-race` / 前端 tsc+构建 / `wails3 build` 的单一质量门，`VERIFY: ALL GREEN` 即通过
