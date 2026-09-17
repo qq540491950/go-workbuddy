@@ -379,3 +379,30 @@ func TestKitTestKnowledgeSearch(t *testing.T) {
 		t.Fatal("empty query should error")
 	}
 }
+
+// TestSemanticNestedDirectories: semantic indexing walks nested knowledge
+// directories and keys rows by relative path.
+func TestSemanticNestedDirectories(t *testing.T) {
+	srv := httptest.NewServer(fakeEmbeddings())
+	defer srv.Close()
+	ws := t.TempDir()
+	nested := filepath.Join(ws, "knowledge", "docs", "sub")
+	if err := os.MkdirAll(nested, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(nested, "deep.md"), []byte("嵌套目录里的部署手册 deploy"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	idx, err := OpenKnowledgeIndex(filepath.Join(t.TempDir(), "k.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	opts := SearchOptions{Workspace: ws, Index: idx, Embedding: &EmbeddingConfig{BaseURL: srv.URL, Model: "fake-embed"}}
+	res, err := searchHybrid(opts, "deploy")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(res, "docs") || !strings.Contains(res, "deep.md") {
+		t.Fatalf("nested file missing from refs: %s", res)
+	}
+}

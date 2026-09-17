@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"io/fs"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -169,8 +170,9 @@ func withRefs(text string, refs []string) string {
 }
 
 // ensureIndexed brings the persistent index in sync with the knowledge dir:
-// re-embeds changed files, drops removed files, rebuilds everything when the
-// embedding model changed.
+// re-embeds changed files (nested dirs supported, rows keyed by relative
+// path), drops removed files, rebuilds everything when the embedding model
+// changed.
 func (k *KnowledgeIndex) ensureIndexed(workspace string, emb *EmbeddingConfig) error {
 	k.mu.Lock()
 	defer k.mu.Unlock()
@@ -186,25 +188,32 @@ func (k *KnowledgeIndex) ensureIndexed(workspace string, emb *EmbeddingConfig) e
 	}
 
 	dir := filepath.Join(workspace, knowledgeDirName)
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil // empty knowledge base; search reports the empty state
-		}
-		return err
+	if _, err := os.Stat(dir); os.IsNotExist(err) {
+		return nil // empty knowledge base; search reports the empty state
 	}
 
-	// mtimes of files that still exist.
+	// mtimes of files that still exist (relative paths support nesting).
 	present := map[string]int64{}
-	for _, e := range entries {
-		if e.IsDir() || !isKnowledgeFile(e.Name()) {
-			continue
+	walkErr := filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return nil
 		}
-		st, err := e.Info()
+		if d.IsDir() || !isKnowledgeFile(d.Name()) {
+			return nil
+		}
+		st, err := d.Info()
 		if err != nil || st.Size() > knowledgeMaxFileKB<<10 {
-			continue
+			return nil
 		}
-		present[e.Name()] = st.ModTime().Unix()
+		rel, relErr := filepath.Rel(dir, path)
+		if relErr != nil {
+			return nil
+		}
+		present[rel] = st.ModTime().Unix()
+		return nil
+	})
+	if walkErr != nil {
+		return walkErr
 	}
 
 	// Drop rows of removed or changed files.

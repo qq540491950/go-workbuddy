@@ -54,12 +54,8 @@ func searchKnowledge(workspace, query string) (string, error) {
 		return "", os.ErrInvalid
 	}
 	dir := filepath.Join(workspace, knowledgeDirName)
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return "知识库为空：请将 Markdown/文本文件放入工作区 knowledge/ 目录。", nil
-		}
-		return "", err
+	if _, err := os.Stat(dir); os.IsNotExist(err) {
+		return "知识库为空：请将 Markdown/文本文件放入工作区 knowledge/ 目录。", nil
 	}
 
 	keywords := strings.Fields(strings.ToLower(query))
@@ -69,18 +65,27 @@ func searchKnowledge(workspace, query string) (string, error) {
 		snip  string
 	}
 	var hits []hit
-	for _, e := range entries {
-		if e.IsDir() || !isKnowledgeFile(e.Name()) {
-			continue
+	walkErr := filepath.WalkDir(dir, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return nil // skip unreadable entries
 		}
-		path := filepath.Join(dir, e.Name())
-		st, err := e.Info()
+		if d.IsDir() {
+			return nil
+		}
+		if !isKnowledgeFile(d.Name()) {
+			return nil
+		}
+		st, err := d.Info()
 		if err != nil || st.Size() > knowledgeMaxFileKB<<10 {
-			continue
+			return nil
 		}
 		data, err := os.ReadFile(path)
 		if err != nil {
-			continue
+			return nil
+		}
+		rel, relErr := filepath.Rel(dir, path)
+		if relErr != nil {
+			rel = d.Name()
 		}
 		lower := strings.ToLower(string(data))
 		score := 0
@@ -88,9 +93,13 @@ func searchKnowledge(workspace, query string) (string, error) {
 			score += strings.Count(lower, kw)
 		}
 		if score == 0 {
-			continue
+			return nil
 		}
-		hits = append(hits, hit{name: e.Name(), score: score, snip: bestSnippet(string(data), keywords)})
+		hits = append(hits, hit{name: rel, score: score, snip: bestSnippet(string(data), keywords)})
+		return nil
+	})
+	if walkErr != nil {
+		return "", walkErr
 	}
 	if len(hits) == 0 {
 		return "知识库中没有找到与查询相关的内容。", nil
