@@ -27,6 +27,9 @@ import (
 //go:embed all:frontend/dist
 var assets embed.FS
 
+//go:embed build/appicon.png
+var trayIcon []byte
+
 // Version is the single source of truth for the app version, exposed to the
 // frontend via AppService.AppInfo.
 const Version = "0.3.0"
@@ -97,7 +100,7 @@ func main() {
 		},
 	})
 
-	app.Window.NewWithOptions(application.WebviewWindowOptions{
+	window := app.Window.NewWithOptions(application.WebviewWindowOptions{
 		Title:  "WorkBuddy Agent",
 		Width:  1280,
 		Height: 820,
@@ -112,9 +115,43 @@ func main() {
 		URL:              "/",
 	})
 
+	setupSystemTray(app, window)
+	// Global summon shortcut; a conflicting registration (another app owns
+	// it) must not block startup.
+	if err := app.GlobalShortcut.Register("shift+cmd+space", func() {
+		if window.IsVisible() {
+			window.Hide()
+		} else {
+			window.Show()
+			window.Focus()
+		}
+	}); err != nil {
+		log.Printf("全局快捷键注册失败（不影响启动）: %v", err)
+	}
+
 	if err := app.Run(); err != nil {
 		log.Fatal(err)
 	}
+}
+
+// setupSystemTray adds a menu bar tray: click toggles the window, the menu
+// offers show/hide and quit (类 WorkBuddy 的常驻入口).
+func setupSystemTray(app *application.App, window *application.WebviewWindow) {
+	tray := app.SystemTray.New()
+	tray.SetIcon(trayIcon)
+	tray.SetTooltip("WorkBuddy Agent")
+
+	menu := app.NewMenu()
+	menu.Add("显示/隐藏 WorkBuddy").OnClick(func(*application.Context) {
+		if window.IsVisible() {
+			window.Hide()
+		} else {
+			window.Show()
+			window.Focus()
+		}
+	})
+	menu.Add("退出").OnClick(func(*application.Context) { app.Quit() })
+	tray.SetMenu(menu)
 }
 
 // setupLogging writes the standard logger to a size-capped rotating file in
