@@ -179,6 +179,23 @@ export function SettingsPage() {
 
         <Card>
           <CardHeader>
+            <CardTitle className="text-base">网络</CardTitle>
+          </CardHeader>
+          <CardContent className="grid gap-1.5">
+            <Label>HTTP 代理</Label>
+            <Input
+              value={settings.httpProxy}
+              onChange={(e) => setSettings({ ...settings, httpProxy: e.target.value })}
+              placeholder="http://127.0.0.1:7890（留空直连）"
+            />
+            <p className="text-xs text-muted-foreground">
+              模型请求、知识库向量与 MCP 远程连接统一走该代理；保存并重启应用后生效。
+            </p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
             <CardTitle className="text-base">知识库语义检索</CardTitle>
           </CardHeader>
           <CardContent className="grid gap-4">

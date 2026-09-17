@@ -53,6 +53,13 @@ func main() {
 		log.Fatal(err)
 	}
 
+	// Outbound proxy for model/embedding/MCP traffic. Applies to
+	// http.DefaultTransport, so it must run before any HTTP request;
+	// changing the setting requires an app restart.
+	if err := agentkit.ApplyGlobalProxy(store.Get().Settings.HTTPProxy); err != nil {
+		log.Printf("代理配置无效（使用直连）: %v", err)
+	}
+
 	// MCP manager + agent kit.
 	mgr := mcpmgr.New()
 	mgr.SetTokenStore(store) // OAuth tokens persist across restarts

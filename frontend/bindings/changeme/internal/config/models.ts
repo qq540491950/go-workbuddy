@@ -312,6 +312,12 @@ export interface Settings {
      * app logs directory.
      */
     "toolsAudit"?: boolean;
+
+    /**
+     * HTTPProxy is a global outbound proxy URL (e.g. http://127.0.0.1:7890)
+     * applied to model/embedding/MCP requests at startup. Empty = direct.
+     */
+    "httpProxy"?: string;
 }
 
 /**

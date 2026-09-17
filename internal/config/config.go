@@ -196,6 +196,9 @@ type Settings struct {
 	// ToolsAudit writes a JSONL audit trail of every tool call/result to the
 	// app logs directory.
 	ToolsAudit bool `json:"toolsAudit,omitempty"`
+	// HTTPProxy is a global outbound proxy URL (e.g. http://127.0.0.1:7890)
+	// applied to model/embedding/MCP requests at startup. Empty = direct.
+	HTTPProxy string `json:"httpProxy,omitempty"`
 }
 
 // normalize fills zero values (older config files) with defaults.
