@@ -87,3 +87,27 @@ func TestStorageStatsAndVacuum(t *testing.T) {
 		t.Fatalf("db unusable after vacuum: %v", err)
 	}
 }
+
+// TestRecentToolAuditTail: the tool audit viewer reads the JSONL file via the
+// same tail semantics (last N lines, placeholder when missing).
+func TestRecentToolAuditTail(t *testing.T) {
+	app := &AppService{S: &Services{}}
+	auditPath := filepath.Join(t.TempDir(), "audit.jsonl")
+	app.SetToolAuditPath(auditPath)
+
+	lines, err := app.RecentToolAudit(10)
+	if err != nil || len(lines) != 1 {
+		t.Fatalf("missing audit should yield placeholder: %v %v", lines, err)
+	}
+
+	if err := os.WriteFile(auditPath, []byte("r1\nr2\nr3\nr4\n"), 0o640); err != nil {
+		t.Fatal(err)
+	}
+	lines, err = app.RecentToolAudit(2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(lines) != 2 || lines[0] != "r3" || lines[1] != "r4" {
+		t.Fatalf("tail wrong: %v", lines)
+	}
+}

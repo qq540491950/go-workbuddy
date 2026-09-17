@@ -103,6 +103,7 @@ func main() {
 	chatSvc.SetToolAuditPath(filepath.Join(cfgDir, "logs", "tools-audit.jsonl"))
 	logSvc := services.NewAppService(svc)
 	logSvc.SetLogPath(filepath.Join(cfgDir, "logs", "app.log"))
+	logSvc.SetToolAuditPath(filepath.Join(cfgDir, "logs", "tools-audit.jsonl"))
 	logSvc.SetStoragePaths(filepath.Join(cfgDir, "sessions.db"), filepath.Join(cfgDir, "knowledge.index.db"), gormDB)
 
 	app := application.New(application.Options{

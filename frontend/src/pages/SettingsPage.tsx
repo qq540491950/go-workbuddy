@@ -24,6 +24,7 @@ export function SettingsPage() {
   const importRef = useRef<HTMLInputElement>(null);
   const [logOpen, setLogOpen] = useState(false);
   const [logText, setLogText] = useState("");
+  const [logTitle, setLogTitle] = useState("应用日志");
   const [storage, setStorage] = useState<StorageInfo | null>(null);
   const [memoryInfo, setMemoryInfo] = useState<MemoryInfo | null>(null);
   const [a2aStatuses, setA2AStatuses] = useState<A2AStatus[]>([]);
@@ -423,9 +424,25 @@ export function SettingsPage() {
                 try {
                   const lines = (await App.RecentLogs(200)) ?? [];
                   setLogText(lines.join("\n"));
+                  setLogTitle("应用日志（最近 200 行）");
                   setLogOpen(true);
                 } catch (e) {
                   toast.error(`读取日志失败: ${errText(e)}`);
+                }
+              }}
+            >
+              查看工具审计日志
+            </Button>
+            <Button
+              variant="outline"
+              onClick={async () => {
+                try {
+                  const lines = (await App.RecentToolAudit(200)) ?? [];
+                  setLogText(lines.join("\n"));
+                  setLogTitle("工具审计日志（最近 200 行）");
+                  setLogOpen(true);
+                } catch (e) {
+                  toast.error(`读取审计失败: ${errText(e)}`);
                 }
               }}
             >
@@ -434,7 +451,7 @@ export function SettingsPage() {
             <Dialog open={logOpen} onOpenChange={setLogOpen}>
               <DialogContent className="sm:max-w-2xl">
                 <DialogHeader>
-                  <DialogTitle>应用日志（最近 200 行）</DialogTitle>
+                  <DialogTitle>{logTitle}</DialogTitle>
                 </DialogHeader>
                 <pre className="max-h-[50vh] overflow-auto rounded bg-muted/60 p-3 font-mono text-[11px] leading-relaxed">{logText}</pre>
               </DialogContent>

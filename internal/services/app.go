@@ -26,6 +26,7 @@ const (
 type AppService struct {
 	S           *Services
 	logPath     string
+	auditPath   string
 	sessionsDB  string
 	knowledgeDB string
 	gormDB      *gorm.DB
@@ -64,19 +65,32 @@ const maxBackupBytes = 10 << 20
 // maxLogTailLines caps RecentLogs output.
 const maxLogTailLines = 300
 
+// SetToolAuditPath points the diagnostics reader at the tool audit JSONL.
+func (a *AppService) SetToolAuditPath(path string) { a.auditPath = path }
+
 // RecentLogs returns the last lines of the application log for in-app
 // diagnostics.
 func (a *AppService) RecentLogs(tail int) ([]string, error) {
-	if a.logPath == "" {
-		return nil, fmt.Errorf("日志路径未配置")
+	return readTail(a.logPath, tail)
+}
+
+// RecentToolAudit returns the last lines of the tool audit JSONL.
+func (a *AppService) RecentToolAudit(tail int) ([]string, error) {
+	return readTail(a.auditPath, tail)
+}
+
+// readTail returns the last non-empty lines of a text file.
+func readTail(path string, tail int) ([]string, error) {
+	if path == "" {
+		return nil, fmt.Errorf("路径未配置")
 	}
 	if tail <= 0 || tail > maxLogTailLines {
 		tail = 200
 	}
-	data, err := os.ReadFile(a.logPath)
+	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return []string{"（日志文件为空或尚未创建）"}, nil
+			return []string{"（文件为空或尚未创建）"}, nil
 		}
 		return nil, err
 	}

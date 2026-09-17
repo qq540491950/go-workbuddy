@@ -104,6 +104,13 @@ export function RecentLogs(tail: number): $CancellablePromise<string[] | null> {
 }
 
 /**
+ * RecentToolAudit returns the last lines of the tool audit JSONL.
+ */
+export function RecentToolAudit(tail: number): $CancellablePromise<string[] | null> {
+    return $Call.ByID(3281597744, tail);
+}
+
+/**
  * SetLogPath points the diagnostics log reader at the app log file.
  */
 export function SetLogPath(path: string): $CancellablePromise<void> {
@@ -115,6 +122,13 @@ export function SetLogPath(path: string): $CancellablePromise<void> {
  */
 export function SetStoragePaths(sessionsDB: string, knowledgeDB: string, gormDB: gorm$0.DB | null): $CancellablePromise<void> {
     return $Call.ByID(3799940595, sessionsDB, knowledgeDB, gormDB);
+}
+
+/**
+ * SetToolAuditPath points the diagnostics reader at the tool audit JSONL.
+ */
+export function SetToolAuditPath(path: string): $CancellablePromise<void> {
+    return $Call.ByID(980832574, path);
 }
 
 /**
