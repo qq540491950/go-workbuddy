@@ -101,6 +101,7 @@ export function ChatPage() {
   const [autoSpeak, setAutoSpeak] = useState(false);
   const [listening, setListening] = useState(false);
   const [editing, setEditing] = useState(false);
+  const [ctxBannerDismissed, setCtxBannerDismissed] = useState(false);
   const [pendingAtts, setPendingAtts] = useState<AttachmentIn[]>([]);
   const fileRef = useRef<HTMLInputElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -152,6 +153,7 @@ export function ChatPage() {
   useEffect(() => {
     if (!activeID) return;
     setSessionUsage(null);
+    setCtxBannerDismissed(false);
     Chat.GetSessionMessages(activeID)
       .then((ms) => {
         // Pair confirm_request with its confirm_result so pending approvals
@@ -636,6 +638,11 @@ export function ChatPage() {
                 <span className="text-[11px] text-muted-foreground">{contextUsage.pct.toFixed(0)}%</span>
               </div>
             )}
+            {contextUsage && contextUsage.pct >= 80 && (
+              <Badge variant="outline" className="border-destructive/50 font-normal text-destructive">
+                上下文即将耗尽（{contextUsage.pct.toFixed(0)}%）
+              </Badge>
+            )}
             {active && (
               <>
                 <Button
@@ -672,6 +679,15 @@ export function ChatPage() {
             {messages.length > RENDER_LIMIT && (
               <div className="rounded-lg border bg-muted/40 px-3 py-2 text-center text-xs text-muted-foreground">
                 已省略较早的 {messages.length - RENDER_LIMIT} 条消息（完整历史已保存，可导出查看）
+              </div>
+            )}
+            {contextUsage && contextUsage.pct >= 80 && !ctxBannerDismissed && (
+              <div className="flex items-center justify-between rounded-lg border border-amber-500/50 bg-amber-500/10 px-4 py-2.5 text-sm">
+                <span>上下文窗口已使用 {contextUsage.pct.toFixed(0)}%，模型可能开始遗忘早期内容。建议导出会话后开启新对话。</span>
+                <div className="flex shrink-0 gap-2">
+                  <Button size="sm" variant="outline" onClick={exportSession}>导出 Markdown</Button>
+                  <Button size="sm" variant="ghost" onClick={() => setCtxBannerDismissed(true)}>知道了</Button>
+                </div>
               </div>
             )}
             {messages.length === 0 && !active && providerCount === 0 && <Onboarding />}
