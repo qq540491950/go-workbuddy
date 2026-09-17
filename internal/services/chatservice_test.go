@@ -129,9 +129,14 @@ func readAll(r *http.Request) string {
 }
 
 func newTestSessionService(path string) (*gorm.DB, session.Service, error) {
-	db, err := gorm.Open(sqlite.Open(path))
+	// Match main.go: WAL + busy_timeout + a single pooled connection so
+	// parallel sessions never trip SQLITE_BUSY snapshot conflicts.
+	db, err := gorm.Open(sqlite.Open(path + "?_pragma=busy_timeout(5000)&_pragma=journal_mode(WAL)"))
 	if err != nil {
 		return nil, nil, err
+	}
+	if sqlDB, err := db.DB(); err == nil {
+		sqlDB.SetMaxOpenConns(1)
 	}
 	svc, err := database.NewSessionServiceFromDB(db)
 	if err != nil {

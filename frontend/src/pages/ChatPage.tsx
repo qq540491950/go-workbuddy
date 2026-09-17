@@ -3,7 +3,7 @@ import { Events } from "@wailsio/runtime";
 import {
   Plus, Send, Square, Trash2, Pencil, MessageSquare, Bot, Users, Loader2,
   Copy, Check, Search, ArrowRight, RefreshCw, Download, Mic, MicOff, Volume2, Square as SquareStop,
-  Paperclip, X, BarChart3, Brain, ShieldAlert,
+  Paperclip, X, BarChart3, Brain, ShieldAlert, Network,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -82,7 +82,8 @@ export function ChatPage() {
   const [activeID, setActiveID] = useState("");
   const [messages, setMessages] = useState<UIMessage[]>([]);
   const [input, setInput] = useState("");
-  const [running, setRunning] = useState(false);
+  const [runningMap, setRunningMap] = useState<Record<string, boolean>>({});
+  const running = !!activeID && !!runningMap[activeID];
   const [agents, setAgents] = useState<AgentConfig[]>([]);
   const [teams, setTeams] = useState<TeamConfig[]>([]);
   const [remotes, setRemotes] = useState<RemoteAgentConfig[]>([]);
@@ -106,6 +107,18 @@ export function ChatPage() {
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const messagesRef = useRef<UIMessage[]>([]);
   useEffect(() => { messagesRef.current = messages; }, [messages]);
+
+  // markRunning tracks in-flight turns PER SESSION so several sessions can
+  // stream in parallel without blocking each other.
+  const markRunning = useCallback((id: string, on: boolean) => {
+    setRunningMap((prev) => {
+      if (!!prev[id] === on) return prev;
+      const next = { ...prev };
+      if (on) next[id] = true;
+      else delete next[id];
+      return next;
+    });
+  }, []);
 
   const active = sessions.find((s) => s.id === activeID);
 
@@ -168,7 +181,7 @@ export function ChatPage() {
         );
       })
       .catch((e) => toast.error(`加载历史失败: ${errText(e)}`));
-    Chat.IsRunning(activeID).then(setRunning).catch(() => {});
+    Chat.IsRunning(activeID).then((r) => markRunning(activeID, r)).catch(() => {});
   }, [activeID]);
 
   // Stream events.
@@ -225,12 +238,12 @@ export function ChatPage() {
         }
       }
       if (ev.kind === "done" || ev.kind === "error") {
-        setRunning(false);
+        markRunning(ev.sessionId, false);
         reloadSessions();
       }
     });
     return off;
-  }, [activeID, reloadSessions]);
+  }, [activeID, reloadSessions, markRunning]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -256,7 +269,7 @@ export function ChatPage() {
     const text = input.trim();
     if (!text || !activeID || running) return;
     setInput("");
-    setRunning(true);
+    markRunning(activeID, true);
     const wasEditing = editing;
     setEditing(false);
     const atts = pendingAtts;
@@ -278,7 +291,7 @@ export function ChatPage() {
       }
     } catch (e) {
       toast.error(`发送失败: ${errText(e)}`);
-      setRunning(false);
+      markRunning(activeID, false);
       setPendingAtts(atts); // restore on failure
     }
   };
@@ -291,14 +304,14 @@ export function ChatPage() {
   // optimistically; a failed resume reverts the card to pending.
   const answerConfirm = async (msgId: string, callId: string | undefined, approved: boolean) => {
     if (!activeID || !callId || running) return;
-    setRunning(true);
+    markRunning(activeID, true);
     setMessages((prev) => prev.map((m) => (m.id === msgId ? { ...m, confirmStatus: approved ? "approved" : "rejected" } : m)));
     try {
       await Chat.ConfirmToolCall(activeID, callId, approved);
     } catch (e) {
       toast.error(`确认失败: ${errText(e)}`);
       setMessages((prev) => prev.map((m) => (m.id === msgId && m.kind === "confirm" ? { ...m, confirmStatus: "pending" } : m)));
-      setRunning(false);
+      markRunning(activeID, false);
     }
   };
 
@@ -360,7 +373,7 @@ export function ChatPage() {
 
   const regenerate = async () => {
     if (!activeID || running) return;
-    setRunning(true);
+    markRunning(activeID, true);
     setSessionUsage(null);
     setMessages((prev) => {
       const out = [...prev];
@@ -373,7 +386,7 @@ export function ChatPage() {
       await Chat.Regenerate(activeID);
     } catch (e) {
       toast.error(`重新生成失败: ${errText(e)}`);
-      setRunning(false);
+      markRunning(activeID, false);
     }
   };
 
@@ -520,8 +533,9 @@ export function ChatPage() {
                 )}
                 onClick={() => setActiveID(s.id)}
               >
-                {s.targetType === "team" ? <Users className="h-3.5 w-3.5 shrink-0 text-primary" /> : <Bot className="h-3.5 w-3.5 shrink-0 text-primary" />}
+                {s.targetType === "team" ? <Users className="h-3.5 w-3.5 shrink-0 text-primary" /> : s.targetType === "remote" ? <Network className="h-3.5 w-3.5 shrink-0 text-primary" /> : <Bot className="h-3.5 w-3.5 shrink-0 text-primary" />}
                 <span className="min-w-0 flex-1 truncate">{s.title}</span>
+                {runningMap[s.id] && <Loader2 className="h-3 w-3 shrink-0 animate-spin text-primary" aria-label="生成中" />}
                 <span className="hidden shrink-0 items-center gap-0.5 group-hover:flex">
                   <button
                     className="rounded p-0.5 hover:bg-background"

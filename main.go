@@ -140,9 +140,17 @@ func setupLogging(logDir string) {
 // aside (backed up) and recreated so the app always starts.
 func newSessionService(path string) (*gorm.DB, session.Service, error) {
 	open := func() (*gorm.DB, session.Service, error) {
-		db, err := gorm.Open(sqlite.Open(path))
+		dsn := path + "?_pragma=busy_timeout(5000)&_pragma=journal_mode(WAL)"
+		db, err := gorm.Open(sqlite.Open(dsn))
 		if err != nil {
 			return nil, nil, err
+		}
+		// Serialize all access: parallel sessions write this DB concurrently,
+		// and WAL alone cannot help a deferred transaction that hits a snapshot
+		// conflict (SQLITE_BUSY bypasses busy_timeout). One connection queues
+		// every statement instead — plenty for a desktop app.
+		if sqlDB, err := db.DB(); err == nil {
+			sqlDB.SetMaxOpenConns(1)
 		}
 		svc, err := database.NewSessionServiceFromDB(db)
 		if err != nil {
