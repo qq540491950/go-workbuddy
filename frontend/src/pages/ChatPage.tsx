@@ -108,6 +108,8 @@ export function ChatPage() {
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const messagesRef = useRef<UIMessage[]>([]);
   useEffect(() => { messagesRef.current = messages; }, [messages]);
+  const sessionsRef = useRef<ChatSession[]>([]);
+  useEffect(() => { sessionsRef.current = sessions; }, [sessions]);
 
   // markRunning tracks in-flight turns PER SESSION so several sessions can
   // stream in parallel without blocking each other.
@@ -242,6 +244,12 @@ export function ChatPage() {
       if (ev.kind === "done" || ev.kind === "error") {
         markRunning(ev.sessionId, false);
         reloadSessions();
+        // Background session finished while the user is elsewhere: surface it.
+        if (ev.sessionId !== activeID) {
+          const title = sessionsRef.current.find((x) => x.id === ev.sessionId)?.title ?? "后台会话";
+          if (ev.kind === "done") toast.success(`「${title}」已完成回复`);
+          else toast.error(`「${title}」本轮出错`);
+        }
       }
     });
     return off;
