@@ -57,10 +57,13 @@ export function MCPPage() {
   }, []);
   useEffect(reload, [reload]);
 
-  // OAuth consent: warn the user while an authorization waits in the browser.
+  // OAuth consent: warn the user while an authorization waits in the browser,
+  // and mark the server card as awaiting consent.
+  const [authPendingServer, setAuthPendingServer] = useState<string | null>(null);
   useEffect(() => {
     const off = Events.On("mcp:auth-pending", (e: any) => {
       const d = Array.isArray(e?.data) ? e.data[0] : e?.data;
+      setAuthPendingServer(d?.server ?? null);
       toast.info(`请在浏览器中完成 MCP 授权${d?.server ? `（${d.server}）` : ""}，完成后连接将自动继续`);
     });
     return off;
@@ -102,6 +105,7 @@ export function MCPPage() {
       toast.error(`${s.name}: ${errText(e)}`);
     } finally {
       setBusy("");
+      setAuthPendingServer(null);
       reload();
     }
   };
@@ -155,6 +159,11 @@ export function MCPPage() {
                       <Badge variant="outline" className="font-normal">
                         {s.transport === MCPTransport.MCPStdio ? "stdio" : "streamable-http"}
                       </Badge>
+                      {authPendingServer === s.name && (
+                        <Badge variant="outline" className="border-amber-500/50 font-normal text-amber-600">
+                          等待浏览器授权…
+                        </Badge>
+                      )}
                     </div>
                     <div className="mt-1 truncate text-xs text-muted-foreground">
                       {s.transport === MCPTransport.MCPStdio
