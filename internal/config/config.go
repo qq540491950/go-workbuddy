@@ -89,6 +89,9 @@ type AgentConfig struct {
 	// meaningful today: write_workspace_file asks for confirmation while
 	// list/read stay automatic. Empty = never ask.
 	ConfirmTools []string `json:"confirmTools,omitempty"`
+	// Run guardrails against runaway loops/cost. 0 = unlimited.
+	MaxTurnSeconds int `json:"maxTurnSeconds,omitempty"`
+	MaxToolCalls   int `json:"maxToolCalls,omitempty"`
 }
 
 // RemoteAgentConfig describes a remote agent reached over the A2A protocol

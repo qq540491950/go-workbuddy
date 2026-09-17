@@ -43,6 +43,12 @@ export interface AgentConfig {
      * list/read stay automatic. Empty = never ask.
      */
     "confirmTools"?: string[] | null;
+
+    /**
+     * Run guardrails against runaway loops/cost. 0 = unlimited.
+     */
+    "maxTurnSeconds"?: number;
+    "maxToolCalls"?: number;
 }
 
 /**

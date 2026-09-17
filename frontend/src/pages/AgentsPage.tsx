@@ -485,6 +485,30 @@ export function AgentsPage() {
                   onCheckedChange={(v) => setEditing({ ...editing, enableGuardrails: v })}
                 />
               </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="grid gap-1.5">
+                  <Label>单轮最长运行秒数</Label>
+                  <Input
+                    type="number"
+                    min={0}
+                    value={editing.maxTurnSeconds || ""}
+                    onChange={(e) => setEditing({ ...editing, maxTurnSeconds: Number(e.target.value) || 0 })}
+                    placeholder="0（不限制）"
+                  />
+                  <p className="text-xs text-muted-foreground">超时后本轮停止，防止模型挂起</p>
+                </div>
+                <div className="grid gap-1.5">
+                  <Label>单轮工具调用上限</Label>
+                  <Input
+                    type="number"
+                    min={0}
+                    value={editing.maxToolCalls || ""}
+                    onChange={(e) => setEditing({ ...editing, maxToolCalls: Number(e.target.value) || 0 })}
+                    placeholder="0（不限制）"
+                  />
+                  <p className="text-xs text-muted-foreground">超出后本轮停止，防止死循环消耗</p>
+                </div>
+              </div>
               {(editing.builtinTools ?? []).includes("files") && (
                 <div className="flex items-center justify-between rounded-lg border p-3">
                   <div>

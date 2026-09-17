@@ -679,6 +679,11 @@ func (c *ChatService) ConfirmToolCall(sessionID, callID string, approved bool) e
 func (c *ChatService) runTurn(target *config.ChatSession, guardOn bool, msg *genai.Content, titleFromText string) error {
 	sessionID := target.ID
 	cfg := c.S.Store.Get()
+	// Per-agent run guardrails (0 = unlimited); teams fall back to unlimited.
+	maxTurnSeconds, maxToolCalls := 0, 0
+	if agentCfg := c.targetAgentConfig(cfg, target); agentCfg != nil {
+		maxTurnSeconds, maxToolCalls = agentCfg.MaxTurnSeconds, agentCfg.MaxToolCalls
+	}
 
 	// Build the agent tree from the current configuration.
 	var root agent.Agent
@@ -737,6 +742,11 @@ func (c *ChatService) runTurn(target *config.ChatSession, guardOn bool, msg *gen
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
+	if maxTurnSeconds > 0 {
+		var cancelTimeout context.CancelFunc
+		ctx, cancelTimeout = context.WithTimeout(ctx, time.Duration(maxTurnSeconds)*time.Second)
+		defer cancelTimeout()
+	}
 	defer cancel()
 	c.mu.Lock()
 	if old := c.cancels[sessionID]; old != nil {
@@ -752,11 +762,16 @@ func (c *ChatService) runTurn(target *config.ChatSession, guardOn bool, msg *gen
 
 	var turnUsage *UsageInfo
 	var sessionUsage *UsageInfo
+	toolCallsSeen := 0
 	for ev, err := range rn.Run(ctx, c.userID, sessionID, msg, agent.RunConfig{
 		StreamingMode: agent.StreamingModeSSE,
 	}) {
 		if ctx.Err() != nil {
-			emit(ChatStreamEvent{Kind: "error", Text: "已取消"})
+			if ctx.Err() == context.DeadlineExceeded {
+				emit(ChatStreamEvent{Kind: "error", Text: fmt.Sprintf("本轮已达最长运行时间（%d 秒），已停止。", maxTurnSeconds)})
+			} else {
+				emit(ChatStreamEvent{Kind: "error", Text: "已取消"})
+			}
 			return nil
 		}
 		if err != nil {
@@ -780,6 +795,7 @@ func (c *ChatService) runTurn(target *config.ChatSession, guardOn bool, msg *gen
 			sessionUsage = addUsage(sessionUsage, u)
 		}
 		var textBuf strings.Builder
+		toolCallsThisTurn := 0
 		for _, p := range ev.Content.Parts {
 			if p == nil {
 				continue
@@ -797,6 +813,7 @@ func (c *ChatService) runTurn(target *config.ChatSession, guardOn bool, msg *gen
 				emit(ChatStreamEvent{Kind: "confirm_request", Author: ev.Author,
 					ToolName: name, ToolArgs: args, CallID: p.FunctionCall.ID, Hint: hint})
 			case p.FunctionCall != nil:
+				toolCallsThisTurn++
 				emit(ChatStreamEvent{Kind: "tool_call", Author: ev.Author,
 					ToolName: p.FunctionCall.Name, ToolArgs: p.FunctionCall.Args})
 			case p.FunctionResponse != nil:
@@ -813,6 +830,15 @@ func (c *ChatService) runTurn(target *config.ChatSession, guardOn bool, msg *gen
 			}
 			emit(ChatStreamEvent{Kind: "message", Author: ev.Author, Text: outText, Usage: turnUsage})
 			turnUsage = nil
+		}
+		if maxToolCalls > 0 && toolCallsThisTurn > 0 {
+			toolCallsSeen += toolCallsThisTurn
+			if toolCallsSeen > maxToolCalls {
+				emit(ChatStreamEvent{Kind: "error", Text: fmt.Sprintf("已达单轮工具调用上限（%d 次），本轮已停止。", maxToolCalls)})
+				emit(ChatStreamEvent{Kind: "done", SessionUsage: sessionUsage})
+				cancel()
+				return nil
+			}
 		}
 	}
 	emit(ChatStreamEvent{Kind: "done", SessionUsage: sessionUsage})
