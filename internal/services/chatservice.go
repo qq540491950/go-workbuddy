@@ -652,10 +652,12 @@ func (c *ChatService) ExportSessionHTML(sessionID string) (string, error) {
 			fmt.Fprintf(&body, "## 🤖 %s\n\n%s\n\n", m.Author, m.Text)
 		case "tool_call":
 			args, _ := json.Marshal(m.ToolArgs)
-			fmt.Fprintf(&body, "> 🔧 工具调用 **%s** `%s`\n\n", m.ToolName, string(args))
+			fmt.Fprintf(&body, "<details><summary>🔧 工具调用 <b>%s</b></summary>\n<pre>%s</pre>\n</details>\n\n",
+				m.ToolName, htmlEscapeString(string(args)))
 		case "tool_result":
 			resp, _ := json.Marshal(m.ToolResp)
-			fmt.Fprintf(&body, "> ✅ 工具结果 **%s** `%s`\n\n", m.ToolName, string(resp))
+			fmt.Fprintf(&body, "<details><summary>✅ 工具结果 <b>%s</b></summary>\n<pre>%s</pre>\n</details>\n\n",
+				m.ToolName, htmlEscapeString(string(resp)))
 		case "confirm_request":
 			fmt.Fprintf(&body, "> 🛡️ **HITL 确认** %s（`%s`）\n\n", m.ToolName, m.CallID)
 		}
@@ -713,6 +715,12 @@ img{max-width:100%%}
 		return "", err
 	}
 	return path, nil
+}
+
+// htmlEscapeString escapes text for safe embedding into the HTML export.
+func htmlEscapeString(sv string) string {
+	r := strings.NewReplacer("&", "&amp;", "<", "&lt;", ">", "&gt;", `"`, "&quot;")
+	return r.Replace(sv)
 }
 
 func sanitizeExportName(name string) string {

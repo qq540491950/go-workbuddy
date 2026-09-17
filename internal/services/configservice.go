@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -475,6 +476,7 @@ func (c *ConfigService) ListKnowledgeFiles() ([]KnowledgeFile, error) {
 			ModTime:   st.ModTime().Format("2006-01-02 15:04"),
 		})
 	}
+	sort.Slice(out, func(i, j int) bool { return out[i].ModTime > out[j].ModTime })
 	return out, nil
 }
 

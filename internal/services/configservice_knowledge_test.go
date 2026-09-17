@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 	"testing"
 
 	"changeme/internal/config"
@@ -31,6 +32,7 @@ func TestKnowledgeFileManagement(t *testing.T) {
 	if err := os.MkdirAll(kb, 0o755); err != nil {
 		t.Fatal(err)
 	}
+	now := time.Now()
 	for name, content := range map[string]string{
 		"a.md": "alpha",
 		"b.md": "beta",
@@ -39,6 +41,13 @@ func TestKnowledgeFileManagement(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	// Distinct mtimes: b.md written last => newest first in the listing.
+	if err := os.Chtimes(filepath.Join(kb, "a.md"), now.Add(-time.Hour), now.Add(-time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chtimes(filepath.Join(kb, "b.md"), now, now); err != nil {
+		t.Fatal(err)
+	}
 
 	files, err := svc.ListKnowledgeFiles()
 	if err != nil {
@@ -46,6 +55,10 @@ func TestKnowledgeFileManagement(t *testing.T) {
 	}
 	if len(files) != 2 {
 		t.Fatalf("expected 2 files, got %+v", files)
+	}
+	// b.md written last => newest first.
+	if files[0].Name != "b.md" {
+		t.Fatalf("expected newest first: %+v", files)
 	}
 
 	// Traversal-guarded deletion.
