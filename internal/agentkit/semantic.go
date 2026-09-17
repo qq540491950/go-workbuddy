@@ -63,8 +63,9 @@ const (
 	chunkRunes    = 700 // chunk size in runes
 	chunkOverlap  = 100 // overlap between consecutive chunks
 	embedBatch    = 32  // inputs per /embeddings request
-	semanticTopK  = 8
+	semanticTopK   = 8
 	semanticWeight = 0.75 // hybrid score: 0.75*cosine + 0.25*keyword
+	embedWorkers   = 4    // concurrent /embeddings requests while indexing
 )
 
 // SearchOptions carries everything the knowledge tool needs at run time.
@@ -206,7 +207,7 @@ func (k *KnowledgeIndex) ensureIndexed(workspace string, emb *EmbeddingConfig) e
 		present[e.Name()] = st.ModTime().Unix()
 	}
 
-	// Drop rows of removed files.
+	// Drop rows of removed or changed files.
 	var known []struct {
 		File    string
 		ModTime int64
@@ -220,58 +221,105 @@ func (k *KnowledgeIndex) ensureIndexed(workspace string, emb *EmbeddingConfig) e
 	for _, r := range known {
 		seen[r.File] = r.ModTime
 	}
-	var removed []string
 	for f := range seen {
 		if _, ok := present[f]; !ok {
-			removed = append(removed, f)
-		}
-	}
-	for f, mt := range present {
-		if old, ok := seen[f]; !ok || old != mt {
-			removed = append(removed, f) // stale content: delete then re-add
-		}
-	}
-	for _, f := range removed {
-		if err := k.DB.Where("file = ?", f).Delete(&KnowledgeChunk{}).Error; err != nil {
-			return err
+			if err := k.DB.Where("file = ?", f).Delete(&KnowledgeChunk{}).Error; err != nil {
+				return err
+			}
 		}
 	}
 
-	// Index new/changed files.
+	// Collect files that need (re-)embedding.
 	names := make([]string, 0, len(present))
-	for f, mt := range present {
-		if old, ok := seen[f]; !ok || old != mt {
+	for f := range present {
+		if old, ok := seen[f]; !ok || old != present[f] {
 			names = append(names, f)
-		} else {
-			_ = mt
 		}
 	}
 	sort.Strings(names)
+
+	// Fan the embedding work out to a small worker pool (network-bound),
+	// then write rows sequentially on this goroutine.
+	type embedJob struct {
+		file string
+		mt   int64
+		text []string
+		vecs [][]float64
+	}
+	jobs := make([]embedJob, 0, len(names))
 	for _, f := range names {
 		data, err := os.ReadFile(filepath.Join(dir, f))
 		if err != nil {
 			continue
 		}
-		chunks := chunkText(string(data))
-		for batch := 0; batch < len(chunks); batch += embedBatch {
-			end := minInt(batch+embedBatch, len(chunks))
-			vecs, err := embedBatchReq(emb, chunks[batch:end])
-			if err != nil {
-				return fmt.Errorf("embed %s: %w", f, err)
+		jobs = append(jobs, embedJob{file: f, mt: present[f], text: chunkText(string(data))})
+	}
+	if len(jobs) == 0 {
+		return nil
+	}
+	workers := embedWorkers
+	if workers > len(jobs) {
+		workers = len(jobs)
+	}
+	jobsCh := make(chan embedJob)
+	results := make(chan embedJob, len(jobs))
+	errCh := make(chan error, len(jobs))
+	var wg sync.WaitGroup
+	for w := 0; w < workers; w++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for j := range jobsCh {
+				vecs, err := embedAll(emb, j.text)
+				if err != nil {
+					errCh <- fmt.Errorf("embed %s: %w", j.file, err)
+					continue
+				}
+				j.vecs = vecs
+				results <- j
 			}
-			for i, vec := range vecs {
-				row := KnowledgeChunk{
-					File: f, ModTime: present[f], ChunkIdx: batch + i,
-					Content: chunks[batch+i], Model: emb.Model,
-					Dim: len(vec), Embedding: encodeVector(vec),
-				}
-				if err := k.DB.Create(&row).Error; err != nil {
-					return err
-				}
+		}()
+	}
+	for _, j := range jobs {
+		jobsCh <- j
+	}
+	close(jobsCh)
+	wg.Wait()
+	close(results)
+
+	select {
+	case err := <-errCh:
+		return err
+	default:
+	}
+	for r := range results {
+		for i, vec := range r.vecs {
+			row := KnowledgeChunk{
+				File: r.file, ModTime: r.mt, ChunkIdx: i,
+				Content: r.text[i], Model: emb.Model,
+				Dim: len(vec), Embedding: encodeVector(vec),
+			}
+			if err := k.DB.Create(&row).Error; err != nil {
+				return err
 			}
 		}
 	}
 	return nil
+}
+
+// embedAll splits chunks into batches, embeds each and concatenates the
+// vectors in chunk order.
+func embedAll(emb *EmbeddingConfig, chunks []string) ([][]float64, error) {
+	out := make([][]float64, 0, len(chunks))
+	for i := 0; i < len(chunks); i += embedBatch {
+		end := minInt(i+embedBatch, len(chunks))
+		vecs, err := embedBatchReq(emb, chunks[i:end])
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, vecs...)
+	}
+	return out, nil
 }
 
 // ---------------------------------------------------------------------------
