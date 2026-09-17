@@ -323,8 +323,27 @@ export function SettingsPage() {
                 </span>
               )}
             </div>
+            <div className="flex items-center justify-between rounded-lg border p-3">
+              <div>
+                <div className="text-sm font-medium">开机自动启动 A2A 服务</div>
+                <div className="text-xs text-muted-foreground">使用上方选择的 Agent 与端口，应用启动时自动发布</div>
+              </div>
+              <Switch
+                checked={settings.a2aAutoStart}
+                onCheckedChange={(v) => {
+                  const next = {
+                    ...settings,
+                    a2aAutoStart: v,
+                    a2aAgentId: v ? (a2aAgent || settings.a2aAgentId) : settings.a2aAgentId,
+                    a2aPort: Number(a2aPort) || 0,
+                  };
+                  update(next);
+                  Config.SaveSettings(next).catch((e) => toast.error(`保存失败: ${errText(e)}`));
+                }}
+              />
+            </div>
             <p className="text-xs text-muted-foreground">
-              启动后其他 A2A 客户端可通过该地址发现并调用此 Agent（仅监听本机地址）；服务为运行态，重启应用后需重新启动。
+              启动后其他 A2A 客户端可通过该地址发现并调用此 Agent（仅监听本机地址）。
             </p>
           </CardContent>
         </Card>

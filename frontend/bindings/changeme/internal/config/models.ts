@@ -292,6 +292,13 @@ export interface Settings {
      */
     "embeddingProviderId"?: string;
     "embeddingModel"?: string;
+
+    /**
+     * A2A server auto-start: publish this agent on launch (port 0 = ephemeral).
+     */
+    "a2aAutoStart"?: boolean;
+    "a2aAgentId"?: string;
+    "a2aPort"?: number;
 }
 
 /**

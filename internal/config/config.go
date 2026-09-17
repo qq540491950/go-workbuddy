@@ -185,6 +185,10 @@ type Settings struct {
 	// model. Empty keeps keyword-only search.
 	EmbeddingProviderID string `json:"embeddingProviderId,omitempty"`
 	EmbeddingModel      string `json:"embeddingModel,omitempty"`
+	// A2A server auto-start: publish this agent on launch (port 0 = ephemeral).
+	A2AAutoStart bool   `json:"a2aAutoStart,omitempty"`
+	A2AAgentID   string `json:"a2aAgentId,omitempty"`
+	A2APort      int    `json:"a2aPort,omitempty"`
 }
 
 // normalize fills zero values (older config files) with defaults.

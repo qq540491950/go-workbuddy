@@ -148,3 +148,28 @@ func TestConfigImportValidation(t *testing.T) {
 		t.Fatalf("imported settings missing: %+v", got.Settings)
 	}
 }
+
+// TestSettingsA2AAutoStartPersisted: the auto-start trio survives a save/load
+// round trip (config.json serialization).
+func TestSettingsA2AAutoStartPersisted(t *testing.T) {
+	dir := t.TempDir()
+	store, err := config.Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Update(func(cfg *config.Config) {
+		cfg.Settings.A2AAutoStart = true
+		cfg.Settings.A2AAgentID = "agent_1"
+		cfg.Settings.A2APort = 18080
+	}); err != nil {
+		t.Fatal(err)
+	}
+	reopened, err := config.Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	st := reopened.Get().Settings
+	if !st.A2AAutoStart || st.A2AAgentID != "agent_1" || st.A2APort != 18080 {
+		t.Fatalf("A2A auto-start settings not persisted: %+v", st)
+	}
+}

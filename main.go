@@ -83,6 +83,10 @@ func main() {
 		log.Printf("knowledge index disabled: %v", err)
 	}
 
+	// Always register the A2A service (start/stop RPCs); auto-start may have
+	// begun serving already via the settings hook below.
+	a2aRPC := services.NewA2AService(svc, sessions)
+
 	app := application.New(application.Options{
 		Name:        "WorkBuddy Agent",
 		Description: "ADK-powered agent desktop app",
@@ -92,7 +96,7 @@ func main() {
 			application.NewService(services.NewMCPService(svc)),
 			application.NewService(services.NewArtifactService(svc)),
 			application.NewService(services.NewChatService(svc, sessions, gormDB)),
-			application.NewService(services.NewA2AService(svc, sessions)),
+			application.NewService(a2aRPC),
 		},
 		Assets: application.AssetOptions{
 			Handler: application.AssetFileServerFS(assets),
@@ -116,6 +120,15 @@ func main() {
 		BackgroundColour: application.NewRGB(18, 18, 20),
 		URL:              "/",
 	})
+
+	// A2A server auto-start (publish a local agent for remote A2A clients).
+	if svcSettings := store.Get().Settings; svcSettings.A2AAutoStart && svcSettings.A2AAgentID != "" {
+		if st, err := a2aRPC.Start(svcSettings.A2AAgentID, svcSettings.A2APort); err != nil {
+			log.Printf("A2A 服务自启动失败: %v", err)
+		} else {
+			log.Printf("A2A 服务已自启动: %s", st.URL)
+		}
+	}
 
 	setupSystemTray(app, window)
 	// Global summon shortcut; a conflicting registration (another app owns
