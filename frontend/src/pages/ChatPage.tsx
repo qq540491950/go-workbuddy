@@ -37,6 +37,7 @@ type UIMessage = {
   callId?: string;
   hint?: string;
   confirmStatus?: "pending" | "approved" | "rejected";
+  timestamp?: string;
   streaming?: boolean;
   usage?: UsageInfo | null;
   attachments?: AttachmentOut[] | null;
@@ -59,6 +60,13 @@ function mdToSpeech(md: string): string {
     .replace(/[*_~>|]/g, "")
     .replace(/\s+\n/g, "\n")
     .trim();
+}
+
+/** fmtTime renders an ISO timestamp as local HH:MM for hover display. */
+function fmtTime(iso?: string): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  return isNaN(d.getTime()) ? "" : d.toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" });
 }
 
 /** speechSupported reports whether speech recognition is available. */
@@ -180,6 +188,7 @@ export function ChatPage() {
               callId: m.callId,
               hint: m.hint,
               confirmStatus: m.kind === "confirm_request" ? (answered.has(m.callId!) ? (answered.get(m.callId!) ? "approved" : "rejected") : "pending") as UIMessage["confirmStatus"] : undefined,
+              timestamp: m.timestamp,
               attachments: m.attachments ?? null,
             })),
         );
@@ -196,7 +205,7 @@ export function ChatPage() {
       setMessages((prev) => {
         switch (ev.kind) {
           case "user":
-            return [...prev, { id: nextId(), kind: "user", author: "user", text: ev.text }];
+            return [...prev, { id: nextId(), kind: "user", author: "user", text: ev.text, timestamp: new Date().toISOString() }];
           case "delta": {
             const last = prev[prev.length - 1];
             if (last && last.streaming && last.author === ev.author) {
@@ -204,7 +213,7 @@ export function ChatPage() {
               copy[copy.length - 1] = { ...last, text: last.text + ev.text };
               return copy;
             }
-            return [...prev, { id: nextId(), kind: "assistant", author: ev.author, text: ev.text, streaming: true }];
+            return [...prev, { id: nextId(), kind: "assistant", author: ev.author, text: ev.text, streaming: true, timestamp: new Date().toISOString() }];
           }
           case "message": {
             const idx = [...prev].reverse().findIndex((m) => m.streaming && m.author === ev.author);
@@ -214,7 +223,7 @@ export function ChatPage() {
               copy[real] = { ...copy[real], text: ev.text, streaming: false, usage: ev.usage ?? null };
               return copy;
             }
-            return [...prev, { id: nextId(), kind: "assistant", author: ev.author, text: ev.text, usage: ev.usage ?? null }];
+            return [...prev, { id: nextId(), kind: "assistant", author: ev.author, text: ev.text, usage: ev.usage ?? null, timestamp: new Date().toISOString() }];
           }
           case "tool_call":
             return [...prev, { id: nextId(), kind: "tool_call", author: ev.author, text: "", toolName: ev.toolName, toolArgs: ev.toolArgs }];
@@ -1111,7 +1120,10 @@ function MessageBubble({ m, isLastAssistant, onRegenerate, canRegenerate, toolRu
             </button>
           )}
           <CopyButton text={m.text} className="mb-1 opacity-0 transition-opacity group-hover:opacity-100" />
-          <div className="whitespace-pre-wrap rounded-2xl rounded-br-md bg-primary px-4 py-2.5 text-sm text-primary-foreground">
+          <div
+            className="whitespace-pre-wrap rounded-2xl rounded-br-md bg-primary px-4 py-2.5 text-sm text-primary-foreground"
+            title={fmtTime(m.timestamp)}
+          >
             {m.text}
           </div>
           </div>
@@ -1144,7 +1156,10 @@ function MessageBubble({ m, isLastAssistant, onRegenerate, canRegenerate, toolRu
     <div className="group flex justify-start">
       <div className="max-w-[85%]">
         <div className="mb-0.5 flex items-center gap-2">
-          <span className="text-[11px] text-muted-foreground">{m.author}</span>
+          <span className="text-[11px] text-muted-foreground">
+            {m.author}
+            {m.timestamp && <span className="ml-1 opacity-70">· {fmtTime(m.timestamp)}</span>}
+          </span>
           {isLastAssistant && !m.streaming && m.text && (
             <span className="flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
               <button
