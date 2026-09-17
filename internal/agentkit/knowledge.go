@@ -109,10 +109,13 @@ func searchKnowledge(workspace, query string) (string, error) {
 		hits = hits[:knowledgeMaxResults]
 	}
 	var sb strings.Builder
+	files := map[string]bool{}
 	for _, h := range hits {
 		sb.WriteString("### " + h.name + "（相关度 " + itoa(h.score) + "）\n")
 		sb.WriteString(h.snip + "\n\n")
+		files[h.name] = true
 	}
+	sb.WriteString(withRefs("", refsOf(files)))
 	return strings.TrimSpace(sb.String()), nil
 }
 
