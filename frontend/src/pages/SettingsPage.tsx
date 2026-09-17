@@ -226,10 +226,29 @@ export function SettingsPage() {
                 onChange={(e) => setSettings({ ...settings, embeddingModel: e.target.value })}
                 placeholder="text-embedding-3-small / BAAI/bge-large-zh-v1.5"
               />
-              <p className="text-xs text-muted-foreground">
-                配置后，知识库检索（search_knowledge）升级为「向量语义 + 关键词」混合检索；向量索引自动增量构建于本地 SQLite。留空则保持关键词检索。
-                {indexStats && indexStats.files > 0 && ` 已索引 ${indexStats.files} 个文件 / ${indexStats.chunks} 个分块${indexStats.model ? `（模型 ${indexStats.model}）` : ""}。`}
-              </p>
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-xs text-muted-foreground">
+                  配置后，知识库检索（search_knowledge）升级为「向量语义 + 关键词」混合检索；向量索引自动增量构建于本地 SQLite。留空则保持关键词检索。
+                  {indexStats && indexStats.files > 0 && ` 已索引 ${indexStats.files} 个文件 / ${indexStats.chunks} 个分块${indexStats.model ? `（模型 ${indexStats.model}）` : ""}。`}
+                </p>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="shrink-0"
+                  onClick={async () => {
+                    try {
+                      await Config.ResetKnowledgeIndex();
+                      const st = await Config.KnowledgeIndexStats();
+                      setIndexStats(st);
+                      toast.success("索引已清空，下次检索将自动重建");
+                    } catch (e) {
+                      toast.error(`重置失败: ${errText(e)}`);
+                    }
+                  }}
+                >
+                  重建索引
+                </Button>
+              </div>
             </div>
           </CardContent>
         </Card>

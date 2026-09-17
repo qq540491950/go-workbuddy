@@ -422,6 +422,10 @@ func (c *ConfigService) SaveSettings(s config.Settings) error {
 	})
 }
 
+// ResetKnowledgeIndex wipes the vector index so the next search re-embeds
+// everything from the workspace files.
+func (c *ConfigService) ResetKnowledgeIndex() error { return c.S.Kit.ResetKnowledgeIndex() }
+
 // KnowledgeIndexStats reports the semantic knowledge index state for the UI.
 func (c *ConfigService) KnowledgeIndexStats() agentkit.KnowledgeIndexStats {
 	return c.S.Kit.IndexStats()

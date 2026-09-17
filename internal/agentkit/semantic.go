@@ -369,6 +369,17 @@ type KnowledgeIndexStats struct {
 	Model  string `json:"model,omitempty"`
 }
 
+// Reset wipes all cached chunks; the next search re-embeds everything from
+// the workspace files.
+func (k *KnowledgeIndex) Reset() error {
+	if k == nil || k.DB == nil {
+		return nil
+	}
+	k.mu.Lock()
+	defer k.mu.Unlock()
+	return k.DB.Where("1 = 1").Delete(&KnowledgeChunk{}).Error
+}
+
 // Stats returns file/chunk counts (and the embedding model when indexed).
 func (k *KnowledgeIndex) Stats() KnowledgeIndexStats {
 	var st KnowledgeIndexStats

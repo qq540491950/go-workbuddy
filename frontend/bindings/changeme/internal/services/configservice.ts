@@ -99,6 +99,14 @@ export function ListProviderModels(p: config$0.ModelProvider): $CancellablePromi
 }
 
 /**
+ * ResetKnowledgeIndex wipes the vector index so the next search re-embeds
+ * everything from the workspace files.
+ */
+export function ResetKnowledgeIndex(): $CancellablePromise<void> {
+    return $Call.ByID(1805728332);
+}
+
+/**
  * SaveAgent inserts or updates an agent.
  */
 export function SaveAgent(a: config$0.AgentConfig): $CancellablePromise<void> {

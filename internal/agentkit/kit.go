@@ -68,6 +68,10 @@ func (k *Kit) SetKnowledgeIndex(idx *KnowledgeIndex) { k.knowledge = idx }
 // IndexStats exposes the knowledge index state for observability.
 func (k *Kit) IndexStats() KnowledgeIndexStats { return k.knowledge.Stats() }
 
+// ResetKnowledgeIndex wipes the vector index; the next semantic search
+// rebuilds it from the workspace files.
+func (k *Kit) ResetKnowledgeIndex() error { return k.knowledge.Reset() }
+
 // BuildAgent builds an ADK agent for the given agent config.
 func (k *Kit) BuildAgent(ac config.AgentConfig) (agent.Agent, error) {
 	cfg := k.store.Get()

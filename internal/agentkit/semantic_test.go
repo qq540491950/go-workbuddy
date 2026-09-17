@@ -310,3 +310,33 @@ func TestKnowledgeIndexStats(t *testing.T) {
 		t.Fatalf("nil index stats must be zero: %+v", zero)
 	}
 }
+
+func TestKnowledgeIndexReset(t *testing.T) {
+	srv := httptest.NewServer(fakeEmbeddings())
+	defer srv.Close()
+	ws := seedKnowledge(t, map[string]string{"a.md": "内容 content here"})
+	idx, err := OpenKnowledgeIndex(filepath.Join(t.TempDir(), "k.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	opts := SearchOptions{Workspace: ws, Index: idx, Embedding: &EmbeddingConfig{BaseURL: srv.URL, Model: "fake-embed"}}
+	if _, err := searchHybrid(opts, "内容"); err != nil {
+		t.Fatal(err)
+	}
+	if rowCount(t, idx) == 0 {
+		t.Fatal("expected rows before reset")
+	}
+	if err := idx.Reset(); err != nil {
+		t.Fatal(err)
+	}
+	if n := rowCount(t, idx); n != 0 {
+		t.Fatalf("reset must wipe rows, got %d", n)
+	}
+	// Next search rebuilds automatically.
+	if _, err := searchHybrid(opts, "内容"); err != nil {
+		t.Fatal(err)
+	}
+	if rowCount(t, idx) == 0 {
+		t.Fatal("index did not rebuild after reset")
+	}
+}

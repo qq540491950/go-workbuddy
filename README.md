@@ -120,6 +120,13 @@ go vet ./internal/... .
 
 已实施：Markdown + 代码块复制、消息级复制、深浅主题、首次运行引导、会话搜索、快捷键、工具调用折叠面板、流式打字指示器。
 
+### 第四十七轮迭代：知识库索引重建（已实施）
+
+- 设置页语义检索卡片新增「重建索引」：清空本地向量缓存，下次检索自动从工作区文件重新嵌入（换模型/换文件批量调整后的管理闭环）
+- ConfigService.ResetKnowledgeIndex → KnowledgeIndex.Reset（全表清空 + 互斥保护）
+
+测试：重置清空 + 自动重建 e2e + 全量回归。
+
 ### 第四十六轮迭代：代理覆盖确认与保存校验（已实施）
 
 - **覆盖确认**：核验 gemini SDK（`&http.Client{}`）、a2a-go JSONRPC 客户端（同）与 MCP streamable（`http.DefaultClient`）均回落到 `http.DefaultTransport` —— 全局代理设置对所有出站流量生效，无需逐客户端接线
