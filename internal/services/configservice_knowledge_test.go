@@ -61,6 +61,28 @@ func TestKnowledgeFileManagement(t *testing.T) {
 		t.Fatalf("expected newest first: %+v", files)
 	}
 
+	// Nested files are listed with slash-separated relative paths.
+	nested := filepath.Join(kb, "docs", "sub")
+	if err := os.MkdirAll(nested, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(nested, "deep.md"), []byte("deep"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	files, err = svc.ListKnowledgeFiles()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var foundNested bool
+	for _, f := range files {
+		if f.Name == filepath.ToSlash(filepath.Join("docs", "sub", "deep.md")) {
+			foundNested = true
+		}
+	}
+	if !foundNested {
+		t.Fatalf("nested file missing from listing: %+v", files)
+	}
+
 	// Traversal-guarded deletion.
 	if err := svc.DeleteKnowledgeFile("../secret.txt"); err == nil {
 		t.Fatal("expected traversal rejection")
@@ -72,8 +94,13 @@ func TestKnowledgeFileManagement(t *testing.T) {
 		t.Fatal("file still exists after delete")
 	}
 	files, _ = svc.ListKnowledgeFiles()
-	if len(files) != 1 || files[0].Name != "b.md" {
+	if len(files) != 2 {
 		t.Fatalf("unexpected remaining files: %+v", files)
+	}
+	for _, f := range files {
+		if f.Name != "b.md" && f.Name != "docs/sub/deep.md" {
+			t.Fatalf("unexpected file: %+v", f)
+		}
 	}
 	if !strings.Contains(files[0].Name, "b") {
 		t.Fatal("sanity")

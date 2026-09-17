@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"io/fs"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -454,27 +455,32 @@ func (c *ConfigService) ListKnowledgeFiles() ([]KnowledgeFile, error) {
 	if workspace == "" {
 		return nil, fmt.Errorf("请先在设置中配置工作区目录")
 	}
-	entries, err := os.ReadDir(filepath.Join(workspace, "knowledge"))
-	if err != nil {
-		if os.IsNotExist(err) {
-			return []KnowledgeFile{}, nil
-		}
-		return nil, err
-	}
 	out := []KnowledgeFile{}
-	for _, e := range entries {
-		if e.IsDir() {
-			continue
+	root := filepath.Join(workspace, "knowledge")
+	if _, err := os.Stat(root); os.IsNotExist(err) {
+		return out, nil
+	}
+	walkErr := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return nil
 		}
-		st, err := e.Info()
+		st, err := d.Info()
 		if err != nil {
-			continue
+			return nil
+		}
+		rel, relErr := filepath.Rel(root, path)
+		if relErr != nil {
+			return nil
 		}
 		out = append(out, KnowledgeFile{
-			Name:      e.Name(),
+			Name:      filepath.ToSlash(rel),
 			SizeBytes: st.Size(),
 			ModTime:   st.ModTime().Format("2006-01-02 15:04"),
 		})
+		return nil
+	})
+	if walkErr != nil {
+		return nil, walkErr
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].ModTime > out[j].ModTime })
 	return out, nil
