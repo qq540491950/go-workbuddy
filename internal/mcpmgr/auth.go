@@ -70,7 +70,7 @@ func headersOnlyClient(cfg config.MCPServerConfig) *http.Client {
 // URL is stable for the handler; it serves only while the consent flow runs.
 // When tokenStore is non-nil, tokens persist across app restarts: a cached
 // unexpired token (or a refreshable one) skips the browser consent flow.
-func newOAuthTransport(cfg config.MCPServerConfig, tokenStore *config.Store) (mcp.Transport, error) {
+func newOAuthTransport(cfg config.MCPServerConfig, tokenStore *config.Store, onAuthPending func(authURL string)) (mcp.Transport, error) {
 	if cfg.OAuthClientID == "" {
 		return nil, fmt.Errorf("oauth2 认证需要预注册的 client id")
 	}
@@ -80,7 +80,7 @@ func newOAuthTransport(cfg config.MCPServerConfig, tokenStore *config.Store) (mc
 	}
 	redirectURL := fmt.Sprintf("http://127.0.0.1:%d/callback", ln.Addr().(*net.TCPAddr).Port)
 
-	fetcher := newBrowserAuthCodeFetcher(ln)
+	fetcher := newBrowserAuthCodeFetcher(ln, onAuthPending)
 	handlerCfg := &auth.AuthorizationCodeHandlerConfig{
 		PreregisteredClient: &oauthex.ClientCredentials{ClientID: cfg.OAuthClientID},
 		RedirectURL:         redirectURL,
@@ -113,7 +113,7 @@ func newOAuthTransport(cfg config.MCPServerConfig, tokenStore *config.Store) (mc
 // newBrowserAuthCodeFetcher serves the loopback callback on the pre-bound
 // listener, opens the system browser at the authorization URL and resolves
 // with the code the authorization server redirects back with (5 min cap).
-func newBrowserAuthCodeFetcher(ln net.Listener) auth.AuthorizationCodeFetcher {
+func newBrowserAuthCodeFetcher(ln net.Listener, onAuthPending func(authURL string)) auth.AuthorizationCodeFetcher {
 	return func(ctx context.Context, args *auth.AuthorizationArgs) (*auth.AuthorizationResult, error) {
 		codeCh := make(chan *auth.AuthorizationResult, 1)
 		errCh := make(chan error, 1)
@@ -140,6 +140,9 @@ func newBrowserAuthCodeFetcher(ln net.Listener) auth.AuthorizationCodeFetcher {
 			<-serveDone
 		}()
 
+		if onAuthPending != nil {
+			onAuthPending(args.URL)
+		}
 		if err := URLOpener(args.URL); err != nil {
 			return nil, fmt.Errorf("无法打开浏览器完成授权: %w", err)
 		}

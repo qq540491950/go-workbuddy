@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -176,7 +177,7 @@ func TestMCPAuthBearer(t *testing.T) {
 		ID: "m1", Name: " secured", Transport: config.MCPStreamableHTTP,
 		URL: srv.URL + "/mcp", AuthType: "bearer", AuthToken: testAccessToken,
 	}
-	tr, err := buildTransport(cfg, nil)
+	tr, err := buildTransport(cfg, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -192,7 +193,7 @@ func TestMCPAuthAPIKey(t *testing.T) {
 		ID: "m2", Name: "secured", Transport: config.MCPStreamableHTTP,
 		URL: srv.URL + "/mcp", AuthType: "api-key", AuthToken: testAPIKey, AuthHeader: "X-API-Key",
 	}
-	tr, err := buildTransport(cfg, nil)
+	tr, err := buildTransport(cfg, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -213,13 +214,19 @@ func TestMCPAuthOAuth2Flow(t *testing.T) {
 		URL: resource.URL + "/mcp", AuthType: "oauth2",
 		OAuthClientID: "workbuddy-desktop",
 	}
-	tr, err := buildTransport(cfg, nil)
+	var pendingURL atomic.Value
+	tr, err := buildTransport(cfg, nil, func(authURL string) {
+		pendingURL.Store(authURL)
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	names := listToolsThrough(t, tr)
 	if len(names) != 1 || names[0] != "ping" {
 		t.Fatalf("unexpected tools after OAuth flow: %v", names)
+	}
+	if v := pendingURL.Load(); v == nil || !strings.Contains(v.(string), "/authorize") {
+		t.Fatalf("auth-pending hook not fired with authorize URL: %v", v)
 	}
 	if !strings.Contains(names[0], "ping") {
 		t.Fatalf("tool sanity: %v", names)
@@ -233,7 +240,7 @@ func TestMCPAuthUnauthenticatedRejected(t *testing.T) {
 		ID: "m4", Name: "noauth", Transport: config.MCPStreamableHTTP,
 		URL: srv.URL + "/mcp", // no AuthType
 	}
-	tr, err := buildTransport(cfg, nil)
+	tr, err := buildTransport(cfg, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -270,7 +277,7 @@ func TestMCPAuthTokenPersistence(t *testing.T) {
 	// First run: full consent flow; the browser simulator is required.
 	defer func() { URLOpener = defaultURLOpener }()
 	URLOpener = browserSimulator()
-	tr1, err := buildTransport(cfg, store)
+	tr1, err := buildTransport(cfg, store, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -286,7 +293,7 @@ func TestMCPAuthTokenPersistence(t *testing.T) {
 	// "Restart": fresh transport from the same store. The browser must NOT
 	// be opened (opening fails the test).
 	URLOpener = func(string) error { return fmt.Errorf("browser must not open for cached token") }
-	tr2, err := buildTransport(cfg, store)
+	tr2, err := buildTransport(cfg, store, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

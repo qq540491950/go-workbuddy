@@ -120,6 +120,14 @@ go vet ./internal/... .
 
 已实施：Markdown + 代码块复制、消息级复制、深浅主题、首次运行引导、会话搜索、快捷键、工具调用折叠面板、流式打字指示器。
 
+### 第四十四轮迭代：MCP OAuth 授权等待提示（已实施）
+
+- Manager 新增 `SetAuthPendingHook`：OAuth 授权码流程等待用户在浏览器操作时，向 Wails 事件总线发 `mcp:auth-pending`（携带服务器名与授权地址）
+- MCP 页监听该事件并 toast 提示「请在浏览器中完成 MCP 授权…完成后连接自动继续」，消除等待期间的静默困惑
+- 钩子经 `buildTransport` 贯穿至官方 OAuth handler 的 Fetcher（打开浏览器前触发）
+
+测试：OAuth 流程 e2e 扩展（钩子收到 /authorize 地址断言）+ 全量回归。
+
 ### 第四十三轮迭代：代理覆盖契约固化（已实施）
 
 - 契约测试钉住：无显式 HTTPClient 的 MCP streamable 传输（`http.DefaultClient` → `http.DefaultTransport`）必须经过全局代理——回环转发桩验证流量真实穿过代理服务器

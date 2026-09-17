@@ -7,15 +7,15 @@ import (
 )
 
 func TestBuildTransportValidation(t *testing.T) {
-	if _, err := buildTransport(config.MCPServerConfig{Transport: config.MCPStdio}, nil); err == nil {
+	if _, err := buildTransport(config.MCPServerConfig{Transport: config.MCPStdio}, nil, nil); err == nil {
 		t.Fatal("expected error for stdio without command")
 	}
-	if _, err := buildTransport(config.MCPServerConfig{Transport: config.MCPStreamableHTTP}, nil); err == nil {
+	if _, err := buildTransport(config.MCPServerConfig{Transport: config.MCPStreamableHTTP}, nil, nil); err == nil {
 		t.Fatal("expected error for http without URL")
 	}
 	tr, err := buildTransport(config.MCPServerConfig{
 		Transport: config.MCPStreamableHTTP, URL: "https://example.com/mcp",
-	}, nil)
+	}, nil, nil)
 	if err != nil || tr == nil {
 		t.Fatalf("expected valid streamable transport, got %v, %v", tr, err)
 	}

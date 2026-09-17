@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { Events } from "@wailsio/runtime";
 import { Plus, Trash2, Play, Square, RefreshCw, Wrench } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -55,6 +56,15 @@ export function MCPPage() {
     });
   }, []);
   useEffect(reload, [reload]);
+
+  // OAuth consent: warn the user while an authorization waits in the browser.
+  useEffect(() => {
+    const off = Events.On("mcp:auth-pending", (e: any) => {
+      const d = Array.isArray(e?.data) ? e.data[0] : e?.data;
+      toast.info(`请在浏览器中完成 MCP 授权${d?.server ? `（${d.server}）` : ""}，完成后连接将自动继续`);
+    });
+    return off;
+  }, []);
 
   const save = async () => {
     if (!editing) return;

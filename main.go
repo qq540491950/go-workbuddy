@@ -63,6 +63,11 @@ func main() {
 	// MCP manager + agent kit.
 	mgr := mcpmgr.New()
 	mgr.SetTokenStore(store) // OAuth tokens persist across restarts
+	mgr.SetAuthPendingHook(func(server, authURL string) {
+		if app := application.Get(); app != nil {
+			app.Event.Emit("mcp:auth-pending", map[string]string{"server": server, "url": authURL})
+		}
+	})
 	kit := agentkit.NewKit(store, mgr)
 	svc := &services.Services{Store: store, Kit: kit, MCP: mgr}
 	services.AppVersion = Version

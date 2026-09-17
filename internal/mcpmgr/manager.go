@@ -41,6 +41,15 @@ type Manager struct {
 	toolsets   map[string]tool.Toolset
 	states     map[string]*ServerStatus
 	tokenStore *config.Store // optional: persists OAuth tokens across restarts
+	// onAuthPending, when set, is notified while an OAuth consent flow waits
+	// for the user in the browser (server display name + authorize URL).
+	onAuthPending func(server, authURL string)
+}
+
+// SetAuthPendingHook registers a callback fired when an OAuth authorization
+// starts and the user must act in the browser.
+func (m *Manager) SetAuthPendingHook(fn func(server, authURL string)) {
+	m.onAuthPending = fn
 }
 
 // New creates an empty manager.
@@ -57,11 +66,19 @@ func (m *Manager) SetTokenStore(store *config.Store) {
 	m.tokenStore = store
 }
 
-func (m *Manager) buildTransportFor(cfg config.MCPServerConfig) (mcp.Transport, error) {
-	return buildTransport(cfg, m.tokenStore)
+func (m *Manager) onAuthPendingWith(server string) func(authURL string) {
+	return func(authURL string) {
+		if m.onAuthPending != nil {
+			m.onAuthPending(server, authURL)
+		}
+	}
 }
 
-func buildTransport(cfg config.MCPServerConfig, tokenStore *config.Store) (mcp.Transport, error) {
+func (m *Manager) buildTransportFor(cfg config.MCPServerConfig) (mcp.Transport, error) {
+	return buildTransport(cfg, m.tokenStore, m.onAuthPendingWith(cfg.Name))
+}
+
+func buildTransport(cfg config.MCPServerConfig, tokenStore *config.Store, onAuthPending func(authURL string)) (mcp.Transport, error) {
 	switch cfg.Transport {
 	case config.MCPStreamableHTTP:
 		if cfg.URL == "" {
@@ -69,7 +86,7 @@ func buildTransport(cfg config.MCPServerConfig, tokenStore *config.Store) (mcp.T
 		}
 		switch cfg.AuthType {
 		case "oauth2":
-			return newOAuthTransport(cfg, tokenStore)
+			return newOAuthTransport(cfg, tokenStore, onAuthPending)
 		case "bearer", "api-key":
 			return &mcp.StreamableClientTransport{Endpoint: cfg.URL, HTTPClient: authHTTPClient(cfg)}, nil
 		}
