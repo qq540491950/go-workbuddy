@@ -360,3 +360,65 @@ func TestChatToolConfirmationGuards(t *testing.T) {
 		t.Fatalf("expected direct write without HITL, err=%v data=%q", err, data)
 	}
 }
+
+// TestToolAuditRecordsConfirmation: approve/reject decisions land in the
+// JSONL audit trail with their call ID.
+func TestToolAuditRecordsConfirmation(t *testing.T) {
+	turn := 0
+	auditPath := filepath.Join(t.TempDir(), "audit.jsonl")
+	var callID string
+	chat, _, workspace, _ := newConfirmTestChat(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		turn++
+		if turn == 1 {
+			_, _ = w.Write([]byte(sseToolCall("c1", "write_workspace_file", `"{\"path\":\"audit.txt\",\"content\":\"x\"}"`) + sseDone))
+			return
+		}
+		_, _ = w.Write([]byte(sseText("ok") + sseDone))
+	})
+	chat.SetToolAuditPath(auditPath)
+	if err := chat.S.Store.Update(func(cfg *config.Config) {
+		cfg.Settings.ToolsAudit = true
+	}); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { appEventHook = nil })
+
+	if err := chat.S.Store.Update(func(cfg *config.Config) {
+		cfg.Settings.ToolsAudit = true
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	events := []ChatStreamEvent{}
+	appEventHook = func(ev ChatStreamEvent) { events = append(events, ev) }
+
+	sess, err := chat.NewSession("agent", "agent_c", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := chat.Send(sess.ID, "写 audit.txt", nil); err != nil {
+		t.Fatal(err)
+	}
+	for _, ev := range events {
+		if ev.Kind == "confirm_request" {
+			callID = ev.CallID
+		}
+	}
+	if callID == "" {
+		t.Fatal("no confirm_request captured")
+	}
+	if err := chat.ConfirmToolCall(sess.ID, callID, true); err != nil {
+		t.Fatal(err)
+	}
+
+	data, err := os.ReadFile(auditPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	doc := string(data)
+	if !strings.Contains(doc, `"phase":"confirm"`) || !strings.Contains(doc, "approved") {
+		t.Fatalf("confirmation decision missing from audit:\n%s", doc)
+	}
+	_ = workspace
+}

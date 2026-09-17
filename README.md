@@ -140,6 +140,12 @@ go vet ./internal/... .
 
 测试：记忆写入 → 统计 → 清空 → 统计归零 e2e + 全量回归。
 
+### 第六十六轮迭代：HITL 确认决策纳入审计（已实施）
+
+- ConfirmToolCall 的批准/拒绝决策写入工具审计 JSONL（phase=confirm，含 callID 与 decision），合规链路闭环：调用 → 等待 → 决策 → 结果全留痕
+
+测试：审计记录含 confirm 决策断言 e2e + 全量回归。
+
 ### 第五十八轮迭代：A2A 服务多 Agent 并发发布（已实施）
 
 - A2AService 重构为多服务器模型：可同时发布多个本地 Agent（各自独立端口与 Agent Card，`Status` 返回全部运行条目）

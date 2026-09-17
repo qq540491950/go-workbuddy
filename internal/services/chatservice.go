@@ -807,6 +807,8 @@ func (c *ChatService) ConfirmToolCall(sessionID, callID string, approved bool) e
 	if !pending {
 		return fmt.Errorf("未找到待确认的工具调用 %s", callID)
 	}
+	c.audit(sessionID, "confirm", "user", toolconfirmation.FunctionCallName,
+		mustJSON(map[string]any{"callID": callID, "decision": map[bool]string{true: "approved", false: "rejected"}[approved]}), "")
 
 	msg := &genai.Content{
 		Role: genai.RoleUser,
