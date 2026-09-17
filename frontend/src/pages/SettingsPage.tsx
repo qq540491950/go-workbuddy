@@ -11,6 +11,7 @@ import { Switch } from "@/components/ui/switch";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
+import { ArtifactPreview } from "@/components/ToolCallCard";
 import { cn } from "@/lib/utils";
 import { ACCENTS, FONT_SCALES, applyTheme, cacheTheme, type ThemePrefs } from "@/lib/theme";
 import { App, A2A, Config, type AgentConfig, type A2AStatus, type KnowledgeFile, type KnowledgeIndexStats, type ModelProvider, type Settings, type StorageInfo, type MemoryInfo, errText, Protocol } from "@/lib/api";
@@ -32,6 +33,7 @@ export function SettingsPage() {
   const [kbTestQuery, setKbTestQuery] = useState("");
   const [kbTestResult, setKbTestResult] = useState("");
   const [kbFiles, setKbFiles] = useState<KnowledgeFile[]>([]);
+  const [kbPreviewPath, setKbPreviewPath] = useState<string | null>(null);
 
   const reload = useCallback(() => {
     Config.GetConfig()
@@ -240,7 +242,13 @@ export function SettingsPage() {
                   <div className="grid gap-1">
                     {kbFiles.map((f) => (
                       <div key={f.name} className="flex items-center justify-between gap-2 text-xs">
-                        <span className="truncate font-mono">{f.name}</span>
+                        <button
+                          className="truncate font-mono text-left underline-offset-2 hover:underline"
+                          title="预览文件"
+                          onClick={() => setKbPreviewPath(`knowledge/${f.name}`)}
+                        >
+                          {f.name}
+                        </button>
                         <span className="shrink-0 text-muted-foreground">
                           {(f.sizeBytes / 1024).toFixed(1)} KB · {f.modTime}
                         </span>
@@ -603,6 +611,9 @@ export function SettingsPage() {
         </Card>
 
         <Button onClick={save} disabled={saving}>保存设置</Button>
+        {kbPreviewPath && (
+          <ArtifactPreview path={kbPreviewPath} onClose={() => setKbPreviewPath(null)} />
+        )}
       </div>
     </div>
   );
