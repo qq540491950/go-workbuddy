@@ -90,6 +90,7 @@ func (a *A2AService) Start(agentID string, port int) (A2AStatus, error) {
 		Version:            "1.0.0",
 		DefaultInputModes:  []string{"text/plain"},
 		DefaultOutputModes: []string{"text/plain"},
+		Skills:             adka2av2.BuildAgentSkills(root),
 		Capabilities:       a2acore.AgentCapabilities{Streaming: true},
 		SupportedInterfaces: []*a2acore.AgentInterface{{
 			URL:             "http://" + ln.Addr().String() + "/a2a/v1/invoke",

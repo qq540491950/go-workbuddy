@@ -71,6 +71,7 @@ func TestA2AServiceLoopback(t *testing.T) {
 	if info.Name != st.AgentName || !info.Streaming {
 		t.Fatalf("card mismatch: %+v vs %+v", info, st)
 	}
+	_ = info
 
 	// Loopback conversation: a client ChatService talks to the published
 	// agent through the full remote-agent client stack.

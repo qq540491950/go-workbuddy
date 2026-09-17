@@ -211,6 +211,12 @@ go vet ./internal/... .
 
 测试：全部语义/索引/回退 e2e 在并发路径下通过 + `-race` + 打包零错误。
 
+### 第七十四轮迭代：A2A Card 暴露 Agent 技能（已实施）
+
+- 发布的 Agent Card 通过 ADK `BuildAgentSkills` 携带技能清单（源自 Agent 挂载的工具/Skills），远程客户端可感知能力面
+
+验证：loopback e2e 回归 + 打包零错误。
+
 ### 第七十二轮迭代：优雅关停与代理覆盖测试（已实施）
 
 - `OnShutdown` 钩子：应用退出时 A2A 服务全部下线（StopAll），避免残留监听
