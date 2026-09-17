@@ -26,6 +26,7 @@ export type {
     ChatMessage,
     ChatStreamEvent,
     KnowledgeFile,
+    MemoryInfo,
     SessionStats,
     StatDay,
     StorageInfo,

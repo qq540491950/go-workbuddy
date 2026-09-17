@@ -16,6 +16,12 @@ import (
 
 func nowUTC() time.Time { return time.Now().UTC().Truncate(time.Second) }
 
+// appName/userID mirror ChatService's fixed local identity (single-user app).
+const (
+	appName = "workbuddy"
+	userID  = "local"
+)
+
 // AppService exposes generic app info.
 type AppService struct {
 	S           *Services
@@ -107,6 +113,31 @@ func (a *AppService) VacuumSessions() error {
 		return fmt.Errorf("会话数据库不可用")
 	}
 	return a.gormDB.Exec("VACUUM").Error
+}
+
+// MemoryInfo reports the long-term memory store size.
+type MemoryInfo struct {
+	Count int64 `json:"count"`
+}
+
+// MemoryStats returns the number of long-term memory entries.
+func (a *AppService) MemoryStats() (*MemoryInfo, error) {
+	if a.S.Memory == nil {
+		return nil, fmt.Errorf("记忆服务不可用")
+	}
+	n, err := a.S.Memory.Count(appName, userID)
+	if err != nil {
+		return nil, err
+	}
+	return &MemoryInfo{Count: n}, nil
+}
+
+// MemoryClear wipes all long-term memory entries for the local user.
+func (a *AppService) MemoryClear() error {
+	if a.S.Memory == nil {
+		return fmt.Errorf("记忆服务不可用")
+	}
+	return a.S.Memory.Clear(appName, userID)
 }
 
 // agentShare is the portable per-agent share document. The referenced

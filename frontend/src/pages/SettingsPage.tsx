@@ -13,7 +13,7 @@ import {
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 import { ACCENTS, FONT_SCALES, applyTheme, cacheTheme, type ThemePrefs } from "@/lib/theme";
-import { App, A2A, Config, type AgentConfig, type A2AStatus, type KnowledgeFile, type KnowledgeIndexStats, type ModelProvider, type Settings, type StorageInfo, errText, Protocol } from "@/lib/api";
+import { App, A2A, Config, type AgentConfig, type A2AStatus, type KnowledgeFile, type KnowledgeIndexStats, type ModelProvider, type Settings, type StorageInfo, type MemoryInfo, errText, Protocol } from "@/lib/api";
 
 export function SettingsPage() {
   const [settings, setSettings] = useState<Settings | null>(null);
@@ -24,6 +24,7 @@ export function SettingsPage() {
   const [logOpen, setLogOpen] = useState(false);
   const [logText, setLogText] = useState("");
   const [storage, setStorage] = useState<StorageInfo | null>(null);
+  const [memoryInfo, setMemoryInfo] = useState<MemoryInfo | null>(null);
   const [a2aStatuses, setA2AStatuses] = useState<A2AStatus[]>([]);
   const [a2aAgent, setA2AAgent] = useState("");
   const [a2aPort, setA2APort] = useState("8080");
@@ -47,6 +48,7 @@ export function SettingsPage() {
     Config.KnowledgeIndexStats().then(setIndexStats).catch(() => {});
     Config.ListKnowledgeFiles().then((fs) => setKbFiles(fs ?? [])).catch(() => {});
     App.StorageStats().then(setStorage).catch(() => {});
+    App.MemoryStats().then(setMemoryInfo).catch(() => {});
   }, []);
 
   const update = (patch: Partial<Settings>) => {
@@ -341,6 +343,38 @@ export function SettingsPage() {
             <p className="text-xs text-muted-foreground">
               每 N 轮自动把更早的对话压缩为摘要（ADK 滑动窗口），或当提示 token 超过阈值时保留尾部、压缩其余。两者都填则同时生效；均为 0 表示关闭。远程 A2A 会话不支持。
             </p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">长期记忆</CardTitle>
+          </CardHeader>
+          <CardContent className="grid gap-2">
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-xs text-muted-foreground">
+                {memoryInfo ? `当前存储 ${memoryInfo.count} 条记忆条目（按用户隔离，Agent 可跨会话召回）。` : "加载中…"}
+              </p>
+              {memoryInfo && memoryInfo.count > 0 && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="shrink-0"
+                  onClick={async () => {
+                    if (!window.confirm("确定清空全部长期记忆？该操作不可恢复。")) return;
+                    try {
+                      await App.MemoryClear();
+                      setMemoryInfo({ count: 0 });
+                      toast.success("长期记忆已清空");
+                    } catch (e) {
+                      toast.error(`清空失败: ${errText(e)}`);
+                    }
+                  }}
+                >
+                  清空记忆
+                </Button>
+              )}
+            </div>
           </CardContent>
         </Card>
 

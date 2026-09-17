@@ -153,6 +153,13 @@ export interface KnowledgeFile {
 }
 
 /**
+ * MemoryInfo reports the long-term memory store size.
+ */
+export interface MemoryInfo {
+    "count": number;
+}
+
+/**
  * SessionStats aggregates observability metrics for one conversation.
  */
 export interface SessionStats {

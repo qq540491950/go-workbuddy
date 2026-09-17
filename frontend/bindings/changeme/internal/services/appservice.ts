@@ -82,6 +82,20 @@ export function ImportRemoteAgent(data: string): $CancellablePromise<config$0.Re
 }
 
 /**
+ * MemoryClear wipes all long-term memory entries for the local user.
+ */
+export function MemoryClear(): $CancellablePromise<void> {
+    return $Call.ByID(2018835092);
+}
+
+/**
+ * MemoryStats returns the number of long-term memory entries.
+ */
+export function MemoryStats(): $CancellablePromise<$models.MemoryInfo | null> {
+    return $Call.ByID(308347158);
+}
+
+/**
  * RecentLogs returns the last lines of the application log for in-app
  * diagnostics.
  */
