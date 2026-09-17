@@ -47,7 +47,7 @@ export function DeleteProvider(id: string): $CancellablePromise<void> {
 }
 
 /**
- * DeleteRemoteAgent removes a remote agent by id.
+ * DeleteRemoteAgent removes a remote agent and detaches it from teams.
  */
 export function DeleteRemoteAgent(id: string): $CancellablePromise<void> {
     return $Call.ByID(3402173829, id);

@@ -110,6 +110,9 @@ type TeamConfig struct {
 	LeadAgentID    string   `json:"leadAgentId"`    // empty => auto coordinator
 	AutoCoordinate bool     `json:"autoCoordinate"` // synthesize a coordinator instead of using a member as lead
 	MemberAgentIDs []string `json:"memberAgentIds"`
+	// RemoteMemberIDs reference RemoteAgents reachable over A2A; they act as
+	// sub-agents the coordinator can transfer to. The lead is always local.
+	RemoteMemberIDs []string `json:"remoteMemberIds,omitempty"`
 	ProviderID     string   `json:"providerId"` // used by the auto coordinator
 	Model          string   `json:"model"`
 	SystemPrompt   string   `json:"systemPrompt"`

@@ -15,12 +15,16 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import {
-  Config, type TeamConfig, type AgentConfig, type ModelProvider, errText } from "@/lib/api";
+  Config, type TeamConfig, type AgentConfig, type ModelProvider, type RemoteAgentConfig, errText } from "@/lib/api";
 
 /** TeamTopology renders a lead→members hierarchy for a team. */
-function TeamTopology({ team, agentName }: { team: TeamConfig; agentName: (id: string) => string }) {
+function TeamTopology({ team, agentName, remoteName }: { team: TeamConfig; agentName: (id: string) => string; remoteName: (id: string) => string }) {
   const isAuto = team.autoCoordinate;
-  const members = (team.memberAgentIds ?? []).filter((id) => isAuto || id !== team.leadAgentId);
+  const localMembers = (team.memberAgentIds ?? []).filter((id) => isAuto || id !== team.leadAgentId);
+  const members = [
+    ...localMembers.map((id) => ({ id, label: agentName(id), kind: "local" as const })),
+    ...(team.remoteMemberIds ?? []).map((id) => ({ id, label: remoteName(id), kind: "remote" as const })),
+  ];
   return (
     <div className="rounded-lg border bg-muted/20 p-3">
       <div className="flex flex-col items-center gap-2">
@@ -36,17 +40,17 @@ function TeamTopology({ team, agentName }: { team: TeamConfig; agentName: (id: s
           <>
             <div className="h-3 w-px bg-border" />
             <div className="flex flex-wrap items-start justify-center gap-x-4 gap-y-2">
-              {members.map((id) => {
-                const isLead = !isAuto && id === team.leadAgentId;
+              {members.map((m) => {
+                const isLead = !isAuto && m.id === team.leadAgentId;
                 return (
-                  <div key={id} className="flex flex-col items-center">
+                  <div key={m.id} className="flex flex-col items-center">
                     <div className="h-2 w-px bg-border" />
                     <div className="rounded-lg border bg-background px-2.5 py-1.5 text-center">
                       <div className="text-xs font-medium">
-                        {isLead && "👑 "}{agentName(id)}
+                        {isLead && "👑 "}{m.kind === "remote" && "🌐 "}{m.label}
                       </div>
                       <div className="text-[10px] text-muted-foreground">
-                        {isLead ? "负责人" : "成员"}
+                        {isLead ? "负责人" : m.kind === "remote" ? "远程成员" : "成员"}
                       </div>
                     </div>
                   </div>
@@ -68,6 +72,7 @@ function blankTeam(): TeamConfig {
     leadAgentId: "",
     autoCoordinate: true,
     memberAgentIds: [],
+    remoteMemberIds: [],
     providerId: "",
     model: "",
     systemPrompt: "",
@@ -79,6 +84,7 @@ export function TeamsPage() {
   const [teams, setTeams] = useState<TeamConfig[]>([]);
   const [agents, setAgents] = useState<AgentConfig[]>([]);
   const [providers, setProviders] = useState<ModelProvider[]>([]);
+  const [remotes, setRemotes] = useState<RemoteAgentConfig[]>([]);
   const [editing, setEditing] = useState<TeamConfig | null>(null);
 
   const reload = useCallback(() => {
@@ -86,6 +92,7 @@ export function TeamsPage() {
       setTeams(c.teams ?? []);
       setAgents(c.agents ?? []);
       setProviders(c.providers ?? []);
+      setRemotes(c.remoteAgents ?? []);
     });
   }, []);
   useEffect(reload, [reload]);
@@ -99,8 +106,8 @@ export function TeamsPage() {
       toast.error("请填写团队名称");
       return;
     }
-    if ((editing.memberAgentIds ?? []).length === 0) {
-      toast.error("请至少选择一名成员 Agent");
+    if ((editing.memberAgentIds ?? []).length === 0 && (editing.remoteMemberIds ?? []).length === 0) {
+      toast.error("请至少选择一名成员（本地或远程）");
       return;
     }
     try {
@@ -127,6 +134,17 @@ export function TeamsPage() {
       memberAgentIds: list.includes(id) ? list.filter((x) => x !== id) : [...list, id],
     });
   };
+
+  const toggleRemoteMember = (id: string) => {
+    if (!editing) return;
+    const list = editing.remoteMemberIds ?? [];
+    setEditing({
+      ...editing,
+      remoteMemberIds: list.includes(id) ? list.filter((x) => x !== id) : [...list, id],
+    });
+  };
+
+  const remoteName = (id: string) => remotes.find((r) => r.id === id)?.name ?? "?";
 
   return (
     <div className="h-full overflow-y-auto p-6">
@@ -181,7 +199,7 @@ export function TeamsPage() {
                 <p className="mt-2 line-clamp-2 text-sm text-muted-foreground">{t.description}</p>
               )}
               <div className="mt-3">
-                <TeamTopology team={t} agentName={agentName} />
+                <TeamTopology team={t} agentName={agentName} remoteName={remoteName} />
               </div>
             </CardContent>
           </Card>
@@ -221,6 +239,23 @@ export function TeamsPage() {
                   )}
                 </div>
               </div>
+              {remotes.length > 0 && (
+                <div className="grid gap-1.5">
+                  <Label>远程成员（A2A，可选）</Label>
+                  <div className="grid gap-2 rounded-lg border p-3">
+                    {remotes.map((r) => (
+                      <label key={r.id} className="flex items-center gap-2 text-sm">
+                        <Checkbox
+                          checked={(editing.remoteMemberIds ?? []).includes(r.id)}
+                          onCheckedChange={() => toggleRemoteMember(r.id)}
+                        />
+                        <span className="font-medium">🌐 {r.name}</span>
+                        <span className="truncate text-muted-foreground">{r.cardUrl}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              )}
               <div className="flex items-center justify-between rounded-lg border p-3">
                 <div>
                   <div className="text-sm font-medium">自动协调员模式</div>

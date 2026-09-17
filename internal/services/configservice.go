@@ -349,7 +349,7 @@ func (c *ConfigService) SaveRemoteAgent(r config.RemoteAgentConfig) error {
 	})
 }
 
-// DeleteRemoteAgent removes a remote agent by id.
+// DeleteRemoteAgent removes a remote agent and detaches it from teams.
 func (c *ConfigService) DeleteRemoteAgent(id string) error {
 	return c.S.Store.Update(func(cfg *config.Config) {
 		out := cfg.RemoteAgents[:0]
@@ -359,6 +359,15 @@ func (c *ConfigService) DeleteRemoteAgent(id string) error {
 			}
 		}
 		cfg.RemoteAgents = out
+		for i := range cfg.Teams {
+			ids := cfg.Teams[i].RemoteMemberIDs[:0]
+			for _, rid := range cfg.Teams[i].RemoteMemberIDs {
+				if rid != id {
+					ids = append(ids, rid)
+				}
+			}
+			cfg.Teams[i].RemoteMemberIDs = ids
+		}
 	})
 }
 

@@ -270,6 +270,12 @@ export interface TeamConfig {
     "memberAgentIds": string[] | null;
 
     /**
+     * RemoteMemberIDs reference RemoteAgents reachable over A2A; they act as
+     * sub-agents the coordinator can transfer to. The lead is always local.
+     */
+    "remoteMemberIds"?: string[] | null;
+
+    /**
      * used by the auto coordinator
      */
     "providerId": string;

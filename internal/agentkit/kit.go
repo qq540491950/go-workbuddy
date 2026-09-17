@@ -190,6 +190,21 @@ func (k *Kit) BuildTeam(tc config.TeamConfig) (agent.Agent, string, error) {
 		memberNames = append(memberNames, sanitizeAgentName(ac.Name))
 	}
 
+	// Remote A2A members join as sub-agents the coordinator can transfer to.
+	for _, id := range tc.RemoteMemberIDs {
+		for _, r := range cfg.RemoteAgents {
+			if r.ID != id {
+				continue
+			}
+			ra, err := BuildRemoteAgent(r)
+			if err != nil {
+				return nil, "", err
+			}
+			members = append(members, ra)
+			memberNames = append(memberNames, sanitizeAgentName(r.Name))
+		}
+	}
+
 	rootName := sanitizeAgentName(tc.Name)
 
 	// Explicit lead: use that agent as root; the other members become peers.
@@ -303,6 +318,11 @@ func (k *Kit) skillToolset(ids []string, cfg config.Config) tool.Toolset {
 	}
 	return ts
 }
+
+// SanitizeAgentName makes a safe ADK agent name (identifier-like). Exported
+// so callers (tests, tooling) can predict the sub-agent name a team's
+// coordinator will transfer to.
+func SanitizeAgentName(name string) string { return sanitizeAgentName(name) }
 
 // sanitizeAgentName makes a safe ADK agent name (identifier-like).
 func sanitizeAgentName(name string) string {
