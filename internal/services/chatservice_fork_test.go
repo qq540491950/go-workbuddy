@@ -261,7 +261,7 @@ func TestExportSessionHTML(t *testing.T) {
 		t.Fatal(err)
 	}
 	doc := string(data)
-	for _, want := range []string{"<!DOCTYPE html>", "<h1>", "<h2", "HTML 导出回答", "</html>"} {
+	for _, want := range []string{"<!DOCTYPE html>", "<h1>", "<h2", "HTML 导出回答", "用量统计", "</html>"} {
 		if !strings.Contains(doc, want) {
 			t.Fatalf("html doc missing %q", want)
 		}

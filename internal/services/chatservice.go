@@ -661,6 +661,19 @@ func (c *ChatService) ExportSessionHTML(sessionID string) (string, error) {
 		}
 	}
 
+	// Append usage summary + per-day cost table when stats are available.
+	if st, err := c.SessionStats(sessionID); err == nil {
+		fmt.Fprintf(&body, "\n## 用量统计\n\n")
+		fmt.Fprintf(&body, "| 指标 | 数值 |\n| --- | --- |\n")
+		fmt.Fprintf(&body, "| 用户消息 | %d |\n", st.Messages)
+		fmt.Fprintf(&body, "| 助手轮次 | %d |\n", st.AssistantTurns)
+		fmt.Fprintf(&body, "| 工具调用 | %d |\n", st.ToolCalls)
+		fmt.Fprintf(&body, "| 总 tokens | %d |\n", st.TokensTotal)
+		for _, d := range st.Daily {
+			fmt.Fprintf(&body, "| %s（成本估算） | %d tokens / ¥%.4f |\n", d.Date, d.TotalTokens, d.EstimatedCost)
+		}
+	}
+
 	html := markdown.ToHTML([]byte(body.String()), nil, htmlrenderer.NewRenderer(htmlrenderer.RendererOptions{Flags: htmlrenderer.CommonFlags}))
 	page := fmt.Sprintf(`<!DOCTYPE html>
 <html lang="zh-CN">
