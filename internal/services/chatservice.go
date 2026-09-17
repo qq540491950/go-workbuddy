@@ -211,6 +211,40 @@ func (c *ChatService) ListSessions() []config.ChatSession {
 	return sorted
 }
 
+// SearchSessions filters sessions by title OR by message content (a LIKE
+// probe over the stored event payloads). Empty query = all sessions
+// (pinned first, then most recently active).
+func (c *ChatService) SearchSessions(query string) []config.ChatSession {
+	sessions := c.ListSessions()
+	q := strings.TrimSpace(query)
+	if q == "" {
+		return sessions
+	}
+	matched := map[string]bool{}
+	for i := range sessions {
+		if strings.Contains(sessions[i].Title, q) {
+			matched[sessions[i].ID] = true
+		}
+	}
+	if c.db != nil {
+		var ids []string
+		pattern := "%" + q + "%"
+		if err := c.db.Raw("SELECT DISTINCT session_id FROM events WHERE content LIKE ? AND app_name = ? AND user_id = ?",
+			pattern, c.appName, c.userID).Pluck("session_id", &ids); err == nil {
+			for _, id := range ids {
+				matched[id] = true
+			}
+		}
+	}
+	out := make([]config.ChatSession, 0, len(matched))
+	for _, s := range sessions {
+		if matched[s.ID] {
+			out = append(out, s)
+		}
+	}
+	return out
+}
+
 // PinSession toggles the pinned flag of a session.
 func (c *ChatService) PinSession(id string, pinned bool) error {
 	return c.S.Store.Update(func(cfg *config.Config) {

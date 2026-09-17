@@ -132,6 +132,15 @@ export function RenameSession(id: string, title: string): $CancellablePromise<vo
 }
 
 /**
+ * SearchSessions filters sessions by title OR by message content (a LIKE
+ * probe over the stored event payloads). Empty query = all sessions
+ * (pinned first, then most recently active).
+ */
+export function SearchSessions(query: string): $CancellablePromise<config$0.ChatSession[] | null> {
+    return $Call.ByID(4198233812, query);
+}
+
+/**
  * Send runs one user turn against the session's target agent/team. It blocks
  * until the run completes and streams progress via chat:stream events.
  */

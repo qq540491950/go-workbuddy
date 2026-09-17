@@ -493,11 +493,32 @@ export function ChatPage() {
     reloadSessions();
   };
 
+    const [contentMatches, setContentMatches] = useState<Set<string> | null>(null);
+
+  // Debounced content search: with a query present, the sidebar lists sessions
+  // whose title OR stored history matches (backend LIKE over event payloads).
+  useEffect(() => {
+    const q = search.trim();
+    if (!q) {
+      setContentMatches(null);
+      return;
+    }
+    const t = setTimeout(() => {
+      Chat.SearchSessions(q)
+        .then((ss) => setContentMatches(new Set((ss ?? []).map((x) => x.id))))
+        .catch(() => setContentMatches(null));
+    }, 250);
+    return () => clearTimeout(t);
+  }, [search]);
+
   const filteredSessions = useMemo(() => {
     const q = search.trim().toLowerCase();
     if (!q) return sessions;
-    return sessions.filter((s) => s.title.toLowerCase().includes(q));
-  }, [sessions, search]);
+    return sessions.filter((s) => {
+      if (s.title.toLowerCase().includes(q)) return true;
+      return contentMatches ? contentMatches.has(s.id) : false;
+    });
+  }, [sessions, search, contentMatches]);
 
   // Provider + model of the active target (agent → its model; team →
   // coordinator when auto, lead agent otherwise) for cost estimation and

@@ -310,3 +310,37 @@ func TestCompactionIntervalSummarizes(t *testing.T) {
 		t.Fatalf("without compaction expected exactly one extra model call: %d -> %d", before, modelCalls.Load())
 	}
 }
+
+// TestSearchSessionsMatchesContent: content LIKE probe finds sessions whose
+// history contains the query even when the title does not.
+func TestSearchSessionsMatchesContent(t *testing.T) {
+	turn := 0
+	chat, _, _ := newGuardrailTestChat(t, 0, 0, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		turn++
+		if turn == 1 {
+			_, _ = w.Write([]byte(sseText("讨论量子纠缠的机制") + sseDone))
+			return
+		}
+		_, _ = w.Write([]byte(sseText("无关回答") + sseDone))
+	})
+
+	sess, err := chat.NewSession("agent", "a1", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := chat.Send(sess.ID, "聊聊量子纠缠", nil); err != nil {
+		t.Fatal(err)
+	}
+
+	res := chat.SearchSessions("量子纠缠")
+	if len(res) != 1 || res[0].ID != sess.ID {
+		t.Fatalf("content search failed: %+v", res)
+	}
+	if empty := chat.SearchSessions("  "); len(empty) != 1 {
+		t.Fatalf("empty query should list all: %+v", empty)
+	}
+	if none := chat.SearchSessions("不存在的词xyz"); len(none) != 0 {
+		t.Fatalf("non-matching query should return none: %+v", none)
+	}
+}
