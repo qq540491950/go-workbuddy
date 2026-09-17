@@ -223,6 +223,8 @@ export function AgentsPage() {
                 const imported = await App.ImportAgent(await f.text());
                 toast.success(`已导入 Agent「${imported.name}」`);
                 reload();
+                // Open the editor so the user picks a provider/model right away.
+                setEditing({ ...imported, skillIds: imported.skillIds ?? [], mcpServerIds: imported.mcpServerIds ?? [], builtinTools: imported.builtinTools ?? [] });
               } catch (err) {
                 toast.error(`导入失败: ${errText(err)}`);
               }
