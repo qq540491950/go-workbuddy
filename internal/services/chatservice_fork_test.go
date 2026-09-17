@@ -382,3 +382,63 @@ func TestExportSessionMarksForkLine(t *testing.T) {
 		t.Fatalf("fork origin missing in export:\n%s", data)
 	}
 }
+
+// TestSessionLifecycleAudit: create/fork/delete/rename all land in the JSONL
+// audit trail when enabled.
+func TestSessionLifecycleAudit(t *testing.T) {
+	auditPath := filepath.Join(t.TempDir(), "audit.jsonl")
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte(sseDone))
+	}))
+	defer srv.Close()
+
+	dir := t.TempDir()
+	store, err := config.Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Update(func(cfg *config.Config) {
+		cfg.Settings.WorkspaceDir = dir
+		cfg.Settings.ToolsAudit = true
+		cfg.Providers = append(cfg.Providers, config.ModelProvider{
+			ID: "p1", Name: "P", Protocol: config.ProtocolOpenAI,
+			BaseURL: srv.URL, Models: []config.ModelInfo{{ID: "m"}}, IsDefault: true,
+		})
+		cfg.Agents = append(cfg.Agents, config.AgentConfig{ID: "a1", Name: "A", ProviderID: "p1", Model: "m"})
+	}); err != nil {
+		t.Fatal(err)
+	}
+	db, sessions, err := newTestSessionService(filepath.Join(dir, "sessions.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	svc := &Services{Store: store, Kit: agentkit.NewKit(store, mcpmgr.New()), MCP: mcpmgr.New()}
+	chat := NewChatService(svc, sessions, db)
+	chat.SetToolAuditPath(auditPath)
+
+	sess, err := chat.NewSession("agent", "a1", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := chat.RenameSession(sess.ID, "改名"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := chat.ForkSession(sess.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := chat.DeleteSession(sess.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	data, err := os.ReadFile(auditPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	doc := string(data)
+	for _, phase := range []string{"session_created", "session_renamed", "session_forked", "session_deleted"} {
+		if !strings.Contains(doc, phase) {
+			t.Fatalf("audit missing %s:\n%s", phase, doc)
+		}
+	}
+}

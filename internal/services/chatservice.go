@@ -194,6 +194,7 @@ func (c *ChatService) NewSession(targetType, targetID, title string) (config.Cha
 	err := c.S.Store.Update(func(cfg *config.Config) {
 		cfg.Sessions = append([]config.ChatSession{cs}, cfg.Sessions...)
 	})
+	c.audit(cs.ID, "session_created", "system", targetType, mustJSON(map[string]string{"targetId": targetID, "title": cs.Title}), "")
 	return cs, err
 }
 
@@ -258,6 +259,7 @@ func (c *ChatService) PinSession(id string, pinned bool) error {
 
 // RenameSession updates a session title.
 func (c *ChatService) RenameSession(id, title string) error {
+	c.audit(id, "session_renamed", "system", "session", mustJSON(map[string]string{"title": title}), "")
 	return c.S.Store.Update(func(cfg *config.Config) {
 		for i := range cfg.Sessions {
 			if cfg.Sessions[i].ID == id {
@@ -269,6 +271,7 @@ func (c *ChatService) RenameSession(id, title string) error {
 
 // DeleteSession removes a chat and its stored events.
 func (c *ChatService) DeleteSession(id string) error {
+	c.audit(id, "session_deleted", "system", "session", mustJSON(map[string]string{"sessionId": id}), "")
 	_ = c.sessions.Delete(context.Background(), &session.DeleteRequest{
 		AppName: c.appName, UserID: c.userID, SessionID: id,
 	})
@@ -1169,6 +1172,7 @@ func (c *ChatService) ForkSession(sessionID string) (config.ChatSession, error) 
 	err := c.S.Store.Update(func(cfg *config.Config) {
 		cfg.Sessions = append([]config.ChatSession{branch}, cfg.Sessions...)
 	})
+	c.audit(branch.ID, "session_forked", "system", "session", mustJSON(map[string]string{"forkedFrom": sessionID}), "")
 	return branch, err
 }
 
