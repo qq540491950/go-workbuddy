@@ -157,6 +157,14 @@ export function SaveTeam(t: config$0.TeamConfig): $CancellablePromise<void> {
 }
 
 /**
+ * TestKnowledgeSearch runs a one-off knowledge search with current settings
+ * so the user can verify semantic retrieval quality from the settings page.
+ */
+export function TestKnowledgeSearch(query: string): $CancellablePromise<string> {
+    return $Call.ByID(1378398879, query);
+}
+
+/**
  * TestProvider performs a minimal round-trip against the provider with the
  * chosen model to verify reachability and credentials.
  */

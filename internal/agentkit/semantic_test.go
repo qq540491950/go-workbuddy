@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"changeme/internal/config"
 )
 
 // fakeEmbeddings serves the OpenAI-compatible /embeddings contract with
@@ -338,5 +340,42 @@ func TestKnowledgeIndexReset(t *testing.T) {
 	}
 	if rowCount(t, idx) == 0 {
 		t.Fatal("index did not rebuild after reset")
+	}
+}
+
+// TestKitTestKnowledgeSearch: the settings-page debugger path resolves
+// workspace + embedding settings through the Kit and returns search output.
+func TestKitTestKnowledgeSearch(t *testing.T) {
+	srv := httptest.NewServer(fakeEmbeddings())
+	defer srv.Close()
+	ws := seedKnowledge(t, map[string]string{"a.md": "alpha 内容 here"})
+	store, err := config.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Update(func(cfg *config.Config) {
+		cfg.Settings.WorkspaceDir = ws
+		cfg.Settings.EmbeddingProviderID = "p"
+		cfg.Settings.EmbeddingModel = "fake-embed"
+		cfg.Providers = append(cfg.Providers, config.ModelProvider{ID: "p", Name: "P", Protocol: config.ProtocolOpenAI, BaseURL: srv.URL})
+	}); err != nil {
+		t.Fatal(err)
+	}
+	idx, err := OpenKnowledgeIndex(filepath.Join(t.TempDir(), "k.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	kit := NewKit(store, nil)
+	kit.SetKnowledgeIndex(idx)
+
+	res, err := kit.TestKnowledgeSearch("alpha")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(res, "语义相关度") {
+		t.Fatalf("expected semantic output: %s", res)
+	}
+	if _, err := kit.TestKnowledgeSearch("   "); err == nil {
+		t.Fatal("empty query should error")
 	}
 }

@@ -68,6 +68,20 @@ func (k *Kit) SetKnowledgeIndex(idx *KnowledgeIndex) { k.knowledge = idx }
 // IndexStats exposes the knowledge index state for observability.
 func (k *Kit) IndexStats() KnowledgeIndexStats { return k.knowledge.Stats() }
 
+// TestKnowledgeSearch runs a one-off hybrid knowledge search with current
+// settings — a tuning aid for the embedding configuration.
+func (k *Kit) TestKnowledgeSearch(query string) (string, error) {
+	if strings.TrimSpace(query) == "" {
+		return "", fmt.Errorf("检索词不能为空")
+	}
+	cfg := k.store.Get()
+	opts := k.searchOptions(cfg)
+	if opts.Workspace == "" {
+		return "", fmt.Errorf("请先在设置中配置工作区目录")
+	}
+	return searchHybrid(opts, query)
+}
+
 // ResetKnowledgeIndex wipes the vector index; the next semantic search
 // rebuilds it from the workspace files.
 func (k *Kit) ResetKnowledgeIndex() error { return k.knowledge.Reset() }

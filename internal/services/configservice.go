@@ -426,6 +426,12 @@ func (c *ConfigService) SaveSettings(s config.Settings) error {
 // everything from the workspace files.
 func (c *ConfigService) ResetKnowledgeIndex() error { return c.S.Kit.ResetKnowledgeIndex() }
 
+// TestKnowledgeSearch runs a one-off knowledge search with current settings
+// so the user can verify semantic retrieval quality from the settings page.
+func (c *ConfigService) TestKnowledgeSearch(query string) (string, error) {
+	return c.S.Kit.TestKnowledgeSearch(query)
+}
+
 // KnowledgeIndexStats reports the semantic knowledge index state for the UI.
 func (c *ConfigService) KnowledgeIndexStats() agentkit.KnowledgeIndexStats {
 	return c.S.Kit.IndexStats()

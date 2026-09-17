@@ -28,6 +28,8 @@ export function SettingsPage() {
   const [a2aAgent, setA2AAgent] = useState("");
   const [a2aPort, setA2APort] = useState("8080");
   const [indexStats, setIndexStats] = useState<KnowledgeIndexStats | null>(null);
+  const [kbTestQuery, setKbTestQuery] = useState("");
+  const [kbTestResult, setKbTestResult] = useState("");
 
   const reload = useCallback(() => {
     Config.GetConfig()
@@ -228,6 +230,27 @@ export function SettingsPage() {
                 onChange={(e) => setSettings({ ...settings, embeddingModel: e.target.value })}
                 placeholder="text-embedding-3-small / BAAI/bge-large-zh-v1.5"
               />
+              <div className="grid gap-1.5">
+                <div className="flex items-center gap-2">
+                  <Input
+                    value={kbTestQuery}
+                    onChange={(e) => setKbTestQuery(e.target.value)}
+                    placeholder="试一条检索词，验证检索效果…"
+                  />
+                  <Button variant="outline" className="shrink-0" onClick={async () => {
+                    try {
+                      setKbTestResult(await Config.TestKnowledgeSearch(kbTestQuery));
+                    } catch (e) {
+                      toast.error(`检索失败: ${errText(e)}`);
+                    }
+                  }}>
+                    测试检索
+                  </Button>
+                </div>
+                {kbTestResult && (
+                  <pre className="max-h-40 overflow-auto rounded bg-muted/60 p-2 text-[11px] leading-relaxed text-muted-foreground">{kbTestResult}</pre>
+                )}
+              </div>
               <div className="flex items-center justify-between gap-2">
                 <p className="text-xs text-muted-foreground">
                   配置后，知识库检索（search_knowledge）升级为「向量语义 + 关键词」混合检索；向量索引自动增量构建于本地 SQLite。留空则保持关键词检索。
