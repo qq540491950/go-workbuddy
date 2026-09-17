@@ -242,10 +242,60 @@ export function MCPPage() {
                   </div>
                 </>
               ) : (
-                <div className="grid gap-1.5">
-                  <Label>服务 URL</Label>
-                  <Input value={editing.url} onChange={(e) => setEditing({ ...editing, url: e.target.value })} placeholder="https://example.com/mcp" />
-                </div>
+                <>
+                  <div className="grid gap-1.5">
+                    <Label>服务 URL</Label>
+                    <Input value={editing.url} onChange={(e) => setEditing({ ...editing, url: e.target.value })} placeholder="https://example.com/mcp" />
+                  </div>
+                  <div className="grid gap-1.5">
+                    <Label>认证方式</Label>
+                    <Select
+                      value={editing.authType || "none"}
+                      onValueChange={(v) => setEditing({ ...editing, authType: v === "none" ? "" : v })}
+                    >
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">无</SelectItem>
+                        <SelectItem value="bearer">Bearer Token</SelectItem>
+                        <SelectItem value="api-key">API Key（自定义头）</SelectItem>
+                        <SelectItem value="oauth2">OAuth 2.1（浏览器授权 + PKCE）</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  {(editing.authType === "bearer" || editing.authType === "api-key") && (
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="grid gap-1.5">
+                        <Label>{editing.authType === "bearer" ? "Token" : "Key 值"}</Label>
+                        <Input value={editing.authToken} onChange={(e) => setEditing({ ...editing, authToken: e.target.value })} />
+                      </div>
+                      {editing.authType === "api-key" && (
+                        <div className="grid gap-1.5">
+                          <Label>请求头名称</Label>
+                          <Input value={editing.authHeader} onChange={(e) => setEditing({ ...editing, authHeader: e.target.value })} placeholder="X-API-Key" />
+                        </div>
+                      )}
+                    </div>
+                  )}
+                  {editing.authType === "oauth2" && (
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="grid gap-1.5">
+                        <Label>Client ID（预注册）</Label>
+                        <Input value={editing.oauthClientId} onChange={(e) => setEditing({ ...editing, oauthClientId: e.target.value })} placeholder="workbuddy-desktop" />
+                      </div>
+                      <div className="grid gap-1.5">
+                        <Label>回调端口（0=自动）</Label>
+                        <Input
+                          value={String(editing.oauthRedirectPort || "")}
+                          onChange={(e) => setEditing({ ...editing, oauthRedirectPort: Number(e.target.value) || 0 })}
+                          placeholder="0"
+                        />
+                      </div>
+                      <p className="col-span-2 text-xs text-muted-foreground">
+                        连接时自动完成 OAuth 2.1 授权码 + PKCE 流程：打开系统浏览器授权，本地回环地址接收回调，令牌自动刷新。
+                      </p>
+                    </div>
+                  )}
+                </>
               )}
             </div>
           )}

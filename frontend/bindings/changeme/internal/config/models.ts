@@ -108,6 +108,29 @@ export interface MCPServerConfig {
      */
     "headers"?: { [_ in string]?: string } | null;
     "autoStart": boolean;
+
+    /**
+     * Streamable-HTTP server authentication:
+     * AuthType "" | "bearer" | "api-key" | "oauth2" (authorization code + PKCE
+     * per the MCP authorization spec, handled by the official go-sdk handler).
+     */
+    "authType"?: string;
+
+    /**
+     * bearer token / api-key value
+     */
+    "authToken"?: string;
+
+    /**
+     * api-key header name (default X-API-Key)
+     */
+    "authHeader"?: string;
+    "oauthClientId"?: string;
+
+    /**
+     * 0 => ephemeral port
+     */
+    "oauthRedirectPort"?: number;
 }
 
 /**

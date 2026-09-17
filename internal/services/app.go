@@ -58,6 +58,9 @@ func (a *AppService) ExportConfig(includeSecrets bool) (string, error) {
 		for i := range cfg.Providers {
 			cfg.Providers[i].APIKey = ""
 		}
+		for i := range cfg.MCPServers {
+			cfg.MCPServers[i].AuthToken = ""
+		}
 	}
 	data, err := json.MarshalIndent(configBackup{
 		Version:    backupSchemaVersion,

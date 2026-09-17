@@ -117,6 +117,19 @@ go vet ./internal/... .
 
 已实施：Markdown + 代码块复制、消息级复制、深浅主题、首次运行引导、会话搜索、快捷键、工具调用折叠面板、流式打字指示器。
 
+### 第十八轮迭代：MCP 远程服务器认证（Bearer / API Key / OAuth 2.1，已实施）
+
+路线图「MCP OAuth」落地，依据 MCP 官方授权规范与 go-sdk v1.7 官方 `auth.AuthorizationCodeHandler`（授权码 + PKCE）：
+
+- **三种认证方式**（Streamable HTTP 服务器，按服务器配置选择）：
+  - **Bearer Token**：静态令牌，自动加 `Authorization: Bearer …`
+  - **API Key**：自定义请求头（默认 `X-API-Key`）
+  - **OAuth 2.1**：预注册 Client ID；连接时按 MCP 规范完成发现（WWW-Authenticate → 受保护资源元数据 → 授权服务器元数据）→ 打开系统浏览器完成授权 → 本地回环地址接收回调（授权码 + PKCE S256）→ 令牌交换，401/403 自动触发授权并重试
+- **顺带修复**：配置里的自定义 `headers` 字段此前从未被应用到传输层，现已生效
+- **安全**：脱敏导出同时剥离 MCP 认证令牌；回调仅绑定本机回环地址；授权等待 5 分钟超时
+
+测试：进程内假授权服务器 + 受保护真实 go-sdk MCP 服务器的全流程 e2e ×4（Bearer / API Key / OAuth 2.1 完整流 / 无凭据被拒）+ 全量 `-race` + 打包构建零错误。
+
 ### 第十七轮迭代：浏览器视觉回归基建（已实施）
 
 为本次会话累计的前端改动建立**可复用的浏览器视觉回归**（`frontend/stub/`，`npm run stub`）：

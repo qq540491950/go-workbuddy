@@ -5,6 +5,7 @@ go 1.26.6
 require (
 	github.com/a2aproject/a2a-go/v2 v2.5.0
 	github.com/glebarez/sqlite v1.11.0
+	github.com/google/jsonschema-go v0.4.3
 	github.com/modelcontextprotocol/go-sdk v1.7.0
 	github.com/wailsapp/wails/v3 v3.0.0-beta.20
 	google.golang.org/adk/v2 v2.4.0
@@ -28,7 +29,6 @@ require (
 	github.com/go-ole/go-ole v1.3.0 // indirect
 	github.com/godbus/dbus/v5 v5.2.2 // indirect
 	github.com/google/go-cmp v0.7.0 // indirect
-	github.com/google/jsonschema-go v0.4.3 // indirect
 	github.com/google/s2a-go v0.1.9 // indirect
 	github.com/google/safehtml v0.1.0 // indirect
 	github.com/google/uuid v1.6.0 // indirect

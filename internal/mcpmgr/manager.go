@@ -56,6 +56,17 @@ func buildTransport(cfg config.MCPServerConfig) (mcp.Transport, error) {
 		if cfg.URL == "" {
 			return nil, fmt.Errorf("streamable-http transport requires a URL")
 		}
+		switch cfg.AuthType {
+		case "oauth2":
+			return newOAuthTransport(cfg)
+		case "bearer", "api-key":
+			return &mcp.StreamableClientTransport{Endpoint: cfg.URL, HTTPClient: authHTTPClient(cfg)}, nil
+		}
+		if len(cfg.Headers) > 0 {
+			// Custom headers were configurable but historically unused; apply
+			// them now via the transport's HTTP client.
+			return &mcp.StreamableClientTransport{Endpoint: cfg.URL, HTTPClient: headersOnlyClient(cfg)}, nil
+		}
 		return &mcp.StreamableClientTransport{Endpoint: cfg.URL}, nil
 	default: // stdio
 		if cfg.Command == "" {

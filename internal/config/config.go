@@ -147,6 +147,14 @@ type MCPServerConfig struct {
 	URL       string            `json:"url"`              // streamable-http
 	Headers   map[string]string `json:"headers,omitempty"` // streamable-http
 	AutoStart bool              `json:"autoStart"`
+	// Streamable-HTTP server authentication:
+	// AuthType "" | "bearer" | "api-key" | "oauth2" (authorization code + PKCE
+	// per the MCP authorization spec, handled by the official go-sdk handler).
+	AuthType          string   `json:"authType,omitempty"`
+	AuthToken         string   `json:"authToken,omitempty"`   // bearer token / api-key value
+	AuthHeader        string   `json:"authHeader,omitempty"`  // api-key header name (default X-API-Key)
+	OAuthClientID     string `json:"oauthClientId,omitempty"`
+	OAuthRedirectPort int    `json:"oauthRedirectPort,omitempty"` // 0 => ephemeral port
 }
 
 // Settings holds global application settings.
