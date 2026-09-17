@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { Plus, Trash2, Sparkles } from "lucide-react";
+import { Plus, Trash2, Sparkles, FolderDown } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -55,6 +55,18 @@ export function SkillsPage() {
             可复用的技能指令包（SKILL.md 规范），可附加到任意 Agent
           </p>
         </div>
+        <Button variant="outline" onClick={async () => {
+          try {
+            const n = await Config.ImportSkillsFromWorkspace();
+            if (n > 0) toast.success(`已导入 ${n} 个 Skill`);
+            else toast.info("没有发现新的 Skill");
+            reload();
+          } catch (e) {
+            toast.error(`导入失败: ${errText(e)}`);
+          }
+        }}>
+          <FolderDown className="mr-1 h-4 w-4" /> 从工作区导入
+        </Button>
         <Button onClick={() => setEditing(blankSkill())}>
           <Plus className="mr-1 h-4 w-4" /> 新增 Skill
         </Button>

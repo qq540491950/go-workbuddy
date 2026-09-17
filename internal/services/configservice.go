@@ -6,6 +6,9 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
 	"time"
 
 	"changeme/internal/memory"
@@ -244,6 +247,97 @@ func (c *ConfigService) SaveSkill(s config.SkillConfig) error {
 		}
 	})
 	return err
+}
+
+// ImportSkillsFromWorkspace scans <workspace>/skills/*/SKILL.md (the
+// agentskills.io layout) and imports any skills whose normalized names are
+// not already present. Returns the number of imported skills.
+func (c *ConfigService) ImportSkillsFromWorkspace() (int, error) {
+	workspace := c.S.Store.Get().Settings.WorkspaceDir
+	if workspace == "" {
+		return 0, fmt.Errorf("请先在设置中配置工作区目录")
+	}
+	root := filepath.Join(workspace, "skills")
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return 0, fmt.Errorf("工作区中没有 skills/ 目录")
+		}
+		return 0, err
+	}
+
+	imported := 0
+	for _, e := range entries {
+		if !e.IsDir() {
+			continue // agentskills.io layout: skills/<name>/SKILL.md
+		}
+		data, err := os.ReadFile(filepath.Join(root, e.Name(), "SKILL.md"))
+		if err != nil {
+			continue
+		}
+		name, desc, body := parseSKILLMarkdown(string(data))
+		if name == "" {
+			continue
+		}
+		id, added := c.addSkillIfNew(name, desc, body)
+		if added {
+			imported++
+			_ = id
+		}
+	}
+	return imported, nil
+}
+
+// addSkillIfNew inserts a skill unless an identical normalized name exists.
+func (c *ConfigService) addSkillIfNew(name, desc, body string) (string, bool) {
+	var id string
+	added := false
+	_ = c.S.Store.Update(func(cfg *config.Config) {
+		key := strings.ToLower(strings.Join(strings.Fields(name), "-"))
+		for _, sk := range cfg.Skills {
+			if strings.ToLower(strings.Join(strings.Fields(sk.Name), "-")) == key {
+				return
+			}
+		}
+		s := config.SkillConfig{ID: newID("skill_"), Name: name, Description: desc, Content: body, CreatedAt: nowUTC()}
+		cfg.Skills = append(cfg.Skills, s)
+		id, added = s.ID, true
+	})
+	return id, added
+}
+
+// parseSKILLMarkdown extracts name/description from YAML frontmatter and
+// returns the markdown body. Tolerates missing frontmatter (name falls back
+// to empty -> caller skips).
+func parseSKILLMarkdown(content string) (name, desc, body string) {
+	content = strings.TrimPrefix(content, "\uFEFF")
+	if strings.HasPrefix(content, "---") {
+		if end := strings.Index(content[3:], "\n---"); end >= 0 {
+			front := content[3 : 3+end]
+			body = strings.TrimSpace(content[3+end+4:])
+			for _, line := range strings.Split(front, "\n") {
+				k, v, ok := strings.Cut(line, ":")
+				if !ok {
+					continue
+				}
+				v = strings.Trim(strings.TrimSpace(v), `"'`)
+				switch strings.TrimSpace(strings.ToLower(k)) {
+				case "name":
+					name = v
+				case "description":
+					desc = v
+				}
+			}
+			return name, desc, body
+		}
+	}
+	// No frontmatter: use the first heading or the filename-derived first line.
+	for _, ln := range strings.Split(content, "\n") {
+		if strings.HasPrefix(ln, "# ") {
+			return strings.TrimSpace(ln[2:]), "", content
+		}
+	}
+	return "", "", content
 }
 
 // DeleteSkill removes a skill by id.

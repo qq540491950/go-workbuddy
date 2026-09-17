@@ -75,6 +75,15 @@ export function GetConfig(): $CancellablePromise<config$0.Config> {
 }
 
 /**
+ * ImportSkillsFromWorkspace scans <workspace>/skills/* /SKILL.md (the
+ * agentskills.io layout) and imports any skills whose normalized names are
+ * not already present. Returns the number of imported skills.
+ */
+export function ImportSkillsFromWorkspace(): $CancellablePromise<number> {
+    return $Call.ByID(1372114239);
+}
+
+/**
  * ListProviderModels fetches the model IDs offered by the provider's list
  * endpoint, so the user can pick instead of typing model ids by hand.
  */
