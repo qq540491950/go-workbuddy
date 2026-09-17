@@ -57,6 +57,15 @@ export function ExportSession(sessionID: string): $CancellablePromise<string> {
 }
 
 /**
+ * ForkSession duplicates a session's full ADK event history into a new chat
+ * (branching): the user can regenerate/edit/confirm differently in the fork
+ * without touching the original timeline.
+ */
+export function ForkSession(sessionID: string): $CancellablePromise<config$0.ChatSession> {
+    return $Call.ByID(3983579855, sessionID);
+}
+
+/**
  * GetSessionMessages renders the stored ADK events for a session.
  */
 export function GetSessionMessages(sessionID: string): $CancellablePromise<$models.ChatMessage[] | null> {

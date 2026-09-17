@@ -837,6 +837,65 @@ func (c *ChatService) runTurn(target *config.ChatSession, guardOn bool, msg *gen
 	return nil
 }
 
+// ForkSession duplicates a session's full ADK event history into a new chat
+// (branching): the user can regenerate/edit/confirm differently in the fork
+// without touching the original timeline.
+func (c *ChatService) ForkSession(sessionID string) (config.ChatSession, error) {
+	if c.db == nil {
+		return config.ChatSession{}, fmt.Errorf("会话数据库不可用")
+	}
+	cfg := c.S.Store.Get()
+	src := c.resolveSessionTarget(cfg, sessionID)
+	if src == nil {
+		return config.ChatSession{}, fmt.Errorf("session %q not found", sessionID)
+	}
+	id := newID("sess_")
+	if _, err := c.sessions.Create(context.Background(), &session.CreateRequest{
+		AppName: c.appName, UserID: c.userID, SessionID: id,
+	}); err != nil {
+		return config.ChatSession{}, err
+	}
+
+	// Copy every stored event row to the new session. The events table key
+	// includes session_id, so ids may repeat across sessions. The column list
+	// comes from the schema itself to survive ADK schema updates.
+	var cols []string
+	if err := c.db.Raw("SELECT name FROM pragma_table_info('events')").Pluck("name", &cols).Error; err != nil {
+		return config.ChatSession{}, fmt.Errorf("读取事件表结构失败: %w", err)
+	}
+	if len(cols) == 0 {
+		return config.ChatSession{}, fmt.Errorf("事件表不存在")
+	}
+	selects := make([]string, len(cols))
+	for i, col := range cols {
+		if col == "session_id" {
+			selects[i] = "? AS session_id"
+		} else {
+			selects[i] = col
+		}
+	}
+	if err := c.db.Exec(
+		fmt.Sprintf("INSERT INTO events (%s) SELECT %s FROM events WHERE app_name = ? AND user_id = ? AND session_id = ?",
+			strings.Join(cols, ","), strings.Join(selects, ",")),
+		id, c.appName, c.userID, sessionID,
+	).Error; err != nil {
+		return config.ChatSession{}, fmt.Errorf("复制会话事件失败: %w", err)
+	}
+
+	branch := config.ChatSession{
+		ID:         id,
+		Title:      strings.TrimSpace(src.Title + "（分支）"),
+		TargetType: src.TargetType,
+		TargetID:   src.TargetID,
+		CreatedAt:  nowUTC(),
+		UpdatedAt:  nowUTC(),
+	}
+	err := c.S.Store.Update(func(cfg *config.Config) {
+		cfg.Sessions = append([]config.ChatSession{branch}, cfg.Sessions...)
+	})
+	return branch, err
+}
+
 // RememberSession ingests the whole conversation into long-term memory so
 // other sessions (with the memory tool) can recall it later.
 func (c *ChatService) RememberSession(sessionID string) (int, error) {

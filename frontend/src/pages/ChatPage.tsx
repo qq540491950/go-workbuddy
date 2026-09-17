@@ -3,7 +3,7 @@ import { Events } from "@wailsio/runtime";
 import {
   Plus, Send, Square, Trash2, Pencil, MessageSquare, Bot, Users, Loader2,
   Copy, Check, Search, ArrowRight, RefreshCw, Download, Mic, MicOff, Volume2, Square as SquareStop,
-  Paperclip, X, BarChart3, Brain, ShieldAlert, Network,
+  Paperclip, X, BarChart3, Brain, ShieldAlert, Network, GitFork,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -427,6 +427,18 @@ export function ChatPage() {
     }
   };
 
+  const forkSession = async (s: ChatSession) => {
+    try {
+      const fork = await Chat.ForkSession(s.id);
+      toast.success(`已分叉: ${fork.title}`);
+      reloadSessions();
+      setActiveID(fork.id);
+      setMessages([]);
+    } catch (e) {
+      toast.error(`分叉失败: ${errText(e)}`);
+    }
+  };
+
   const removeSession = async (s: ChatSession) => {
     await Chat.DeleteSession(s.id).catch((e) => toast.error(`删除失败: ${errText(e)}`));
     if (s.id === activeID) {
@@ -537,6 +549,13 @@ export function ChatPage() {
                 <span className="min-w-0 flex-1 truncate">{s.title}</span>
                 {runningMap[s.id] && <Loader2 className="h-3 w-3 shrink-0 animate-spin text-primary" aria-label="生成中" />}
                 <span className="hidden shrink-0 items-center gap-0.5 group-hover:flex">
+                  <button
+                    className="rounded p-0.5 hover:bg-background"
+                    title="分叉此会话（复制完整历史为独立新会话）"
+                    onClick={(e) => { e.stopPropagation(); forkSession(s); }}
+                  >
+                    <GitFork className="h-3 w-3" />
+                  </button>
                   <button
                     className="rounded p-0.5 hover:bg-background"
                     onClick={(e) => { e.stopPropagation(); setRenaming(s); setRenameText(s.title); }}

@@ -1,0 +1,114 @@
+package services
+
+import (
+	"net/http"
+	"net/http/httptest"
+	"path/filepath"
+	"strings"
+	"testing"
+
+	"changeme/internal/agentkit"
+	"changeme/internal/config"
+	"changeme/internal/mcpmgr"
+)
+
+// TestForkSession branches a conversation: the fork carries a full copy of
+// the source history, then diverges independently (a send in the fork must
+// not touch the original).
+func TestForkSession(t *testing.T) {
+	turn := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		turn++
+		w.Header().Set("Content-Type", "text/event-stream")
+		if turn == 1 {
+			_, _ = w.Write([]byte(sseText("原始回答") + sseDone))
+		} else {
+			_, _ = w.Write([]byte(sseText("分叉后的新回答") + sseDone))
+		}
+	}))
+	defer srv.Close()
+
+	dir := t.TempDir()
+	store, err := config.Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = store.Update(func(cfg *config.Config) {
+		cfg.Providers = append(cfg.Providers, config.ModelProvider{
+			ID: "p1", Name: "P", Protocol: config.ProtocolOpenAI,
+			BaseURL: srv.URL, Models: []config.ModelInfo{{ID: "m"}}, IsDefault: true,
+		})
+		cfg.Agents = append(cfg.Agents, config.AgentConfig{ID: "a1", Name: "助手", ProviderID: "p1", Model: "m"})
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	db, sessions, err := newTestSessionService(filepath.Join(dir, "sessions.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	svc := &Services{Store: store, Kit: agentkit.NewKit(store, mcpmgr.New()), MCP: mcpmgr.New()}
+	chat := NewChatService(svc, sessions, db)
+
+	orig, err := chat.NewSession("agent", "a1", "历史会话")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := chat.Send(orig.ID, "你好", nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := chat.RenameSession(orig.ID, "历史会话"); err != nil {
+		t.Fatal(err)
+	}
+
+	branch, err := chat.ForkSession(orig.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if branch.ID == orig.ID || branch.TargetType != "agent" || branch.TargetID != "a1" {
+		t.Fatalf("fork metadata wrong: %+v", branch)
+	}
+	if !strings.Contains(branch.Title, "分支") {
+		t.Fatalf("fork title should carry suffix: %q", branch.Title)
+	}
+
+	// Fork must contain the same rendered history.
+	origMsgs, err := chat.GetSessionMessages(orig.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	forkMsgs, err := chat.GetSessionMessages(branch.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(forkMsgs) != len(origMsgs) || len(forkMsgs) == 0 {
+		t.Fatalf("fork history mismatch: orig=%d fork=%d", len(origMsgs), len(forkMsgs))
+	}
+
+	// Divergence: a send in the fork appears only there.
+	if err := chat.Send(branch.ID, "换个说法", nil); err != nil {
+		t.Fatal(err)
+	}
+	forkMsgs2, _ := chat.GetSessionMessages(branch.ID)
+	origMsgs2, _ := chat.GetSessionMessages(orig.ID)
+	if !strings.Contains(joinTexts(forkMsgs2), "分叉后的新回答") {
+		t.Fatalf("fork divergence missing: %+v", forkMsgs2)
+	}
+	if strings.Contains(joinTexts(origMsgs2), "分叉后的新回答") || len(origMsgs2) != len(origMsgs) {
+		t.Fatalf("original timeline was mutated by fork activity: %+v", origMsgs2)
+	}
+
+	// Forking a missing session errors cleanly.
+	if _, err := chat.ForkSession("sess_nope"); err == nil {
+		t.Fatal("expected error forking unknown session")
+	}
+}
+
+func joinTexts(msgs []ChatMessage) string {
+	var sb strings.Builder
+	for _, m := range msgs {
+		sb.WriteString(m.Text)
+		sb.WriteString("\n")
+	}
+	return sb.String()
+}
