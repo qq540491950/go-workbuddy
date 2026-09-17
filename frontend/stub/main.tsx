@@ -132,16 +132,16 @@ const handlers: Record<string, (args: any[]) => any> = {
   // ListProviderModels
   "2350675726": () => ["gpt-5-mini", "gpt-5"],
   // ConfigService.KnowledgeIndexStats
-  "777366651": () => ({ files: 3, chunks: 12, model: "text-embedding-3-small" }),
+  "1223381284": () => ({ files: 3, chunks: 12, model: "text-embedding-3-small" }),
   // ConfigService.ListKnowledgeFiles
-  "1150714691": () => [
+  "1900178754": () => [
     { name: "k8s.md", sizeBytes: 4096, modTime: "2026-09-18 01:00" },
     { name: "weekly.md", sizeBytes: 2048, modTime: "2026-09-17 18:30" },
   ],
   // AppService.StorageStats
-  "3266666296": () => ({ sessionsDbBytes: 524288, knowledgeDbBytes: 65536 }),
+  "2975759144": () => ({ sessionsDbBytes: 524288, knowledgeDbBytes: 65536 }),
   // AppService.MemoryStats
-  "2169855046": () => ({ count: 7 }),
+  "308347158": () => ({ count: 7 }),
 };
 
 (window as any).__lastCalls = [];
