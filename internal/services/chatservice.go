@@ -1039,6 +1039,16 @@ func (c *ChatService) runTurn(target *config.ChatSession, guardOn bool, msg *gen
 	}
 	emit(ChatStreamEvent{Kind: "done", SessionUsage: sessionUsage})
 
+	// Auto-remember: opt-in ingestion of the finished turn into long-term
+	// memory. Best-effort — failures must not fail the turn.
+	if c.S.Store.Get().Settings.AutoRemember && c.S.Memory != nil {
+		if resp, err := c.sessions.Get(context.Background(), &session.GetRequest{
+			AppName: c.appName, UserID: c.userID, SessionID: sessionID,
+		}); err == nil && resp.Session != nil && c.S.Memory != nil {
+			_ = c.S.Memory.AddSessionToMemory(context.Background(), resp.Session)
+		}
+	}
+
 	// Auto-title from the first user message.
 	if titleFromText != "" {
 		c.S.Store.Update(func(cfg *config.Config) {

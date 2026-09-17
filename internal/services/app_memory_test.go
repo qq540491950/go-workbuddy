@@ -14,8 +14,14 @@ import (
 )
 
 // TestMemoryStatsAndClear: the remember flow feeds the store, stats report
-// the entries, and clear wipes them.
+// the entries, and clear wipes them. The auto subtest exercises the settings
+// driven ingestion instead of the manual RememberSession call.
 func TestMemoryStatsAndClear(t *testing.T) {
+	t.Run("manual", func(t *testing.T) { testMemoryStatsAndClear(t, false) })
+	t.Run("auto", func(t *testing.T) { testMemoryStatsAndClear(t, true) })
+}
+
+func testMemoryStatsAndClear(t *testing.T, autoRemember bool) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/event-stream")
 		_, _ = w.Write([]byte(sseText("记住这条事实") + sseDone))
@@ -47,6 +53,9 @@ func TestMemoryStatsAndClear(t *testing.T) {
 	svc := &Services{Store: store, Kit: agentkit.NewKit(store, mcpmgr.New()), MCP: mcpmgr.New(), Memory: memSvc}
 	app := NewAppService(svc)
 	chat := NewChatService(svc, sessions, db)
+	if err := store.Update(func(cfg *config.Config) { cfg.Settings.AutoRemember = autoRemember }); err != nil {
+		t.Fatal(err)
+	}
 
 	sess, err := chat.NewSession("agent", "a1", "")
 	if err != nil {
@@ -55,8 +64,10 @@ func TestMemoryStatsAndClear(t *testing.T) {
 	if err := chat.Send(sess.ID, "记住内容", nil); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := chat.RememberSession(sess.ID); err != nil {
-		t.Fatal(err)
+	if !autoRemember {
+		if _, err := chat.RememberSession(sess.ID); err != nil {
+			t.Fatal(err)
+		}
 	}
 
 	info, err := app.MemoryStats()

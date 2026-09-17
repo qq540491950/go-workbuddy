@@ -351,6 +351,19 @@ export function SettingsPage() {
             <CardTitle className="text-base">长期记忆</CardTitle>
           </CardHeader>
           <CardContent className="grid gap-2">
+            <div className="flex items-center justify-between rounded-lg border p-2.5">
+              <div>
+                <div className="text-sm font-medium">自动存入长期记忆</div>
+                <div className="text-xs text-muted-foreground">每轮对话结束后自动将该会话存入记忆（含工具调用摘要）</div>
+              </div>
+              <Switch
+                checked={settings.autoRemember}
+                onCheckedChange={(v) => {
+                  update({ autoRemember: v });
+                  Config.SaveSettings({ ...settings, autoRemember: v }).catch((e) => toast.error(`保存失败: ${errText(e)}`));
+                }}
+              />
+            </div>
             <div className="flex items-center justify-between gap-2">
               <p className="text-xs text-muted-foreground">
                 {memoryInfo ? `当前存储 ${memoryInfo.count} 条记忆条目（按用户隔离，Agent 可跨会话召回）。` : "加载中…"}
