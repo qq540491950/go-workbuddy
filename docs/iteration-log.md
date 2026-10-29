@@ -4,6 +4,18 @@
 
 ## 视觉测试与体验设计
 
+### 第一百零九轮迭代：会话级模型选择器（已实施）
+
+**依据**：对齐 Claude/ChatGPT Desktop 的单会话模型切换能力——同一 Agent 的不同对话可以钉在不同模型上（例如日常用快模型、复杂任务切大模型），不影响其他会话。
+
+**实现**
+- `ChatSession.ModelOverride`（空 = Agent 配置的默认模型）。
+- `ChatService.SetSessionModel` RPC + 审计（session_model_set）。
+- `agentkit.BuildAgentWithModel`：覆盖 ID 必须在供应商模型列表中，否则回落默认（防止输入任意 ID 后每轮报错）；`runTurn` 与 `SessionStats` 成本估算均按生效模型取价格。
+- 对话头部（仅 Agent 会话）新增模型选择下拉：列出该 Agent 供应商的全部模型 + 「Agent 默认模型」，切换即时生效于下一轮。
+
+**测试**：`TestSessionModelOverride`（默认 → 覆盖 → 清除，三段断言请求体中的 model 字段）；verify.sh ALL GREEN。
+
 ### 第一百零八轮迭代：前端 P3 批 — 快捷键全局化 + 对比度可达 + 竞态收尾（已实施）
 
 **依据**：第三轮体检前端 12 项中的剩余 4 项 P3。

@@ -99,6 +99,13 @@ export interface ChatSession {
      * Archived sessions are hidden from the main sidebar list.
      */
     "archived"?: boolean;
+
+    /**
+     * ModelOverride pins this chat to a specific model of the target agent's
+     * provider (empty = the agent's configured model). Mirrors the per-chat
+     * model picker of the desktop AI clients.
+     */
+    "modelOverride"?: string;
 }
 
 /**

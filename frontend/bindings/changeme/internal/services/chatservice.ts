@@ -181,6 +181,14 @@ export function SessionStats(sessionID: string): $CancellablePromise<$models.Ses
 }
 
 /**
+ * SetSessionModel pins a chat to a specific model of its target agent's
+ * provider (per-session model override); empty clears the override.
+ */
+export function SetSessionModel(sessionID: string, modelID: string): $CancellablePromise<void> {
+    return $Call.ByID(1164146246, sessionID, modelID);
+}
+
+/**
  * SetToolAuditPath enables the JSONL tool-call audit trail at path.
  */
 export function SetToolAuditPath(path: string): $CancellablePromise<void> {

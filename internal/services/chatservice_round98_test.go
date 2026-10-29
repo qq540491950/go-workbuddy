@@ -437,3 +437,56 @@ func TestSearchSessionsEscapesLikeWildcards(t *testing.T) {
 		t.Fatalf("wildcard not escaped: got %d matches", len(matched))
 	}
 }
+
+// TestSessionModelOverride: the chat-header model picker pins the session to
+// a different model of the agent's provider — the request carries the
+// overridden model id and the stats pricing follows it.
+func TestSessionModelOverride(t *testing.T) {
+	chat, store, bodies := newRecordingChat(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte(sseText("好") + sseDone))
+	})
+	hookEvents(t)
+
+	// The picker only offers the provider's model list — add the override target.
+	if err := store.Update(func(cfg *config.Config) {
+		for i := range cfg.Providers {
+			if cfg.Providers[i].ID == "prov_r" {
+				cfg.Providers[i].Models = append(cfg.Providers[i].Models, config.ModelInfo{ID: "fake-large"})
+			}
+		}
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	sess, err := chat.NewSession("agent", "agent_r", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := chat.Send(sess.ID, "默认模型", nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := chat.SetSessionModel(sess.ID, "fake-large"); err != nil {
+		t.Fatal(err)
+	}
+	if err := chat.Send(sess.ID, "覆盖后", nil); err != nil {
+		t.Fatal(err)
+	}
+
+	if len(*bodies) != 2 {
+		t.Fatalf("model calls = %d", len(*bodies))
+	}
+	if !strings.Contains((*bodies)[0], `"model":"fake-mini"`) || !strings.Contains((*bodies)[1], `"model":"fake-large"`) {
+		t.Fatalf("override not applied: %q", *bodies)
+	}
+	// Clearing restores the agent default.
+	if err := chat.SetSessionModel(sess.ID, ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := chat.Send(sess.ID, "恢复默认", nil); err != nil {
+		t.Fatal(err)
+	}
+	if len(*bodies) != 3 || !strings.Contains((*bodies)[2], `"model":"fake-mini"`) {
+		t.Fatalf("override not cleared: %q", *bodies)
+	}
+}

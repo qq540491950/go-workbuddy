@@ -286,6 +286,22 @@ func (c *ChatService) SearchSessions(query string) []config.ChatSession {
 	return out
 }
 
+// SetSessionModel pins a chat to a specific model of its target agent's
+// provider (per-session model override); empty clears the override.
+func (c *ChatService) SetSessionModel(sessionID, modelID string) error {
+	err := c.S.Store.Update(func(cfg *config.Config) {
+		for i := range cfg.Sessions {
+			if cfg.Sessions[i].ID == sessionID {
+				cfg.Sessions[i].ModelOverride = strings.TrimSpace(modelID)
+			}
+		}
+	})
+	if err == nil {
+		c.audit(sessionID, "session_model_set", "system", "session", mustJSON(map[string]string{"model": modelID}), "")
+	}
+	return err
+}
+
 // ArchiveSession toggles the archived flag of a session (archived sessions
 // are hidden from the default sidebar list but never deleted).
 func (c *ChatService) ArchiveSession(id string, archived bool) error {
@@ -1100,7 +1116,9 @@ func (c *ChatService) runTurn(target *config.ChatSession, guardOn bool, msg *gen
 	default:
 		for _, a := range cfg.Agents {
 			if a.ID == target.TargetID {
-				root, err = c.S.Kit.BuildAgent(a)
+				// Per-session model override (chat-header picker): empty keeps
+				// the agent's configured model.
+				root, err = c.S.Kit.BuildAgentWithModel(a, target.ModelOverride)
 				break
 			}
 		}
@@ -1450,12 +1468,17 @@ func (c *ChatService) SessionStats(sessionID string) (*SessionStats, error) {
 	priceIn, priceOut := 0.0, 0.0
 	cfgNow := c.S.Store.Get()
 	if ac := c.targetAgentConfig(cfgNow, target); ac != nil {
+		// The per-session override picks the priced model when set.
+		effectiveModel := ac.Model
+		if target.ModelOverride != "" {
+			effectiveModel = target.ModelOverride
+		}
 		for i := range cfgNow.Providers {
 			if cfgNow.Providers[i].ID != ac.ProviderID {
 				continue
 			}
 			for _, mi := range cfgNow.Providers[i].Models {
-				if mi.ID == ac.Model {
+				if mi.ID == effectiveModel {
 					priceIn, priceOut = mi.PriceIn, mi.PriceOut
 				}
 			}

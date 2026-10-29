@@ -257,6 +257,10 @@ type ChatSession struct {
 	Preview string `json:"preview,omitempty"`
 	// Archived sessions are hidden from the main sidebar list.
 	Archived bool `json:"archived,omitempty"`
+	// ModelOverride pins this chat to a specific model of the target agent's
+	// provider (empty = the agent's configured model). Mirrors the per-chat
+	// model picker of the desktop AI clients.
+	ModelOverride string `json:"modelOverride,omitempty"`
 }
 
 // Clone returns an independent copy of the config. Slices, nested slices and

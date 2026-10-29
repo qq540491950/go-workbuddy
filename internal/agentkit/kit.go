@@ -106,6 +106,36 @@ func (k *Kit) buildLLMAgent(ac config.AgentConfig, cfg config.Config) (agent.Age
 	return k.buildLLMAgentWithSubAgents(ac, cfg, nil)
 }
 
+// BuildAgentWithModel builds an agent pinned to a specific model of its
+// provider (per-session model override; empty modelID falls back to the
+// agent's configured model).
+func (k *Kit) BuildAgentWithModel(ac config.AgentConfig, modelID string) (agent.Agent, error) {
+	if strings.TrimSpace(modelID) == "" {
+		return k.BuildAgent(ac)
+	}
+	cfg := k.store.Get()
+	if modelSupported(cfg, ac.ProviderID, modelID) {
+		ac.Model = modelID
+	}
+	return k.buildLLMAgent(ac, cfg)
+}
+
+// modelSupported reports whether the provider offers the given model id;
+// unknown ids keep the agent's configured model instead of failing the turn.
+func modelSupported(cfg config.Config, providerID, modelID string) bool {
+	for i := range cfg.Providers {
+		if cfg.Providers[i].ID != providerID {
+			continue
+		}
+		for _, m := range cfg.Providers[i].Models {
+			if m.ID == modelID {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 func (k *Kit) buildLLMAgentWithSubAgents(ac config.AgentConfig, cfg config.Config, subAgents []agent.Agent) (agent.Agent, error) {
 	var provider *config.ModelProvider
 	for i := range cfg.Providers {

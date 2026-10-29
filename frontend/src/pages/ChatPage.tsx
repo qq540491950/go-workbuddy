@@ -779,6 +779,25 @@ export function ChatPage() {
     return agents.find((a) => a.id === active.targetId)?.name ?? "Agent";
   }, [active, agents, teams]);
 
+  // Per-session model picker (agent sessions only): mirrors the per-chat
+  // model selector of Claude/ChatGPT desktops.
+  const sessionModels = useMemo(() => {
+    if (!active || active.targetType !== "agent") return [];
+    const agent = agents.find((a) => a.id === active.targetId);
+    return providerList.find((p) => p.id === agent?.providerId)?.models ?? [];
+  }, [active, agents, providerList]);
+
+  const setSessionModel = async (modelID: string) => {
+    if (!activeID) return;
+    try {
+      await Chat.SetSessionModel(activeID, modelID === "__default" ? "" : modelID);
+      reloadSessions();
+      toast.success(modelID === "__default" ? "已恢复 Agent 默认模型" : `本会话已切换到 ${modelID}`);
+    } catch (e) {
+      toast.error(`切换模型失败: ${errText(e)}`);
+    }
+  };
+
   const toolDurations = useMemo(() => computeToolDurations(messages), [messages]);
   const runningToolsSet = useMemo(() => computeRunningTools(messages), [messages]);
   // Precompute once per message change instead of scanning the tail for every
@@ -951,6 +970,25 @@ export function ChatPage() {
               >
                 <Pencil className="h-3.5 w-3.5" />
               </button>
+            )}
+            {active && sessionModels.length > 0 && (
+              <Select
+                value={active.modelOverride || "__default"}
+                onValueChange={(v) => setSessionModel(v)}
+              >
+                <SelectTrigger
+                  className="h-7 w-auto gap-1 border-none bg-muted/50 px-2.5 text-xs font-normal"
+                  title="本会话使用的模型（仅影响当前对话）"
+                >
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__default">Agent 默认模型</SelectItem>
+                  {sessionModels.map((m) => (
+                    <SelectItem key={m.id} value={m.id}>{m.id}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             )}
           </div>
           <div className="flex items-center gap-2">
