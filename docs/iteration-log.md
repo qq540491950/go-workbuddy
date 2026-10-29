@@ -4,6 +4,35 @@
 
 ## 视觉测试与体验设计
 
+### 第九十九轮迭代：前端体验批（失败回滚 + 视线落点 + 粘贴图 + 诚实报错，已实施）
+
+**依据**：三路只读体检确认的前端 16 项问题，本轮修复全部 1 项 P1、5 项 P2 与 9 项 P3。
+
+**P1 — 发送/预算拒绝丢用户输入**
+- 发送先把输入框清空、附件清空再调后端：请求失败（catch）只回滚附件，文本凭空消失；token 预算拒绝路径后端发 `error+done` 后 promise **正常 resolve**，文本同样丢失且无提示。
+- 修复：新增 `turnStartedRef`（stream 收到本会话 `user` 事件才置位）；resolve 后未启动轮次即回滚文本与附件；catch 路径同样回滚（函数式合并，不打断用户此刻新输入）。
+- 同轮修复：未知命令提示删掉从未实现的 `/forget`。
+
+**P2 — 正确性与一致性**
+- 设置页两个诊断按钮标签与调用交叉（「查看工具审计日志」实际调 `RecentLogs`）：对调，弹窗标题随内容一致。浏览器桩验证：点「查看工具审计日志」弹出标题「工具审计日志（最近 200 行）」。
+- 切换会话不滚动到最新消息（共享 ScrollArea 保留上一会话 scrollTop，长历史从最旧消息打开）：历史加载完成后强制 `scrollIntoView` 到底部。
+- CodeBlock 把 react-markdown 的 hast `node` prop 透传到 DOM（每个代码片段触发 React unknown-prop 警告）：解构丢弃。
+- 五个管理页（Agents/Models/Teams/MCP/Skills）加载失败静默空白 + unhandled rejection、删除失败无提示：reload 统一 `.catch(toast)`，删除包 try-catch。
+- 生成期间输入框整体禁用：改为仅发送侧守卫 running，可边看流式回复边预写下一条（对齐 Codex/Claude Desktop）。
+- 输入框支持 ⌘V 粘贴图片（此前仅文件选择与拖放）。
+
+**P3 — 细节打磨**
+- 会话搜索：响应乱序竞态（快速输入时慢响应覆盖新结果）加递增 seq 守卫；归档会话绕过关键词过滤改为同样过滤。
+- `computeRunningTools` FIFO 配对在并行/团队工具下转圈错位：改为与耗时配对一致的按工具名配对。
+- 附件：满 4 张时 toast 提示（此前静默丢弃）；`arrayBuffer()` 读取失败单文件提示。
+- 窗口级 `dragover/drop` preventDefault 兜底（此前拖到消息区会让 webview 导航离开应用）。
+- ErrorBoundary `key={page}`：一页崩溃后切换导航自动重置，不再全站卡错误屏。
+- 消息气泡 `break-words`：长 URL/无空格 token 不再横向撑破容器。
+- 会话列表项 `role="button"` + Tab/Enter/Space 键盘可达；归档/置顶失败 toast（此前静默吞掉）。
+- 会话统计弹窗成本格标签/数值顺序与其他格对齐。
+
+**测试证据**：`npx tsc --noEmit` 零错误；`npm run build` 零错误；浏览器桩走查（对话页确认卡批准流、会话列表 role=button、设置页卡片、审计按钮标题一致）全部通过；后端全量回归保持全绿。
+
 ### 第九十八轮迭代：后端正确性批（技能隔离 + MCP 失效 + Regenerate 保真 + 审计诚实，已实施）
 
 **依据**：三路只读体检确认的后端 15 项问题中，本轮修复正确性相关的 12 项。

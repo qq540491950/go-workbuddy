@@ -20,7 +20,9 @@ export function SkillsPage() {
   const [editing, setEditing] = useState<SkillConfig | null>(null);
 
   const reload = useCallback(() => {
-    Config.GetConfig().then((c) => setSkills(c.skills ?? []));
+    Config.GetConfig()
+      .then((c) => setSkills(c.skills ?? []))
+      .catch((e) => toast.error(`加载 Skills 失败: ${errText(e)}`));
   }, []);
   useEffect(reload, [reload]);
 
@@ -42,8 +44,12 @@ export function SkillsPage() {
 
   const remove = async (s: SkillConfig) => {
     if (!window.confirm(`确定删除 Skill「${s.name}」？`)) return;
-    await Config.DeleteSkill(s.id);
-    toast.success(`已删除 ${s.name}`);
+    try {
+      await Config.DeleteSkill(s.id);
+      toast.success(`已删除 ${s.name}`);
+    } catch (e) {
+      toast.error(`删除失败: ${errText(e)}`);
+    }
     reload();
   };
 

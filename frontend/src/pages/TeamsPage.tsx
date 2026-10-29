@@ -88,12 +88,14 @@ export function TeamsPage() {
   const [editing, setEditing] = useState<TeamConfig | null>(null);
 
   const reload = useCallback(() => {
-    Config.GetConfig().then((c) => {
-      setTeams(c.teams ?? []);
-      setAgents(c.agents ?? []);
-      setProviders(c.providers ?? []);
-      setRemotes(c.remoteAgents ?? []);
-    });
+    Config.GetConfig()
+      .then((c) => {
+        setTeams(c.teams ?? []);
+        setAgents(c.agents ?? []);
+        setProviders(c.providers ?? []);
+        setRemotes(c.remoteAgents ?? []);
+      })
+      .catch((e) => toast.error(`加载配置失败: ${errText(e)}`));
   }, []);
   useEffect(reload, [reload]);
 
@@ -122,8 +124,12 @@ export function TeamsPage() {
 
   const remove = async (t: TeamConfig) => {
     if (!window.confirm(`确定删除团队「${t.name}」？`)) return;
-    await Config.DeleteTeam(t.id);
-    toast.success(`已删除 ${t.name}`);
+    try {
+      await Config.DeleteTeam(t.id);
+      toast.success(`已删除 ${t.name}`);
+    } catch (e) {
+      toast.error(`删除失败: ${errText(e)}`);
+    }
     reload();
   };
 

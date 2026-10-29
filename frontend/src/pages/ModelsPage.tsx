@@ -41,7 +41,9 @@ export function ModelsPage() {
   const [fetching, setFetching] = useState(false);
 
   const reload = useCallback(() => {
-    Config.GetConfig().then((c) => setProviders(c.providers ?? []));
+    Config.GetConfig()
+      .then((c) => setProviders(c.providers ?? []))
+      .catch((e) => toast.error(`加载供应商失败: ${errText(e)}`));
   }, []);
   useEffect(reload, [reload]);
 
@@ -115,8 +117,12 @@ export function ModelsPage() {
 
   const remove = async (p: ModelProvider) => {
     if (!window.confirm(`确定删除供应商「${p.name}」？`)) return;
-    await Config.DeleteProvider(p.id);
-    toast.success(`已删除 ${p.name}`);
+    try {
+      await Config.DeleteProvider(p.id);
+      toast.success(`已删除 ${p.name}`);
+    } catch (e) {
+      toast.error(`删除失败: ${errText(e)}`);
+    }
     reload();
   };
 

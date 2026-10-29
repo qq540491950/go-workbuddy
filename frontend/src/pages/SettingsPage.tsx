@@ -441,12 +441,12 @@ export function SettingsPage() {
               variant="outline"
               onClick={async () => {
                 try {
-                  const lines = (await App.RecentLogs(200)) ?? [];
+                  const lines = (await App.RecentToolAudit(200)) ?? [];
                   setLogText(lines.join("\n"));
-                  setLogTitle("应用日志（最近 200 行）");
+                  setLogTitle("工具审计日志（最近 200 行）");
                   setLogOpen(true);
                 } catch (e) {
-                  toast.error(`读取日志失败: ${errText(e)}`);
+                  toast.error(`读取审计失败: ${errText(e)}`);
                 }
               }}
             >
@@ -456,12 +456,12 @@ export function SettingsPage() {
               variant="outline"
               onClick={async () => {
                 try {
-                  const lines = (await App.RecentToolAudit(200)) ?? [];
+                  const lines = (await App.RecentLogs(200)) ?? [];
                   setLogText(lines.join("\n"));
-                  setLogTitle("工具审计日志（最近 200 行）");
+                  setLogTitle("应用日志（最近 200 行）");
                   setLogOpen(true);
                 } catch (e) {
-                  toast.error(`读取审计失败: ${errText(e)}`);
+                  toast.error(`读取日志失败: ${errText(e)}`);
                 }
               }}
             >

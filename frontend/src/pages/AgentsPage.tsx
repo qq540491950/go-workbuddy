@@ -103,13 +103,15 @@ export function AgentsPage() {
   const remoteImportRef = useRef<HTMLInputElement>(null);
 
   const reload = useCallback(() => {
-    Config.GetConfig().then((c) => {
-      setAgents(c.agents ?? []);
-      setProviders(c.providers ?? []);
-      setSkills(c.skills ?? []);
-      setServers(c.mcpServers ?? []);
-      setRemotes(c.remoteAgents ?? []);
-    });
+    Config.GetConfig()
+      .then((c) => {
+        setAgents(c.agents ?? []);
+        setProviders(c.providers ?? []);
+        setSkills(c.skills ?? []);
+        setServers(c.mcpServers ?? []);
+        setRemotes(c.remoteAgents ?? []);
+      })
+      .catch((e) => toast.error(`加载配置失败: ${errText(e)}`));
   }, []);
   useEffect(reload, [reload]);
 
@@ -137,8 +139,12 @@ export function AgentsPage() {
 
   const remove = async (a: AgentConfig) => {
     if (!window.confirm(`确定删除 Agent「${a.name}」？挂载关系将一并解除。`)) return;
-    await Config.DeleteAgent(a.id);
-    toast.success(`已删除 ${a.name}`);
+    try {
+      await Config.DeleteAgent(a.id);
+      toast.success(`已删除 ${a.name}`);
+    } catch (e) {
+      toast.error(`删除失败: ${errText(e)}`);
+    }
     reload();
   };
 
@@ -177,8 +183,12 @@ export function AgentsPage() {
 
   const removeRemote = async (r: RemoteAgentConfig) => {
     if (!window.confirm(`确定删除远程 Agent「${r.name}」？`)) return;
-    await Config.DeleteRemoteAgent(r.id);
-    toast.success(`已删除 ${r.name}`);
+    try {
+      await Config.DeleteRemoteAgent(r.id);
+      toast.success(`已删除 ${r.name}`);
+    } catch (e) {
+      toast.error(`删除失败: ${errText(e)}`);
+    }
     reload();
   };
 

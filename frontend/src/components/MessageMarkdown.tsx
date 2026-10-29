@@ -34,7 +34,9 @@ function CopyButton({ text, className }: { text: string; className?: string }) {
   );
 }
 
-function CodeBlock({ children, className, ...rest }: any) {
+// `node` is react-markdown's hast element — spreading it onto the DOM trips
+// React's unknown-prop warning on every code fragment, so it is dropped.
+function CodeBlock({ children, className, node, ...rest }: any) {
   const raw = typeof children === "string" ? children : "";
   const match = /language-(\w+)/.exec(className || "");
   const isBlock = String(className || "").includes("language-") || String(raw).includes("\n");
@@ -63,7 +65,7 @@ function CodeBlock({ children, className, ...rest }: any) {
 /** MessageMarkdown renders assistant text as GitHub-flavored Markdown. */
 export const MessageMarkdown = memo(function MessageMarkdown({ content }: { content: string }) {
   return (
-    <div className="message-md space-y-1.5 text-sm leading-relaxed">
+    <div className="message-md space-y-1.5 break-words text-sm leading-relaxed">
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         components={{

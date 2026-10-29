@@ -154,7 +154,9 @@ export default function App() {
       </aside>
 
       <main className="min-w-0 flex-1 overflow-hidden">
-        <ErrorBoundary>
+        {/* key={page} resets the boundary on navigation: one crashed page must
+            not keep every other page behind the error screen. */}
+        <ErrorBoundary key={page}>
           <Suspense fallback={<div className="p-6 text-sm text-muted-foreground">加载中…</div>}>
             {page === "chat" && <ChatPage />}
             {page === "agents" && <AgentsPage />}

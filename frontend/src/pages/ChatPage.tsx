@@ -147,6 +147,10 @@ export function ChatPage() {
   // Set when the stream emitted an inline error, so send()'s catch does not
   // also toast the same failure.
   const streamedErrorRef = useRef(false);
+  // Set when the current turn actually started (a user bubble arrived). The
+  // backend refuses turns past the token budget with error+done and a resolved
+  // promise — without this flag the typed text would vanish without a trace.
+  const turnStartedRef = useRef(false);
 
   // markRunning tracks in-flight turns PER SESSION so several sessions can
   // stream in parallel without blocking each other.
@@ -225,6 +229,10 @@ export function ChatPage() {
               attachments: m.attachments ?? null,
             })),
         );
+        // Entering a session always lands on its newest message — the shared
+        // ScrollArea keeps the previous session's scrollTop otherwise, which
+        // could open a long history at its oldest message.
+        requestAnimationFrame(() => bottomRef.current?.scrollIntoView({ block: "end" }));
       })
       .catch((e) => {
         if (!cancelled) toast.error(`加载历史失败: ${errText(e)}`);
@@ -257,6 +265,7 @@ export function ChatPage() {
         }
       }
       if (ev.sessionId !== activeID) return;
+      if (ev.kind === "user") turnStartedRef.current = true;
       setMessages((prev) => {
         switch (ev.kind) {
           case "user":
@@ -347,6 +356,18 @@ export function ChatPage() {
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
+  // Window-level drag guard: dropping a file outside the composer must not
+  // let the webview navigate away from the app.
+  useEffect(() => {
+    const prevent = (e: DragEvent) => e.preventDefault();
+    window.addEventListener("dragover", prevent);
+    window.addEventListener("drop", prevent);
+    return () => {
+      window.removeEventListener("dragover", prevent);
+      window.removeEventListener("drop", prevent);
+    };
+  }, []);
+
   const send = async () => {
     const text = input.trim();
     if (!text || !activeID || running) return;
@@ -371,7 +392,7 @@ export function ChatPage() {
           setNewChatOpen(true);
           return;
         default:
-          toast.error(`未知命令 ${cmd}。可用：/export /exporthtml /stats /new /forget <词>`);
+          toast.error(`未知命令 ${cmd}。可用：/export /exporthtml /stats /new`);
           return;
       }
     }
@@ -381,6 +402,7 @@ export function ChatPage() {
     setEditing(false);
     const atts = pendingAtts;
     setPendingAtts([]);
+    turnStartedRef.current = false;
     if (wasEditing) {
       setMessages((prev) => {
         const out = [...prev];
@@ -396,6 +418,13 @@ export function ChatPage() {
       } else {
         await Chat.Send(activeID, text, atts.length > 0 ? atts : null);
       }
+      // A resolved promise without a started turn means the backend refused
+      // the round (e.g. token budget exhausted): restore what the user typed
+      // instead of silently swallowing it.
+      if (!turnStartedRef.current) {
+        setInput((cur) => (cur === "" ? text : cur));
+        setPendingAtts((prev) => [...atts, ...prev]);
+      }
     } catch (e) {
       // The stream already emitted an inline error bubble for run failures;
       // Chat.Send returns the same error so the promise settles, but only
@@ -404,7 +433,10 @@ export function ChatPage() {
       if (!streamedErrorRef.current) toast.error(`发送失败: ${msg}`);
       streamedErrorRef.current = false;
       markRunning(activeID, false);
-      setPendingAtts(atts); // restore on failure
+      // Restore the draft and attachments (merging, not clobbering: the user
+      // may have started typing again while the request was in flight).
+      setPendingAtts((prev) => [...atts, ...prev]);
+      setInput((cur) => (cur === "" ? text : cur));
     }
   };
 
@@ -432,6 +464,7 @@ export function ChatPage() {
   const allowedMIME = ["image/png", "image/jpeg", "image/webp", "image/gif"];
 
   const addFiles = async (files: FileList | File[]) => {
+    let added = 0;
     for (const f of Array.from(files)) {
       if (!allowedMIME.includes(f.type)) {
         toast.error(`不支持的类型 ${f.type || f.name}（仅图片）`);
@@ -441,16 +474,24 @@ export function ChatPage() {
         toast.error(`${f.name} 超过 6MB`);
         continue;
       }
-      const buf = await f.arrayBuffer();
       let binary = "";
-      const bytes = new Uint8Array(buf);
-      const chunk = 0x8000;
-      for (let i = 0; i < bytes.length; i += chunk) {
-        binary += String.fromCharCode(...bytes.subarray(i, i + chunk));
+      try {
+        const buf = await f.arrayBuffer();
+        const bytes = new Uint8Array(buf);
+        const chunk = 0x8000;
+        for (let i = 0; i < bytes.length; i += chunk) {
+          binary += String.fromCharCode(...bytes.subarray(i, i + chunk));
+        }
+      } catch {
+        toast.error(`读取 ${f.name} 失败`);
+        continue;
       }
-      setPendingAtts((prev) =>
-        prev.length >= 4 ? prev : [...prev, { name: f.name, mime: f.type, data: btoa(binary) }],
-      );
+      if (pendingAtts.length + added >= 4) {
+        toast.warning("最多附带 4 张图片");
+        break;
+      }
+      added++;
+      setPendingAtts((prev) => (prev.length >= 4 ? prev : [...prev, { name: f.name, mime: f.type, data: btoa(binary) }]));
     }
   };
 
@@ -580,6 +621,9 @@ export function ChatPage() {
 
   // Debounced content search: with a query present, the sidebar lists sessions
   // whose title OR stored history matches (backend LIKE over event payloads).
+  // A monotonic sequence drops stale responses: a slow reply for an earlier
+  // query must not overwrite the result of the latest one.
+  const searchSeqRef = useRef(0);
   useEffect(() => {
     const q = search.trim();
     if (!q) {
@@ -587,9 +631,14 @@ export function ChatPage() {
       return;
     }
     const t = setTimeout(() => {
+      const seq = ++searchSeqRef.current;
       Chat.SearchSessions(q)
-        .then((ss) => setContentMatches(new Set((ss ?? []).map((x) => x.id))))
-        .catch(() => setContentMatches(null));
+        .then((ss) => {
+          if (seq === searchSeqRef.current) setContentMatches(new Set((ss ?? []).map((x) => x.id)));
+        })
+        .catch(() => {
+          if (seq === searchSeqRef.current) setContentMatches(null);
+        });
     }, 250);
     return () => clearTimeout(t);
   }, [search]);
@@ -599,17 +648,15 @@ export function ChatPage() {
 
   const filteredSessions = useMemo(() => {
     const q = search.trim().toLowerCase();
-    const base = sessions.filter((s) => !s.archived);
-    const withQuery = (() => {
-      if (!q) return base;
-      return base.filter((s) => {
-        if (s.title.toLowerCase().includes(q)) return true;
-        return contentMatches ? contentMatches.has(s.id) : false;
-      });
-    })();
+    const matches = (s: ChatSession) => {
+      if (!q) return true;
+      if (s.title.toLowerCase().includes(q)) return true;
+      return contentMatches ? contentMatches.has(s.id) : false;
+    };
+    const withQuery = sessions.filter((s) => !s.archived && matches(s));
     if (showArchived) {
-      const archivedList = sessions.filter((s) => s.archived);
-      return [...withQuery, ...archivedList];
+      // Archived entries obey the same query filter as the main list.
+      return [...withQuery, ...sessions.filter((s) => s.archived && matches(s))];
     }
     return withQuery;
   }, [sessions, search, contentMatches, showArchived]);
@@ -697,6 +744,13 @@ export function ChatPage() {
     return { pct, color, win };
   }, [target.model, sessionUsage]);
 
+  // Whole-session cost estimate for the stats dialog (label/value order must
+  // match the other stat cells: value muted on top, label bold below).
+  const statsCost = useMemo(
+    () => (stats ? costOf({ promptTokens: stats.tokensIn, completionTokens: stats.tokensOut, totalTokens: stats.tokensTotal }) : ""),
+    [stats, costOf],
+  );
+
   return (
     <div className="flex h-full">
       {/* Sessions */}
@@ -728,12 +782,20 @@ export function ChatPage() {
             {filteredSessions.map((s) => (
               <div
                 key={s.id}
+                role="button"
+                tabIndex={0}
                 title={s.title}
                 className={cn(
                   "group flex cursor-pointer items-center gap-2 rounded-md px-2.5 py-2 text-sm",
                   s.id === activeID ? "bg-accent text-accent-foreground" : "hover:bg-accent/50",
                 )}
                 onClick={() => setActiveID(s.id)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    setActiveID(s.id);
+                  }
+                }}
               >
                 {s.targetType === "team" ? <Users className="h-3.5 w-3.5 shrink-0 text-primary" /> : s.targetType === "remote" ? <Network className="h-3.5 w-3.5 shrink-0 text-primary" /> : <Bot className="h-3.5 w-3.5 shrink-0 text-primary" />}
                 <span className="min-w-0 flex-1">
@@ -752,7 +814,7 @@ export function ChatPage() {
                     title={s.archived ? "取消归档" : "归档此会话"}
                     onClick={(e) => {
                       e.stopPropagation();
-                      Chat.ArchiveSession(s.id, !s.archived).then(reloadSessions).catch(() => {});
+                      Chat.ArchiveSession(s.id, !s.archived).then(reloadSessions).catch((e2) => toast.error(`归档失败: ${errText(e2)}`));
                     }}
                   >
                     <Archive className="h-3 w-3" />
@@ -762,7 +824,7 @@ export function ChatPage() {
                     title={s.pinned ? "取消置顶" : "置顶此会话"}
                     onClick={(e) => {
                       e.stopPropagation();
-                      Chat.PinSession(s.id, !s.pinned).then(reloadSessions).catch(() => {});
+                      Chat.PinSession(s.id, !s.pinned).then(reloadSessions).catch((e2) => toast.error(`置顶失败: ${errText(e2)}`));
                     }}
                   >
                     {s.pinned ? <PinOff className="h-3 w-3" /> : <Pin className="h-3 w-3" />}
@@ -988,8 +1050,17 @@ export function ChatPage() {
                     send();
                   }
                 }}
+                onPaste={(e) => {
+                  if (!active || !modelMultimodal) return;
+                  const files = Array.from(e.clipboardData.files || []);
+                  if (files.length === 0) return;
+                  e.preventDefault();
+                  addFiles(files);
+                }}
                 placeholder={active ? "输入消息，Enter 发送，Shift+Enter 换行（⌘K 聚焦）" : "请先创建对话（⌘N）"}
-                disabled={!active || running}
+                // Typing stays available while a reply streams (matching the
+                // desktops this app mirrors); send() guards the running state.
+                disabled={!active}
                 className={cn(listening && "border-primary/60 ring-1 ring-primary/40")}
               />
               <input
@@ -1059,7 +1130,7 @@ export function ChatPage() {
                 ["输入 tokens", stats.tokensIn.toLocaleString()],
                 ["输出 tokens", stats.tokensOut.toLocaleString()],
                 ["总 tokens", stats.tokensTotal.toLocaleString()],
-                [costOf({ promptTokens: stats.tokensIn, completionTokens: stats.tokensOut, totalTokens: stats.tokensTotal }) || "—", costOf({ promptTokens: stats.tokensIn, completionTokens: stats.tokensOut, totalTokens: stats.tokensTotal }) ? "估算成本" : "未配置价格"],
+                [statsCost ? "估算成本" : "未配置价格", statsCost || "—"],
               ].map(([k, v], i) => (
                 <div key={i} className="rounded-lg border p-2.5">
                   <div className="text-xs text-muted-foreground">{v}</div>
@@ -1321,17 +1392,23 @@ function computeToolDurations(messages: UIMessage[]): Map<string, number> {
   return map;
 }
 
-/** computeRunningTools marks tool_call messages that have no matching result yet. */
+/** computeRunningTools marks tool_call messages that have no matching result yet.
+ * Pairing is by tool name (same as computeToolDurations): parallel/团队 tool
+ * rounds emit call A, call B, result B, result A — a FIFO queue would end A's
+ * spinner early and leave B spinning forever. */
 function computeRunningTools(messages: UIMessage[]): Set<string> {
   const running = new Set<string>();
-  const pending: string[] = []; // tool_call ids awaiting result, per tool name order
+  const pending: { id: string; toolName: string }[] = [];
   for (const m of messages) {
     if (m.kind === "tool_call") {
       running.add(m.id);
-      pending.push(m.id);
-    } else if (m.kind === "tool_result" && pending.length > 0) {
-      const id = pending.shift();
-      running.delete(id!);
+      pending.push({ id: m.id, toolName: m.toolName ?? "" });
+    } else if (m.kind === "tool_result") {
+      const idx = [...pending].reverse().findIndex((p) => p.toolName === (m.toolName ?? ""));
+      if (idx >= 0) {
+        const call = pending.splice(pending.length - 1 - idx, 1)[0];
+        running.delete(call.id);
+      }
     }
   }
   return running;
@@ -1402,7 +1479,7 @@ const MessageBubble = memo(function MessageBubble({ m, isLastAssistant, onRegene
           )}
           <CopyButton text={m.text} className="mb-1 opacity-0 transition-opacity group-hover:opacity-100" />
           <div
-            className="whitespace-pre-wrap rounded-2xl rounded-br-md bg-primary px-4 py-2.5 text-sm text-primary-foreground"
+            className="whitespace-pre-wrap break-words rounded-2xl rounded-br-md bg-primary px-4 py-2.5 text-sm text-primary-foreground"
             title={fmtTime(m.timestamp)}
           >
             {m.text}
@@ -1490,7 +1567,7 @@ const MessageBubble = memo(function MessageBubble({ m, isLastAssistant, onRegene
               {m.streaming && <span className="ml-0.5 inline-block h-3.5 w-1.5 animate-pulse bg-foreground/60 align-middle" />}
             </>
           ) : (
-            <div className="whitespace-pre-wrap text-sm">{m.text}</div>
+            <div className="whitespace-pre-wrap break-words text-sm">{m.text}</div>
           )}
         </div>
       </div>

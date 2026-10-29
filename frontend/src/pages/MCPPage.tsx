@@ -48,12 +48,16 @@ export function MCPPage() {
   const [busy, setBusy] = useState<string>("");
 
   const reload = useCallback(() => {
-    Config.GetConfig().then((c) => setServers(c.mcpServers ?? []));
-    MCP.Status().then((ss) => {
-      const map: Record<string, ServerStatus> = {};
-      for (const s of ss ?? []) map[s.id] = s;
-      setStatuses(map);
-    });
+    Config.GetConfig()
+      .then((c) => setServers(c.mcpServers ?? []))
+      .catch((e) => toast.error(`加载配置失败: ${errText(e)}`));
+    MCP.Status()
+      .then((ss) => {
+        const map: Record<string, ServerStatus> = {};
+        for (const s of ss ?? []) map[s.id] = s;
+        setStatuses(map);
+      })
+      .catch((e) => toast.error(`加载状态失败: ${errText(e)}`));
   }, []);
   useEffect(reload, [reload]);
 
@@ -117,8 +121,12 @@ export function MCPPage() {
 
   const remove = async (s: MCPServerConfig) => {
     if (!window.confirm(`确定删除 MCP 服务器「${s.name}」？`)) return;
-    await Config.DeleteMCPServer(s.id);
-    toast.success(`已删除 ${s.name}`);
+    try {
+      await Config.DeleteMCPServer(s.id);
+      toast.success(`已删除 ${s.name}`);
+    } catch (e) {
+      toast.error(`删除失败: ${errText(e)}`);
+    }
     reload();
   };
 
