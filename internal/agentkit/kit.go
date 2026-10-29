@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 	"unicode/utf8"
 
@@ -52,6 +53,10 @@ type Kit struct {
 	mcp       *mcpmgr.Manager
 	memory    tool.Tool       // long-term memory search tool (nil if memory unavailable)
 	knowledge *KnowledgeIndex // workspace knowledge vector index (nil => keyword search)
+	// skillMu serializes skill materialization: parallel builds of the same
+	// agent (parallel sessions rebuild per turn) must not interleave the
+	// write/prune/preload sequence over the shared staging directory.
+	skillMu sync.Mutex
 }
 
 // NewKit creates a Kit.
@@ -241,6 +246,10 @@ func (k *Kit) BuildTeam(tc config.TeamConfig) (agent.Agent, string, error) {
 
 	var members []agent.Agent
 	var memberNames []string
+	// memberByKey maps agent/remote IDs to their built agent, so the explicit
+	// lead path can assemble its peers without positional indexing (a dangling
+	// member ID used to shift the slice and mis-assign or panic).
+	memberByKey := map[string]agent.Agent{}
 	for _, id := range tc.MemberAgentIDs {
 		ac, ok := memberByID[id]
 		if !ok {
@@ -252,6 +261,7 @@ func (k *Kit) BuildTeam(tc config.TeamConfig) (agent.Agent, string, error) {
 		}
 		members = append(members, a)
 		memberNames = append(memberNames, sanitizeAgentName(ac.Name))
+		memberByKey[id] = a
 	}
 
 	// Remote A2A members join as sub-agents the coordinator can transfer to.
@@ -266,20 +276,28 @@ func (k *Kit) BuildTeam(tc config.TeamConfig) (agent.Agent, string, error) {
 			}
 			members = append(members, ra)
 			memberNames = append(memberNames, sanitizeAgentName(r.Name))
+			memberByKey[id] = ra
 		}
 	}
 
 	rootName := sanitizeAgentName(tc.Name)
 
-	// Explicit lead: use that agent as root; the other members become peers.
+	// Explicit lead: use that agent as root; the other members — local AND
+	// remote — become transferable peers.
 	if !tc.AutoCoordinate {
 		if _, ok := memberByID[tc.LeadAgentID]; ok {
 			var peers []agent.Agent
-			for i, id := range tc.MemberAgentIDs {
-				if id == tc.LeadAgentID {
-					continue
+			for _, id := range tc.MemberAgentIDs {
+				if id != tc.LeadAgentID {
+					if a, ok := memberByKey[id]; ok {
+						peers = append(peers, a)
+					}
 				}
-				peers = append(peers, members[i])
+			}
+			for _, id := range tc.RemoteMemberIDs {
+				if a, ok := memberByKey[id]; ok {
+					peers = append(peers, a)
+				}
 			}
 			leadAc := memberByID[tc.LeadAgentID]
 			leadAgent, err := k.buildLLMAgentWithSubAgents(leadAc, cfg, peers)
@@ -360,6 +378,8 @@ func (k *Kit) searchOptions(cfg config.Config) SearchOptions {
 // deleted skills loadable. Directories not in the wanted set are pruned before
 // loading, so detaching or deleting a skill takes effect on the next build.
 func (k *Kit) skillToolset(ac config.AgentConfig, cfg config.Config) (tool.Toolset, error) {
+	k.skillMu.Lock()
+	defer k.skillMu.Unlock()
 	ids := ac.SkillIDs
 	want := map[string]bool{}
 	wantNames := map[string]bool{}
@@ -387,7 +407,14 @@ func (k *Kit) skillToolset(ac config.AgentConfig, cfg config.Config) (tool.Tools
 		if err != nil {
 			return nil, fmt.Errorf("build skill %q: %w", s.Name, err)
 		}
-		if err := os.WriteFile(filepath.Join(dirSkill, "SKILL.md"), body, 0o644); err != nil {
+		// Atomic replace: a concurrent preload must never read a half-written
+		// (O_TRUNC) SKILL.md as valid-but-empty instructions.
+		tmp := filepath.Join(dirSkill, "SKILL.md.tmp")
+		if err := os.WriteFile(tmp, body, 0o644); err != nil {
+			return nil, fmt.Errorf("write skill %q: %w", s.Name, err)
+		}
+		if err := os.Rename(tmp, filepath.Join(dirSkill, "SKILL.md")); err != nil {
+			_ = os.Remove(tmp)
 			return nil, fmt.Errorf("write skill %q: %w", s.Name, err)
 		}
 	}
@@ -422,6 +449,11 @@ func agentSkillKey(ac config.AgentConfig) string {
 	}
 	return sanitizeAgentName(ac.Name)
 }
+
+// MaterializedSkillName returns the on-disk directory name for a skill.
+// Exported so config validation can reject names that would collide with an
+// existing skill's materialized directory.
+func MaterializedSkillName(name string) string { return sanitizeSkillName(name) }
 
 // RemoveMaterializedSkill deletes the materialized SKILL.md directories of a
 // skill: the per-agent staging dirs and the legacy shared layout. Best effort

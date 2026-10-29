@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -176,5 +177,38 @@ func TestSearchMemoryRecencyWindow(t *testing.T) {
 		if !newest[m.ID] {
 			t.Fatalf("stale candidate %s survived the recency window", m.ID)
 		}
+	}
+}
+
+// TestAddSessionToMemoryConcurrent: parallel ingestion of the same session
+// must not error on the UNIQUE id constraint (the old count-then-create used
+// to race and abort AutoRemember).
+func TestAddSessionToMemoryConcurrent(t *testing.T) {
+	svc, sess := newFixture(t)
+	done := make(chan error, 2)
+	for i := 0; i < 2; i++ {
+		go func() {
+			var err error
+			for attempt := 0; attempt < 20; attempt++ {
+				err = svc.AddSessionToMemory(context.Background(), sess)
+				if err != nil {
+					break
+				}
+				runtime.Gosched()
+			}
+			done <- err
+		}()
+	}
+	for i := 0; i < 2; i++ {
+		if err := <-done; err != nil {
+			t.Fatalf("concurrent ingest failed: %v", err)
+		}
+	}
+	n, err := svc.Count("app", "u")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n != 2 {
+		t.Fatalf("count = %d, want 2 (deduplicated)", n)
 	}
 }

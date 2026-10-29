@@ -11,14 +11,14 @@ import (
 	"github.com/glebarez/sqlite"
 	"github.com/wailsapp/wails/v3/pkg/application"
 	"google.golang.org/adk/v2/session"
-	"google.golang.org/adk/v2/tool/loadmemorytool"
 	"google.golang.org/adk/v2/session/database"
+	"google.golang.org/adk/v2/tool/loadmemorytool"
 	"gorm.io/gorm"
 
 	"changeme/internal/agentkit"
 	"changeme/internal/config"
-	"changeme/internal/memory"
 	"changeme/internal/mcpmgr"
+	"changeme/internal/memory"
 	"changeme/internal/services"
 )
 
@@ -129,9 +129,9 @@ func main() {
 	})
 
 	window := app.Window.NewWithOptions(application.WebviewWindowOptions{
-		Title:  "WorkBuddy Agent",
-		Width:  1280,
-		Height: 820,
+		Title:     "WorkBuddy Agent",
+		Width:     1280,
+		Height:    820,
 		MinWidth:  960,
 		MinHeight: 600,
 		Mac: application.MacWindow{
@@ -237,6 +237,7 @@ func newSessionService(path string) (*gorm.DB, session.Service, error) {
 		}
 		// Probe: a corrupt file can pass Open but fail on first query.
 		if err := db.Exec("SELECT count(*) FROM sessions").Error; err != nil {
+			closeDB(db) // release the pool before the corrupt-file rename
 			return nil, nil, err
 		}
 		return db, svc, nil
@@ -244,7 +245,13 @@ func newSessionService(path string) (*gorm.DB, session.Service, error) {
 	db, svc, err := open()
 	if err != nil {
 		backup := path + ".corrupt-" + time.Now().Format("20060102-150405")
-		_ = os.Rename(path, backup)
+		// Close any leaked handle first: Windows refuses to rename a file
+		// that is still open (sharing violation), which would turn the
+		// self-heal path into a hard startup failure.
+		closeDB(db)
+		if rerr := os.Rename(path, backup); rerr != nil {
+			log.Printf("sessions database corrupt but backup rename failed: %v", rerr)
+		}
 		for _, suffix := range []string{"-wal", "-shm"} {
 			_ = os.Rename(path+suffix, backup+suffix)
 		}
@@ -255,4 +262,14 @@ func newSessionService(path string) (*gorm.DB, session.Service, error) {
 		}
 	}
 	return db, svc, nil
+}
+
+// closeDB releases the underlying SQL pool of a gorm handle (best effort).
+func closeDB(db *gorm.DB) {
+	if db == nil {
+		return
+	}
+	if sqlDB, err := db.DB(); err == nil {
+		_ = sqlDB.Close()
+	}
 }

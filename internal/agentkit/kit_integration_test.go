@@ -241,3 +241,48 @@ func TestBuildAgentReportsMCPFailures(t *testing.T) {
 		t.Fatalf("error missing dangling server id: %v", msg)
 	}
 }
+
+// TestBuildTeamLeadPeersIncludeRemoteMembers pins the explicit-lead path: the
+// lead's transferable peers must include local AND remote members (the remote
+// ones used to be silently dropped), with dangling member IDs skipped instead
+// of shifting positional indexes.
+func TestBuildTeamLeadPeersIncludeRemoteMembers(t *testing.T) {
+	kit, store := newTestKit(t)
+	if err := store.Update(func(cfg *config.Config) {
+		cfg.Providers = append(cfg.Providers, config.ModelProvider{
+			ID: "p1", Name: "Fake", Protocol: config.ProtocolOpenAI, Models: []config.ModelInfo{{ID: "m1"}},
+		})
+		cfg.Agents = append(cfg.Agents,
+			config.AgentConfig{ID: "a_lead", Name: "组长", ProviderID: "p1", Model: "m1"},
+			config.AgentConfig{ID: "a_peer", Name: "本地队员", ProviderID: "p1", Model: "m1"},
+		)
+		cfg.RemoteAgents = append(cfg.RemoteAgents, config.RemoteAgentConfig{
+			ID: "ra_1", Name: "远程队员", CardURL: "http://127.0.0.1:1/card", // lazy: never fetched at build time
+		})
+	}); err != nil {
+		t.Fatal(err)
+	}
+	team := config.TeamConfig{
+		ID: "team_x", Name: "混合队", LeadAgentID: "a_lead",
+		MemberAgentIDs: []string{"a_lead", "a_peer", "a_gone"},
+		RemoteMemberIDs: []string{"ra_1"},
+	}
+	root, rootName, err := kit.BuildTeam(team)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rootName != SanitizeAgentName("组长") {
+		t.Fatalf("root = %s", rootName)
+	}
+	peers := root.SubAgents()
+	if len(peers) != 2 {
+		t.Fatalf("lead peers = %d, want 2 (local + remote, dangling skipped)", len(peers))
+	}
+	names := map[string]bool{}
+	for _, p := range peers {
+		names[p.Name()] = true
+	}
+	if !names[SanitizeAgentName("本地队员")] || !names[SanitizeAgentName("远程队员")] {
+		t.Fatalf("peers missing expected members: %v", names)
+	}
+}

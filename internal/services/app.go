@@ -357,6 +357,11 @@ func (a *AppService) ExportConfig(includeSecrets bool) (string, error) {
 		}
 		for i := range cfg.MCPServers {
 			cfg.MCPServers[i].AuthToken = ""
+			// stdio Env and streamable Headers routinely carry secrets
+			// (OPENAI_API_KEY, Authorization: Bearer …) — a "safe to share"
+			// backup must not carry them either.
+			cfg.MCPServers[i].Env = nil
+			cfg.MCPServers[i].Headers = nil
 		}
 	}
 	data, err := json.MarshalIndent(configBackup{
@@ -408,13 +413,32 @@ func (a *AppService) ImportConfig(data string) error {
 	}
 	imported := *bak.Config
 	imported.Sessions = nil
+	imported.NormalizeImported()
+	// OAuth tokens are machine-local state, like sessions: an import must not
+	// wipe the local cache (it used to force re-consent on every OAuth server).
+	imported.MCPTokens = a.S.Store.Get().MCPTokens
+	// Track which MCP servers vanish or change so their cached toolsets and
+	// connections are dropped — same contract as SaveMCPServer.
+	oldServers := a.S.Store.Get().MCPServers
 	// Never import stale IDs into the live config: keep everything the file
 	// carries, sessions excluded.
-	return a.S.Store.Update(func(cfg *config.Config) {
+	if err := a.S.Store.Update(func(cfg *config.Config) {
 		sessions := cfg.Sessions
 		*cfg = imported
 		cfg.Sessions = sessions
-	})
+	}); err != nil {
+		return err
+	}
+	importedByID := map[string]string{}
+	for _, s := range imported.MCPServers {
+		importedByID[s.ID] = string(mustJSON(s))
+	}
+	for _, o := range oldServers {
+		if cur, ok := importedByID[o.ID]; !ok || cur != string(mustJSON(o)) {
+			a.S.MCP.Disconnect(o.ID)
+		}
+	}
+	return nil
 }
 
 // MCPService exposes MCP server management to the frontend.

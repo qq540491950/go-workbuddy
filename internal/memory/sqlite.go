@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 
 	"google.golang.org/adk/v2/memory"
 	"google.golang.org/adk/v2/session"
@@ -84,14 +85,11 @@ func (s *SQLiteService) AddSessionToMemory(_ context.Context, sess session.Sessi
 			Timestamp: ev.Timestamp,
 		}
 		// Idempotent insert: event IDs are unique per session and stable.
-		var count int64
-		if err := s.db.Model(&memoryEntry{}).Where("id = ?", entry.ID).Count(&count).Error; err != nil {
-			return err
-		}
-		if count > 0 {
-			continue
-		}
-		if err := s.db.Create(&entry).Error; err != nil {
+		// OnConflict DoNothing instead of count-then-create — two parallel
+		// AddSessionToMemory calls for the same session used to race past the
+		// count and one of them died on the UNIQUE constraint, silently
+		// aborting AutoRemember mid-session.
+		if err := s.db.Clauses(clause.OnConflict{DoNothing: true}).Create(&entry).Error; err != nil {
 			return err
 		}
 	}

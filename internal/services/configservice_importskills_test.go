@@ -6,7 +6,9 @@ import (
 	"strings"
 	"testing"
 
+	"changeme/internal/agentkit"
 	"changeme/internal/config"
+	"changeme/internal/mcpmgr"
 )
 
 // TestImportSkillsFromWorkspace covers the agentskills.io layout import:
@@ -77,5 +79,28 @@ func TestImportSkillsFromWorkspace(t *testing.T) {
 	}
 	if !foundTranslate || !foundWeekly {
 		t.Fatalf("imported skills incomplete: translate=%v weekly=%v", foundTranslate, foundWeekly)
+	}
+}
+
+// TestSaveSkillRejectsNormalizedCollision: "API Review" and "api-review"
+// materialize to the same directory; the second save must fail instead of
+// silently overwriting the first skill.
+func TestSaveSkillRejectsNormalizedCollision(t *testing.T) {
+	dir := t.TempDir()
+	store, err := config.Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	svc := &Services{Store: store, Kit: agentkit.NewKit(store, mcpmgr.New()), MCP: mcpmgr.New()}
+	cs := NewConfigService(svc)
+	if err := cs.SaveSkill(config.SkillConfig{ID: "s1", Name: "API Review", Content: "a"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := cs.SaveSkill(config.SkillConfig{ID: "s2", Name: "api-review", Content: "b"}); err == nil {
+		t.Fatal("expected normalized-name collision rejection")
+	}
+	// Re-saving the same skill (same ID) is fine.
+	if err := cs.SaveSkill(config.SkillConfig{ID: "s1", Name: "api-review", Content: "a2"}); err != nil {
+		t.Fatalf("self-update rejected: %v", err)
 	}
 }

@@ -237,6 +237,14 @@ func (c *ConfigService) SaveSkill(s config.SkillConfig) error {
 		s.ID = newID("skill_")
 		s.CreatedAt = nowUTC()
 	}
+	// Skills sharing a normalized name share one materialized directory and
+	// would silently overwrite each other's SKILL.md — reject the collision.
+	newKey := agentkit.MaterializedSkillName(s.Name)
+	for _, other := range c.S.Store.Get().Skills {
+		if other.ID != s.ID && agentkit.MaterializedSkillName(other.Name) == newKey {
+			return fmt.Errorf("技能名称「%s」与现有技能「%s」冲突（规范化后同名），请换个名字", s.Name, other.Name)
+		}
+	}
 	err := c.S.Store.Update(func(cfg *config.Config) {
 		replaced := false
 		for i := range cfg.Skills {

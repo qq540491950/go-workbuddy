@@ -39,7 +39,9 @@ func SanitizeSecrets(s string) string {
 
 var injectionPatterns = []*regexp.Regexp{
 	regexp.MustCompile(`(?i)ignore\s+(all\s+)?(previous|prior|above)\s+(instructions|prompts?|rules)`),
-	regexp.MustCompile(`(?i)reveal|print|repeat\s+(your|the)\s+(system\s+)?(prompt|instructions)`),
+	// Verb + object required: bare "reveal"/"print" matched everyday dev
+	// requests like "print the JSON".
+	regexp.MustCompile(`(?i)(reveal|print|repeat|show)\s+(your|the|你的)\s+(system\s+)?(prompt|instructions|提示词)`),
 	regexp.MustCompile(`(?i)(system\s+prompt|开发提示词|系统提示词).{0,20}(是什么|泄露|输出|打印)`),
 	regexp.MustCompile(`(?i)(泄露|输出|打印|导出).{0,10}(系统提示词|system prompt|开发提示词)`),
 	regexp.MustCompile(`(?i)you\s+are\s+now\s+(a|an|no longer)`),

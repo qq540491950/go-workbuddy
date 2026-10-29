@@ -186,3 +186,31 @@ func TestOpenCorruptConfigBackupIsPrivate(t *testing.T) {
 		t.Fatalf(".bak mode = %o, want 600", perm)
 	}
 }
+
+// TestUpdateFailedSaveDoesNotMutateMemory: a failed disk write must not leave
+// the live config diverged from disk (the old in-place mutation survived in
+// memory until the next restart silently reverted it).
+func TestUpdateFailedSaveDoesNotMutateMemory(t *testing.T) {
+	dir := t.TempDir()
+	s, err := Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	before := s.Get().Skills[0].Name
+	// Make the rename target impossible: config.json becomes a directory, so
+	// the atomic replace fails after the tmp write.
+	if err := os.Remove(filepath.Join(dir, "config.json")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(filepath.Join(dir, "config.json"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Update(func(cfg *Config) {
+		cfg.Skills[0].Name = "clobbered"
+	}); err == nil {
+		t.Fatal("expected the save to fail")
+	}
+	if got := s.Get().Skills[0].Name; got != before {
+		t.Fatalf("memory mutated despite failed save: %q", got)
+	}
+}

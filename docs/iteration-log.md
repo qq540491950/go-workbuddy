@@ -4,6 +4,28 @@
 
 ## 视觉测试与体验设计
 
+### 第一百零五轮迭代：并发与健壮性批（已实施）
+
+**依据**：第二轮体检的其余 7 项确认问题。
+
+- **skillToolset 并发加固**：技能物化改为临时文件 + `os.Rename` 原子替换（并行 preload 不再可能读到 O_TRUNC 的半截 SKILL.md）；write/prune/preload 全程由 `Kit.skillMu` 串行化（并行会话每轮重建 Agent 的同目录竞争消除）。
+- **Store.Update 原子提交**：变更先应用在深拷贝上，磁盘写成功才换入内存——此前写盘失败（磁盘满/权限）内存已变、重启后被静默回滚。`TestUpdateFailedSaveDoesNotMutateMemory`（rename 目标不可能 → 断言内存未被污染）。
+- **记忆并发写入**：count-then-create 改为 `ON CONFLICT DO NOTHING` upsert——并行 AddSessionToMemory 同会话不再撞 UNIQUE 中止 AutoRemember。`TestAddSessionToMemoryConcurrent`。
+- **技能重名校验**：`SaveSkill` 拒绝规范化后同名的新技能（此前 "API Review" 与 "api-review" 静默互相覆盖 SKILL.md）。`TestSaveSkillRejectsNormalizedCollision`。
+- **产物预览 rune 截断**：与第 98 轮 read_workspace_file 同类的 UTF-8 边界问题在 artifactservice.Open 修复（>512KB 中文文本不再被误判为二进制）。
+- **会话库自愈的 Windows 兼容**：损坏恢复路径先释放连接池再 rename（Windows 对打开中的文件报 sharing violation，会让自愈变成硬启动失败），探针失败泄漏的 gorm 连接池一并关闭，rename 失败不再被吞。
+- **注入检测降噪**：`reveal|print` 裸词命中收紧为「动词 + 宾语」结构——"print the JSON"、“reveal the report structure” 不再误报（既有 risky 样例全部保持命中）。`TestInjectionRisk` 扩展。
+
+### 第一百零四轮迭代：二轮体检批 — BuildTeam 远程成员 + 配置导入导出诚实化（已实施）
+
+**依据**：第二轮只读体检（覆盖首轮未深查模块）确认的 12 项中的 P1 与配置批。
+
+- **P1 BuildTeam 显式 lead 丢弃远程成员**：peers 只遍历本地成员 ID 且按位置索引（悬空 ID 会错位/越界）。重构为 `memberByKey` 映射组装：lead 的可转移 peers 现在包含本地与远程成员、悬空 ID 安全跳过。`TestBuildTeamLeadPeersIncludeRemoteMembers`。
+- **P1 ImportConfig 绕过 MCP 失效联动**：整包替换后按 ID 缓存的旧 toolset/连接继续存活（改 URL/凭据后仍连旧端点）。导入后对被删除或内容变更的 server 逐个 `MCP.Disconnect`（与 SaveMCPServer 同契约）。
+- **P2 ImportConfig 抹掉本地 OAuth 令牌缓存**：令牌与 Sessions 同属机器本地状态，导入时保留现值（此前每次导入强制所有 OAuth 服务器重新授权）。
+- **P2 ImportConfig 跳过归一化**：导入时执行与 Open 相同的 `Settings.normalize()` + `migrateLegacy()`（旧 schema 备份的主题缺省与 provider 级价格下移不再丢失）。`TestConfigImportPreservesLocalState`。
+- **P2 脱敏导出漏 MCP Env/Headers**：`ExportConfig(false)` 现在同时清空 Env 与 Headers（常含 OPENAI_API_KEY / Authorization）。`TestConfigBackupMaskedCoversEnvAndHeaders`。
+
 ### 第一百零三轮迭代：命令帮助补齐 + 搁浅队列点火 + 桩计划样例（已实施）
 
 - 帮助面板补上 `/todos`（第 102 轮日志声明了「帮助面板同步」但实际遗漏，本轮补齐并诚实记录）。

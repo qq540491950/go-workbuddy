@@ -122,7 +122,14 @@ func (a *ArtifactService) Open(relPath string) (*Artifact, error) {
 		}
 		art.Kind = kind
 		if int64(len(data)) > maxTextArtifact {
-			data = data[:maxTextArtifact]
+			// Back up to a rune boundary: cutting a multi-byte character would
+			// fail the utf8.Valid check below and misreport a text file as
+			// binary.
+			cut := maxTextArtifact
+			for cut > 0 && !utf8.RuneStart(data[cut]) {
+				cut--
+			}
+			data = data[:cut]
 			art.Truncated = true
 		}
 		if !utf8.Valid(data) {

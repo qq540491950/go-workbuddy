@@ -44,7 +44,11 @@ func TestInjectionRisk(t *testing.T) {
 			t.Errorf("InjectionRisk(%q) = false, want true", s)
 		}
 	}
-	safe := []string{"帮我写本周周报", "打印这份文档", "ignore the weather report"}
+	safe := []string{
+		"帮我写本周周报", "打印这份文档", "ignore the weather report",
+		// Everyday dev phrasings that the bare-verb pattern used to flag.
+		"print the JSON payload", "reveal the report structure",
+	}
 	for _, s := range safe {
 		if ok, m := InjectionRisk(s); ok {
 			t.Errorf("InjectionRisk(%q) = true (%s), want false", s, m)

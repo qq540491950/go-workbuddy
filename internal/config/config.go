@@ -444,6 +444,14 @@ func Open(dir string) (*Store, error) {
 	return s, nil
 }
 
+// NormalizeImported applies the same load-time normalization (settings
+// defaults + legacy price migration) that Open gives every persisted config,
+// so a backup produced by an older schema imports cleanly.
+func (c *Config) NormalizeImported() {
+	c.Settings.normalize()
+	c.migrateLegacy()
+}
+
 // Dir returns the directory holding the config file.
 func (s *Store) Dir() string { return filepath.Dir(s.path) }
 
@@ -455,6 +463,11 @@ func (s *Store) saveLocked() error {
 	if err != nil {
 		return err
 	}
+	return s.writeLocked(data)
+}
+
+// writeLocked atomically replaces the config file with the given bytes.
+func (s *Store) writeLocked(data []byte) error {
 	tmp := s.path + ".tmp"
 	// 0600: the file contains API keys.
 	if err := os.WriteFile(tmp, data, 0o600); err != nil {
@@ -484,9 +497,22 @@ func (s *Store) Settings() Settings {
 }
 
 // Update applies fn to the config under lock and persists it.
+// Update applies fn and persists the result. The mutation is applied to a
+// deep copy and only swapped into the live config after the disk write
+// succeeds: a failed save (disk full, permissions) used to leave memory
+// diverged from disk until the next restart silently reverted it.
 func (s *Store) Update(fn func(*Config)) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	fn(&s.cfg)
-	return s.saveLocked()
+	next := s.cfg.Clone()
+	fn(&next)
+	data, err := json.MarshalIndent(next, "", "  ")
+	if err != nil {
+		return err
+	}
+	if err := s.writeLocked(data); err != nil {
+		return err
+	}
+	s.cfg = next
+	return nil
 }

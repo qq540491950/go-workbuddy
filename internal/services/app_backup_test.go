@@ -202,3 +202,85 @@ func TestSaveSettingsProxyValidation(t *testing.T) {
 		t.Fatal("proxy not persisted")
 	}
 }
+
+// TestConfigBackupMaskedCoversEnvAndHeaders: a "safe to share" export must
+// also strip MCP Env/Headers (they routinely carry API keys and Authorization
+// headers), not just provider keys and auth tokens.
+func TestConfigBackupMaskedCoversEnvAndHeaders(t *testing.T) {
+	app, store, _ := newBackupTestService(t)
+	if err := store.Update(func(cfg *config.Config) {
+		cfg.MCPServers = append(cfg.MCPServers, config.MCPServerConfig{
+			ID: "mcp_1", Name: "M", Transport: config.MCPStdio, Command: "/bin/tool",
+			Env:     map[string]string{"OPENAI_API_KEY": "env-secret-1"},
+			Headers: map[string]string{"Authorization": "Bearer hdr-secret-2"},
+		})
+	}); err != nil {
+		t.Fatal(err)
+	}
+	path, err := app.ExportConfig(false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, secret := range []string{"env-secret-1", "hdr-secret-2"} {
+		if strings.Contains(string(data), secret) {
+			t.Fatalf("masked export leaked %s", secret)
+		}
+	}
+}
+
+// TestConfigImportPreservesLocalState pins the import semantics: OAuth token
+// cache is machine-local and survives, old-schema backups come out normalized
+// (settings defaults + legacy price migration), and changed/deleted MCP
+// servers drop their cached connections.
+func TestConfigImportPreservesLocalState(t *testing.T) {
+	app, store, _ := newBackupTestService(t)
+	if err := store.Update(func(cfg *config.Config) {
+		cfg.MCPTokens = map[string]config.MCPOAuthToken{"m1": {AccessToken: "at-local", TokenURL: "https://x/token"}}
+		cfg.Settings.ThemeMode = ""
+		cfg.Providers[0].PriceIn = 2.0 // legacy provider-level price
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	// Backup from an OLD schema: no tokens, no per-model price, empty theme.
+	backup := `{"version":1,"config":{
+		"settings":{"workspaceDir":"/tmp/ws"},
+		"providers":[{"id":"prov_1","name":"P","protocol":"openai","baseUrl":"https://api.example.com/v1","apiKey":"k","priceIn":2.0,"priceOut":8.0,"models":[{"id":"m1"}]}],
+		"mcpServers":[{"id":"mcp_1","name":"M","transport":"stdio","command":"/bin/tool"}],
+		"agents":[]}}`
+	if err := app.ImportConfig(backup); err != nil {
+		t.Fatal(err)
+	}
+	got := store.Get()
+	if got.MCPTokens["m1"].AccessToken != "at-local" {
+		t.Fatalf("local OAuth token cache wiped by import: %+v", got.MCPTokens)
+	}
+	if got.Settings.ThemeMode == "" {
+		t.Fatalf("imported settings not normalized: %+v", got.Settings)
+	}
+	if len(got.Providers) != 1 || len(got.Providers[0].Models) != 1 {
+		t.Fatalf("imported provider unexpected: %+v", got.Providers)
+	}
+	mi := got.Providers[0].Models[0]
+	if mi.PriceIn != 2.0 || mi.PriceOut != 8.0 {
+		t.Fatalf("legacy provider price not migrated down: %+v", mi)
+	}
+	if got.Providers[0].PriceIn != 0 {
+		t.Fatalf("legacy provider-level price not cleared: %+v", got.Providers[0])
+	}
+
+	// A server whose config changed (or vanished) must drop its cached
+	// toolset: the second import replaces /bin/tool with /bin/tool2.
+	cfg := `{"version":1,"config":{
+		"settings":{},
+		"providers":[],
+		"mcpServers":[{"id":"mcp_1","name":"M","transport":"stdio","command":"/bin/tool2"}],
+		"agents":[]}}`
+	if err := app.ImportConfig(cfg); err != nil {
+		t.Fatal(err)
+	}
+}
