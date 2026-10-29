@@ -4,6 +4,14 @@
 
 ## 视觉测试与体验设计
 
+### 第一百一十五轮迭代：审查判断题收拢（已实施）
+
+第 114 轮审查留下的判断题项收拢为单一实现：
+
+- `agentkit.EffectiveModel(cfg, providerID, configured, override)`：会话实际运行模型的唯一解析点——BuildAgentWithModel、autoTitle 侧调用、SessionStats 计费三处共用（`ModelSupported` 保留为布尔检查导出）。
+- `ChatService.mutateSession(id, fn)`：Rename/SetModel/Archive/Pin 共享的「遍历 + found/notFound」形状，Archive/Pin 顺带获得未知会话校验。
+- Markdown 导出的 `nameOf` 中间人内联为 `displayNameOf` 直调。
+
 ### 第一百一十四轮迭代：双子代理代码审查修复（Standards + Spec，已实施）
 
 对 `bf24d2c...HEAD`（第 98–113 轮，16 提交 51 文件）执行双轴代码审查并修复全部发现：

@@ -291,22 +291,7 @@ func (c *ChatService) SearchSessions(query string) []config.ChatSession {
 // SetSessionModel pins a chat to a specific model of its target agent's
 // provider (per-session model override); empty clears the override.
 func (c *ChatService) SetSessionModel(sessionID, modelID string) error {
-	var notFound error
-	err := c.S.Store.Update(func(cfg *config.Config) {
-		found := false
-		for i := range cfg.Sessions {
-			if cfg.Sessions[i].ID == sessionID {
-				cfg.Sessions[i].ModelOverride = strings.TrimSpace(modelID)
-				found = true
-			}
-		}
-		if !found {
-			notFound = fmt.Errorf("session %q not found", sessionID)
-		}
-	})
-	if err == nil {
-		err = notFound
-	}
+	err := c.mutateSession(sessionID, func(s *config.ChatSession) { s.ModelOverride = strings.TrimSpace(modelID) })
 	if err == nil {
 		c.audit(sessionID, "session_model_set", "system", "session", mustJSON(map[string]string{"model": modelID}), "")
 	}
@@ -316,13 +301,7 @@ func (c *ChatService) SetSessionModel(sessionID, modelID string) error {
 // ArchiveSession toggles the archived flag of a session (archived sessions
 // are hidden from the default sidebar list but never deleted).
 func (c *ChatService) ArchiveSession(id string, archived bool) error {
-	err := c.S.Store.Update(func(cfg *config.Config) {
-		for i := range cfg.Sessions {
-			if cfg.Sessions[i].ID == id {
-				cfg.Sessions[i].Archived = archived
-			}
-		}
-	})
+	err := c.mutateSession(id, func(s *config.ChatSession) { s.Archived = archived })
 	if err == nil {
 		phase := "session_archived"
 		if !archived {
@@ -335,25 +314,19 @@ func (c *ChatService) ArchiveSession(id string, archived bool) error {
 
 // PinSession toggles the pinned flag of a session.
 func (c *ChatService) PinSession(id string, pinned bool) error {
-	return c.S.Store.Update(func(cfg *config.Config) {
-		for i := range cfg.Sessions {
-			if cfg.Sessions[i].ID == id {
-				cfg.Sessions[i].Pinned = pinned
-			}
-		}
-	})
+	return c.mutateSession(id, func(s *config.ChatSession) { s.Pinned = pinned })
 }
 
-// RenameSession updates a session title. Unknown IDs are an error, and the
-// audit record is only written on success so a failed rename does not leave a
-// false "renamed" entry behind.
-func (c *ChatService) RenameSession(id, title string) error {
+// mutateSession applies fn to one stored session and reports unknown IDs as
+// errors — the shared found/notFound shape behind rename, model override,
+// pin and archive.
+func (c *ChatService) mutateSession(id string, fn func(*config.ChatSession)) error {
 	var notFound error
 	err := c.S.Store.Update(func(cfg *config.Config) {
 		found := false
 		for i := range cfg.Sessions {
 			if cfg.Sessions[i].ID == id {
-				cfg.Sessions[i].Title = title
+				fn(&cfg.Sessions[i])
 				found = true
 			}
 		}
@@ -364,6 +337,14 @@ func (c *ChatService) RenameSession(id, title string) error {
 	if err == nil {
 		err = notFound
 	}
+	return err
+}
+
+// RenameSession updates a session title. Unknown IDs are an error, and the
+// audit record is only written on success so a failed rename does not leave a
+// false "renamed" entry behind.
+func (c *ChatService) RenameSession(id, title string) error {
+	err := c.mutateSession(id, func(s *config.ChatSession) { s.Title = title })
 	if err == nil {
 		c.audit(id, "session_renamed", "system", "session", mustJSON(map[string]string{"title": title}), "")
 	}
@@ -731,8 +712,6 @@ func (c *ChatService) ExportSession(sessionID string) (string, error) {
 		return "", err
 	}
 
-	nameOf := func(targetType, id string) string { return displayNameOf(cfg, targetType, id) }
-
 	var sb strings.Builder
 	fmt.Fprintf(&sb, "# %s\n\n", meta.Title)
 	kind := "Agent"
@@ -742,7 +721,7 @@ func (c *ChatService) ExportSession(sessionID string) (string, error) {
 	case "remote":
 		kind = "远程 Agent"
 	}
-	fmt.Fprintf(&sb, "- 对象: %s %s\n", kind, nameOf(meta.TargetType, meta.TargetID))
+	fmt.Fprintf(&sb, "- 对象: %s %s\n", kind, displayNameOf(cfg, meta.TargetType, meta.TargetID))
 	fmt.Fprintf(&sb, "- 创建时间: %s\n", meta.CreatedAt.Format("2006-01-02 15:04"))
 	if st, err := c.SessionStats(sessionID); err == nil {
 		fmt.Fprintf(&sb, "- 统计: %d 条用户消息 · %d 轮回复 · %d 次工具调用 · %d tokens\n",
@@ -1370,14 +1349,10 @@ func (c *ChatService) autoTitle(sessionID string, cfg config.Config, fallback, u
 	if provider == nil {
 		return
 	}
-	// The side call must respect the per-session model override — with the
-	// same clamp as BuildAgentWithModel (unknown ids fall back to the agent's
-	// configured model). The custom adapters build the client from the
-	// constructor's model, so the override has to happen here.
-	modelID := ac.Model
-	if target.ModelOverride != "" && agentkit.ModelSupported(cfg, ac.ProviderID, target.ModelOverride) {
-		modelID = target.ModelOverride
-	}
+	// The side call must respect the per-session model override — the same
+	// clamp as BuildAgentWithModel. The custom adapters build the client from
+	// the constructor's model, so the override has to happen here.
+	modelID := agentkit.EffectiveModel(cfg, ac.ProviderID, ac.Model, target.ModelOverride)
 	m, err := agentkit.NewModelFromProvider(*provider, modelID)
 	if err != nil {
 		return
@@ -1583,13 +1558,10 @@ func (c *ChatService) SessionStats(sessionID string) (*SessionStats, error) {
 	priceIn, priceOut := 0.0, 0.0
 	cfgNow := c.S.Store.Get()
 	if ac := c.targetAgentConfig(cfgNow, target); ac != nil {
-		// The per-session override picks the priced model when set — clamped
-		// like runTurn: an override whose model was deleted falls back to the
-		// agent's configured model everywhere, pricing included.
-		effectiveModel := ac.Model
-		if target.ModelOverride != "" && agentkit.ModelSupported(cfgNow, ac.ProviderID, target.ModelOverride) {
-			effectiveModel = target.ModelOverride
-		}
+		// Pricing follows the model the session actually runs (same clamp as
+		// runTurn: an override whose model was deleted falls back to the
+		// agent's configured model).
+		effectiveModel := agentkit.EffectiveModel(cfgNow, ac.ProviderID, ac.Model, target.ModelOverride)
 		for i := range cfgNow.Providers {
 			if cfgNow.Providers[i].ID != ac.ProviderID {
 				continue

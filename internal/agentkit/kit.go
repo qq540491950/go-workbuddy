@@ -114,15 +114,23 @@ func (k *Kit) BuildAgentWithModel(ac config.AgentConfig, modelID string) (agent.
 		return k.BuildAgent(ac)
 	}
 	cfg := k.store.Get()
-	if modelSupported(cfg, ac.ProviderID, modelID) {
-		ac.Model = modelID
-	}
+	ac.Model = EffectiveModel(cfg, ac.ProviderID, ac.Model, modelID)
 	return k.buildLLMAgent(ac, cfg)
 }
 
-// ModelSupported reports whether the provider offers the given model id;
-// unknown ids keep the agent's configured model instead of failing the turn.
-// Exported so side flows (auto-title) clamp overrides the same way.
+// EffectiveModel resolves the model a session actually runs: the per-session
+// override when the provider offers it, the agent's configured model
+// otherwise. The single clamp shared by agent building, stats pricing and the
+// auto-title side call.
+func EffectiveModel(cfg config.Config, providerID, configuredModel, override string) string {
+	if override != "" && modelSupported(cfg, providerID, override) {
+		return override
+	}
+	return configuredModel
+}
+
+// ModelSupported reports whether the provider offers the given model id.
+// Exported for callers that only need the boolean check.
 func ModelSupported(cfg config.Config, providerID, modelID string) bool {
 	return modelSupported(cfg, providerID, modelID)
 }
