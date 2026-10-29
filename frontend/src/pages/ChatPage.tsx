@@ -239,7 +239,19 @@ export function ChatPage() {
         if (!cancelled) toast.error(`加载历史失败: ${errText(e)}`);
       });
     Chat.IsRunning(activeID).then((r) => {
-      if (!cancelled) markRunning(activeID, r);
+      if (cancelled) return;
+      markRunning(activeID, r);
+      // A queued message stranded by a session switch (its turn finished in
+      // the background) fires now: the user is back and nothing is running.
+      const pending = queuedRef.current[activeID];
+      if (!r && pending) {
+        setQueued((prev) => {
+          const next = { ...prev };
+          delete next[activeID];
+          return next;
+        });
+        setTimeout(() => sendRef.current(pending), 80);
+      }
     }).catch(() => {});
     return () => {
       cancelled = true;

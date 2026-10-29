@@ -80,6 +80,11 @@ const seedConfig = {
 const histories: Record<string, any[]> = {
   sess_confirm: [
     { id: "m1", kind: "user", author: "user", text: "把周报写到 notes/weekly.md", timestamp: "2026-09-18T01:01:00Z" },
+    { id: "m1-plan", kind: "tool_result", author: "写手助手", text: "", toolName: "plan_todos", toolResp: { ok: true, todos: [
+      { content: "收集本周素材", status: "completed" },
+      { content: "起草周报正文", status: "in_progress" },
+      { content: "审阅并写入 weekly.md", status: "pending" },
+    ] }, timestamp: "2026-09-18T01:01:05Z" },
     { id: "m2", kind: "tool_call", author: "写手助手", text: "", toolName: "write_workspace_file", toolArgs: { path: "notes/weekly.md", content: "# 周报" }, timestamp: "2026-09-18T01:01:10Z" },
     {
       id: "m3", kind: "confirm_request", author: "写手助手", text: "",

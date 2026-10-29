@@ -141,6 +141,7 @@ export default function App() {
                 ["/export", "导出会话 Markdown"],
                 ["/exporthtml", "导出会话 HTML"],
                 ["/stats", "会话统计"],
+                ["/todos", "查看当前任务计划"],
                 ["/new", "新建对话"],
               ].map(([k, d]) => (
                 <div key={k} className="flex items-center justify-between rounded-lg border px-3 py-1.5">
