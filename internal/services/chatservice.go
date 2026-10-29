@@ -659,6 +659,9 @@ var _ = context.Background
 // (from the last user message onward, inclusive) and re-runs the same message
 // with its original attachments.
 func (c *ChatService) Regenerate(sessionID string) error {
+	// Same contract as DeleteSession: stop the in-flight run BEFORE touching
+	// stored events, or the old run keeps appending to the trimmed timeline.
+	c.Cancel(sessionID)
 	text, atts, err := c.trimLastTurn(sessionID)
 	if err != nil {
 		return err
@@ -672,6 +675,7 @@ func (c *ChatService) EditAndResend(sessionID, newText string) error {
 	if strings.TrimSpace(newText) == "" {
 		return fmt.Errorf("消息内容不能为空")
 	}
+	c.Cancel(sessionID) // see Regenerate: trim only after the old run stopped
 	_, atts, err := c.trimLastTurn(sessionID)
 	if err != nil {
 		return err
@@ -1364,20 +1368,23 @@ func (c *ChatService) autoTitle(sessionID string, cfg config.Config, fallback, u
 	if provider == nil {
 		return
 	}
-	m, err := agentkit.NewModelFromProvider(*provider, ac.Model)
+	// The side call must respect the per-session model override — with the
+	// same clamp as BuildAgentWithModel (unknown ids fall back to the agent's
+	// configured model). The custom adapters build the client from the
+	// constructor's model, so the override has to happen here.
+	modelID := ac.Model
+	if target.ModelOverride != "" && agentkit.ModelSupported(cfg, ac.ProviderID, target.ModelOverride) {
+		modelID = target.ModelOverride
+	}
+	m, err := agentkit.NewModelFromProvider(*provider, modelID)
 	if err != nil {
 		return
-	}
-	modelID := ac.Model
-	if target.ModelOverride != "" {
-		modelID = target.ModelOverride
 	}
 	// Guardrail the quoted user content just like a normal turn.
 	prompt := "根据下面的对话开头，起一个不超过 12 个字的中文标题。只输出标题本身，不要引号、句号或任何解释。\n\n用户: " +
 		agentkit.ApplyOutputGuardrail(truncateRunes(userText, 200)) +
 		"\n助手: " + agentkit.ApplyOutputGuardrail(truncateRunes(reply, 200))
 	req := &adkmodel.LLMRequest{
-		Model: modelID,
 		Contents: []*genai.Content{
 			genai.NewContentFromText(prompt, genai.RoleUser),
 		},

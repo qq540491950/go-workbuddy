@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"sync"
 	"time"
 
 	"github.com/glebarez/sqlite"
@@ -98,6 +99,7 @@ func main() {
 	// Always register the A2A service (start/stop RPCs); auto-start may have
 	// begun serving already via the settings hook below.
 	a2aRPC := services.NewA2AService(svc, sessions)
+	svc.A2A = a2aRPC // config mutations can take published agents offline
 
 	chatSvc := services.NewChatService(svc, sessions, gormDB)
 	chatSvc.SetToolAuditPath(filepath.Join(cfgDir, "logs", "tools-audit.jsonl"))
@@ -121,7 +123,11 @@ func main() {
 			Handler: application.AssetFileServerFS(assets),
 		},
 		Mac: application.MacOptions{
-			ApplicationShouldTerminateAfterLastWindowClosed: true,
+			// The tray + global shortcut are resident features: closing the
+			// window must not quit the whole app (it would silently kill the
+			// published A2A servers and the summon shortcut). Quit lives in
+			// the tray menu.
+			ApplicationShouldTerminateAfterLastWindowClosed: false,
 		},
 		OnShutdown: func() {
 			a2aRPC.StopAll() // graceful: unpublish agents before exit
@@ -199,16 +205,49 @@ func setupLogging(logDir string) {
 	if err := os.MkdirAll(logDir, 0o755); err != nil {
 		return
 	}
-	logPath := filepath.Join(logDir, "app.log")
-	if st, err := os.Stat(logPath); err == nil && st.Size() > 5<<20 {
-		_ = os.Rename(logPath, filepath.Join(logDir, "app.log.old"))
-	}
-	f, err := os.OpenFile(logPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
+	rw, err := newRotatingWriter(filepath.Join(logDir, "app.log"), 5<<20)
 	if err != nil {
 		return
 	}
-	log.SetOutput(io.MultiWriter(os.Stderr, f))
+	log.SetOutput(io.MultiWriter(os.Stderr, rw))
 	log.SetFlags(log.LstdFlags | log.LUTC)
+}
+
+// rotatingWriter caps its file at maxBytes: tray apps stay resident for
+// weeks, and the startup-only rotation check used to let app.log grow
+// without bound within one session. Every write checks the size and rotates
+// to <path>.old before appending.
+type rotatingWriter struct {
+	mu       sync.Mutex
+	path     string
+	maxBytes int64
+	f        *os.File
+}
+
+func newRotatingWriter(path string, maxBytes int64) (*rotatingWriter, error) {
+	if st, err := os.Stat(path); err == nil && st.Size() > maxBytes {
+		_ = os.Rename(path, path+".old")
+	}
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
+	if err != nil {
+		return nil, err
+	}
+	return &rotatingWriter{path: path, maxBytes: maxBytes, f: f}, nil
+}
+
+func (w *rotatingWriter) Write(p []byte) (int, error) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if st, err := w.f.Stat(); err == nil && st.Size()+int64(len(p)) > w.maxBytes {
+		_ = w.f.Close()
+		_ = os.Rename(w.path, w.path+".old")
+		f, err := os.OpenFile(w.path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
+		if err != nil {
+			return 0, err
+		}
+		w.f = f
+	}
+	return w.f.Write(p)
 }
 
 // newSessionService opens the ADK session service backed by SQLite and

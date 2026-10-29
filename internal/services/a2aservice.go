@@ -132,6 +132,17 @@ func (a *A2AService) Start(agentID string, port int) (A2AStatus, error) {
 	return A2AStatus{Running: true, URL: entry.url, AgentID: agentID, AgentName: name}, nil
 }
 
+// StopPublishedAgent is a best-effort hook for config mutations: if the given
+// agent is currently published over A2A, its server is stopped so remote
+// clients cannot keep invoking a stale (edited) or deleted agent tree. Unknown
+// IDs are a no-op.
+func (s *Services) StopPublishedAgent(agentID string) {
+	if s.A2A == nil {
+		return
+	}
+	_ = s.A2A.StopAgent(agentID)
+}
+
 // StopAgent shuts down one published agent's server.
 func (a *A2AService) StopAgent(agentID string) error {
 	a.mu.Lock()

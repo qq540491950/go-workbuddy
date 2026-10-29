@@ -4,6 +4,21 @@
 
 ## 视觉测试与体验设计
 
+### 第一百一十二轮迭代：四轮体检批 — A2A 生命周期 + 常驻语义 + 收尾加固（已实施）
+
+**依据**：第四轮只读体检（专审本轮新增代码与 main.go/a2aservice 全文）确认的 8 项。
+
+- **P2 autoTitle 忽略会话模型覆盖**：自定义适配器从构造参数取模型（`req.Model` 是死代码），侧调用改为与 `BuildAgentWithModel` 相同的钳制（`agentkit.ModelSupported` 导出复用），先定生效模型再建客户端。
+- **A2A 感知配置变更**：`Services.A2A` 接线 + `StopPublishedAgent` 钩子——SaveAgent（替换时）与 DeleteAgent 后把已发布服务器下线，远端不能再调用旧/已删除的代理树。
+- **技能目录清理入锁**：`RemoveMaterializedSkill` 改为 Kit 方法并持 `skillMu`，不再与并行构建的物化序列交错。
+- **悬空技能报错**：挂载的 SkillID 不存在时聚合进构建错误（导入分享文件的典型场景），与 MCP「报告而非静默降级」契约对齐。`TestBuildAgentReportsDanglingSkills`。
+- **Regenerate/EditAndResend 先取消**：裁剪历史前先停旧轮次（与 DeleteSession 同契约），避免旧 run 向已裁剪时间线继续写事件产生混合上下文。
+- **产物列表真实「最新优先」**：先按 mtime 降序排序再截断 200（此前词法序遍历先取满 200 再按路径排序）；`/exports/` 过滤改 `ToSlash`（Windows 生效）；同毫秒文件按路径稳定次序。`TestListArtifacts` 更新为显式 mtime 契约。
+- **关闭窗口不再退出应用**：`ApplicationShouldTerminateAfterLastWindowClosed: false`——托盘常驻与全局召唤快捷键不因红叉失效（退出仍在托盘菜单）。
+- **app.log 运行期轮转**：`rotatingWriter` 每次写入前检查大小（此前仅启动时检查一次，长驻会话无上限）。
+
+**测试证据**：新增 2 用例 + 更新 1 用例契约；`go test` + `-race` 全绿；verify.sh ALL GREEN。
+
 ### 第一百一十一轮迭代：新特性边界加固 + 桩覆盖 + 文档同步（已实施）
 
 - **SetSessionModel 边界**：对未知会话 ID 返回错误（与 RenameSession 同契约），审计仅在成功后落笔。`TestSetSessionModelUnknownSession`。

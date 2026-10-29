@@ -30,6 +30,9 @@ type Services struct {
 	Kit    *agentkit.Kit
 	MCP    *mcpmgr.Manager
 	Memory *memory.SQLiteService
+	// A2A, when set, lets config mutations take down published servers whose
+	// agent was edited or deleted (nil in tests without A2A wiring).
+	A2A *A2AService
 }
 
 func newID(prefix string) string {
@@ -145,8 +148,8 @@ func (c *ConfigService) SaveAgent(a config.AgentConfig) error {
 	if a.BuiltinTools == nil {
 		a.BuiltinTools = []string{}
 	}
-	return c.S.Store.Update(func(cfg *config.Config) {
-		replaced := false
+	replaced := false
+	err := c.S.Store.Update(func(cfg *config.Config) {
 		for i := range cfg.Agents {
 			if cfg.Agents[i].ID == a.ID {
 				a.CreatedAt = cfg.Agents[i].CreatedAt
@@ -159,11 +162,18 @@ func (c *ConfigService) SaveAgent(a config.AgentConfig) error {
 			cfg.Agents = append(cfg.Agents, a)
 		}
 	})
+	if err == nil && replaced {
+		// A published A2A server holds the agent tree built at Start time;
+		// after an edit the remote side would keep serving the OLD config.
+		// Take it offline — the user re-publishes with the new settings.
+		c.S.StopPublishedAgent(a.ID)
+	}
+	return err
 }
 
 // DeleteAgent removes an agent and detaches it from teams.
 func (c *ConfigService) DeleteAgent(id string) error {
-	return c.S.Store.Update(func(cfg *config.Config) {
+	err := c.S.Store.Update(func(cfg *config.Config) {
 		out := cfg.Agents[:0]
 		for _, a := range cfg.Agents {
 			if a.ID != id {
@@ -185,6 +195,12 @@ func (c *ConfigService) DeleteAgent(id string) error {
 			}
 		}
 	})
+	if err == nil {
+		// A deleted agent must not stay reachable through a still-published
+		// A2A server.
+		c.S.StopPublishedAgent(id)
+	}
+	return err
 }
 
 // SaveTeam inserts or updates an agent team.
@@ -379,7 +395,7 @@ func (c *ConfigService) DeleteSkill(id string) error {
 		}
 	})
 	if removed.Name != "" {
-		agentkit.RemoveMaterializedSkill(c.S.Store.SkillsDir(), removed.Name)
+		c.S.Kit.RemoveMaterializedSkill(removed.Name)
 	}
 	return nil
 }

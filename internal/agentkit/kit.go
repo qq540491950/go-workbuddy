@@ -120,8 +120,13 @@ func (k *Kit) BuildAgentWithModel(ac config.AgentConfig, modelID string) (agent.
 	return k.buildLLMAgent(ac, cfg)
 }
 
-// modelSupported reports whether the provider offers the given model id;
+// ModelSupported reports whether the provider offers the given model id;
 // unknown ids keep the agent's configured model instead of failing the turn.
+// Exported so side flows (auto-title) clamp overrides the same way.
+func ModelSupported(cfg config.Config, providerID, modelID string) bool {
+	return modelSupported(cfg, providerID, modelID)
+}
+
 func modelSupported(cfg config.Config, providerID, modelID string) bool {
 	for i := range cfg.Providers {
 		if cfg.Providers[i].ID != providerID {
@@ -421,6 +426,26 @@ func (k *Kit) skillToolset(ac config.AgentConfig, cfg config.Config) (tool.Tools
 			wantNames[sanitizeSkillName(s.Name)] = true
 		}
 	}
+	// Same no-silent-degradation contract as MCP: a mounted skill that no
+	// longer exists (imported share files are the usual source) is reported,
+	// not quietly dropped — the agent would otherwise claim capabilities it
+	// never had.
+	var missing []string
+	for _, id := range ids {
+		exists := false
+		for _, s := range cfg.Skills {
+			if s.ID == id {
+				exists = true
+				break
+			}
+		}
+		if !exists {
+			missing = append(missing, id)
+		}
+	}
+	if len(missing) > 0 {
+		return nil, fmt.Errorf("agent %q: 挂载的技能不存在（请重新选择或导入）: %s", ac.Name, strings.Join(missing, ", "))
+	}
 	dir := filepath.Join(k.store.SkillsDir(), "agents", agentSkillKey(ac))
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return nil, fmt.Errorf("create skills dir: %w", err)
@@ -487,8 +512,12 @@ func MaterializedSkillName(name string) string { return sanitizeSkillName(name) 
 
 // RemoveMaterializedSkill deletes the materialized SKILL.md directories of a
 // skill: the per-agent staging dirs and the legacy shared layout. Best effort
-// — the next agent build prunes stale entries anyway.
-func RemoveMaterializedSkill(skillsDir, skillName string) {
+// — the next agent build prunes stale entries anyway. Runs under skillMu so a
+// concurrent build's write/prune/preload sequence is never torn apart.
+func (k *Kit) RemoveMaterializedSkill(skillName string) {
+	k.skillMu.Lock()
+	defer k.skillMu.Unlock()
+	skillsDir := k.store.SkillsDir()
 	name := sanitizeSkillName(skillName)
 	if agents, err := os.ReadDir(filepath.Join(skillsDir, "agents")); err == nil {
 		for _, a := range agents {

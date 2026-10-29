@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"changeme/internal/agentkit"
 	"changeme/internal/config"
@@ -85,8 +86,12 @@ func TestOpenRejectsTraversalAndBinary(t *testing.T) {
 
 func TestListArtifacts(t *testing.T) {
 	svc, ws := newArtifactFixture(t)
+	// Explicit mtimes: List promises newest first.
 	for i, name := range []string{"a.png", "b.md", "c.txt", "d.exe"} {
-		_ = os.WriteFile(filepath.Join(ws, name), []byte{byte(i)}, 0o644)
+		p := filepath.Join(ws, name)
+		_ = os.WriteFile(p, []byte{byte(i)}, 0o644)
+		stamp := time.Now().Add(-time.Duration(3-i) * time.Hour) // a oldest, c newest
+		_ = os.Chtimes(p, stamp, stamp)
 	}
 	list, err := svc.List()
 	if err != nil {
@@ -96,8 +101,8 @@ func TestListArtifacts(t *testing.T) {
 	for _, a := range list {
 		names = append(names, a.Name)
 	}
-	// d.exe has an unknown extension and must be excluded.
-	if strings.Join(names, ",") != "a.png,b.md,c.txt" {
+	// d.exe has an unknown extension and must be excluded; newest first.
+	if strings.Join(names, ",") != "c.txt,b.md,a.png" {
 		t.Fatalf("list = %v", names)
 	}
 }

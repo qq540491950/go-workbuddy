@@ -196,7 +196,7 @@ func TestSkillToolsetPrunesUnmountedSkills(t *testing.T) {
 		t.Fatalf("agent A staging dir after detach = %v, want [shared-skill]", names)
 	}
 	// RemoveMaterializedSkill clears every agent's copy of a deleted skill.
-	RemoveMaterializedSkill(store.SkillsDir(), "Shared Skill")
+	kit.RemoveMaterializedSkill("Shared Skill")
 	for _, id := range []string{"agent_a", "agent_b"} {
 		if _, err := os.Stat(filepath.Join(store.SkillsDir(), "agents", id, "shared-skill")); !os.IsNotExist(err) {
 			t.Fatalf("agent %s still has shared-skill after removal: %v", id, err)
@@ -242,6 +242,27 @@ func TestBuildAgentReportsMCPFailures(t *testing.T) {
 	}
 }
 
+// TestBuildAgentReportsDanglingSkills: mounted skills that no longer exist
+// (imported share files are the usual source) must be reported, not quietly
+// dropped — same no-silent-degradation contract as MCP servers.
+func TestBuildAgentReportsDanglingSkills(t *testing.T) {
+	kit, store := newTestKit(t)
+	if err := store.Update(func(cfg *config.Config) {
+		cfg.Providers = append(cfg.Providers, config.ModelProvider{
+			ID: "p1", Name: "Fake", Protocol: config.ProtocolOpenAI, Models: []config.ModelInfo{{ID: "m1"}},
+		})
+	}); err != nil {
+		t.Fatal(err)
+	}
+	ac := config.AgentConfig{ID: "agent_s", Name: "技能人", ProviderID: "p1", Model: "m1",
+		SkillIDs: []string{"skill_gone"}}
+	if _, err := kit.BuildAgent(ac); err == nil {
+		t.Fatal("expected dangling skill error")
+	} else if !strings.Contains(err.Error(), "skill_gone") {
+		t.Fatalf("error missing skill id: %v", err)
+	}
+}
+
 // TestBuildTeamLeadPeersIncludeRemoteMembers pins the explicit-lead path: the
 // lead's transferable peers must include local AND remote members (the remote
 // ones used to be silently dropped), with dangling member IDs skipped instead
@@ -264,7 +285,7 @@ func TestBuildTeamLeadPeersIncludeRemoteMembers(t *testing.T) {
 	}
 	team := config.TeamConfig{
 		ID: "team_x", Name: "混合队", LeadAgentID: "a_lead",
-		MemberAgentIDs: []string{"a_lead", "a_peer", "a_gone"},
+		MemberAgentIDs:  []string{"a_lead", "a_peer", "a_gone"},
 		RemoteMemberIDs: []string{"ra_1"},
 	}
 	root, rootName, err := kit.BuildTeam(team)

@@ -13,7 +13,7 @@ import (
 )
 
 const (
-	maxBinaryArtifact = 12 << 20 // 12 MB for image/pdf preview
+	maxBinaryArtifact = 12 << 20  // 12 MB for image/pdf preview
 	maxTextArtifact   = 512 << 10 // 512 KB for text preview
 )
 
@@ -146,13 +146,18 @@ func (a *ArtifactService) List() ([]ArtifactInfo, error) {
 	if ws == "" {
 		return nil, fmt.Errorf("工作区目录未配置")
 	}
-	var out []ArtifactInfo
-	maxItems := 200
+	type found struct {
+		info ArtifactInfo
+		mt   int64
+	}
+	var foundFiles []found
 	_ = filepath.WalkDir(ws, func(path string, d os.DirEntry, err error) error {
 		if err != nil || d.IsDir() {
 			return nil
 		}
-		if strings.Contains(path, "/exports/") || strings.HasPrefix(d.Name(), ".") {
+		// ToSlash: WalkDir emits OS separators, and the exports filter must
+		// hold on Windows too.
+		if strings.Contains(filepath.ToSlash(path), "/exports/") || strings.HasPrefix(d.Name(), ".") {
 			return nil
 		}
 		ext := strings.ToLower(filepath.Ext(path))
@@ -167,16 +172,33 @@ func (a *ArtifactService) List() ([]ArtifactInfo, error) {
 		if err != nil {
 			return nil
 		}
-		out = append(out, ArtifactInfo{
-			Name: d.Name(), Path: filepath.ToSlash(rel),
-			Kind: artifactKind(ext), Size: st.Size(),
+		foundFiles = append(foundFiles, found{
+			info: ArtifactInfo{
+				Name: d.Name(), Path: filepath.ToSlash(rel),
+				Kind: artifactKind(ext), Size: st.Size(),
+			},
+			mt: st.ModTime().UnixNano(),
 		})
-		if len(out) >= maxItems {
-			return filepath.SkipAll
-		}
 		return nil
 	})
-	sort.Slice(out, func(i, j int) bool { return out[i].Path < out[j].Path })
+	// The doc promises newest first: sort by mtime BEFORE capping, otherwise
+	// the lexical walk order decides which files survive the cap. Same-mtime
+	// files (bulk writes land in one timestamp tick) tie-break by path so the
+	// order stays deterministic.
+	sort.Slice(foundFiles, func(i, j int) bool {
+		if foundFiles[i].mt != foundFiles[j].mt {
+			return foundFiles[i].mt > foundFiles[j].mt
+		}
+		return foundFiles[i].info.Path < foundFiles[j].info.Path
+	})
+	const maxItems = 200
+	if len(foundFiles) > maxItems {
+		foundFiles = foundFiles[:maxItems]
+	}
+	out := make([]ArtifactInfo, 0, len(foundFiles))
+	for _, f := range foundFiles {
+		out = append(out, f.info)
+	}
 	return out, nil
 }
 
