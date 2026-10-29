@@ -806,6 +806,13 @@ export function ChatPage() {
     }
   };
 
+  // ⌘F (dispatched by App) opens the in-conversation filter.
+  useEffect(() => {
+    const onToggle = () => setFilterOpen(true);
+    window.addEventListener("wb-toggle-filter", onToggle);
+    return () => window.removeEventListener("wb-toggle-filter", onToggle);
+  }, []);
+
   const toolDurations = useMemo(() => computeToolDurations(messages), [messages]);
   const runningToolsSet = useMemo(() => computeRunningTools(messages), [messages]);
   // Precompute once per message change instead of scanning the tail for every
@@ -823,7 +830,39 @@ export function ChatPage() {
     }
     return null;
   }, [messages]);
-  const visibleMessages = useMemo(() => messages.slice(-RENDER_LIMIT), [messages]);
+  // In-conversation message filter (⌘F / the header search icon): shows only
+  // the messages matching the query, like the desktop clients' chat search.
+  const [filterOpen, setFilterOpen] = useState(false);
+  const [msgFilter, setMsgFilter] = useState("");
+  const filterInputRef = useRef<HTMLInputElement>(null);
+  const filterQ = msgFilter.trim().toLowerCase();
+  const filteredMessages = useMemo(() => {
+    if (!filterQ) return messages;
+    return messages.filter((m) => {
+      if (m.text && m.text.toLowerCase().includes(filterQ)) return true;
+      if (m.hint && m.hint.toLowerCase().includes(filterQ)) return true;
+      if (m.toolName && m.toolName.toLowerCase().includes(filterQ)) return true;
+      if (m.toolResp && JSON.stringify(m.toolResp).toLowerCase().includes(filterQ)) return true;
+      if (m.toolArgs && JSON.stringify(m.toolArgs).toLowerCase().includes(filterQ)) return true;
+      return false;
+    });
+  }, [messages, filterQ]);
+  const visibleMessages = useMemo(
+    () => (filterQ ? filteredMessages.slice(-RENDER_LIMIT) : messages.slice(-RENDER_LIMIT)),
+    [filterQ, filteredMessages, messages],
+  );
+
+  const toggleFilter = useCallback(() => {
+    setFilterOpen((v) => {
+      const next = !v;
+      if (next) {
+        setTimeout(() => filterInputRef.current?.focus(), 50);
+      } else {
+        setMsgFilter("");
+      }
+      return next;
+    });
+  }, []);
   const slashSuggestions = useMemo(() => {
     if (!input.startsWith("/")) return [];
     const q = input.toLowerCase();
@@ -972,6 +1011,18 @@ export function ChatPage() {
             )}
             {active && (
               <button
+                className={cn(
+                  "rounded p-1 text-muted-foreground transition-opacity hover:text-foreground",
+                  filterOpen ? "opacity-100 text-primary" : "opacity-60 hover:opacity-100",
+                )}
+                title="在会话内搜索消息（⌘F）"
+                onClick={toggleFilter}
+              >
+                <Search className="h-3.5 w-3.5" />
+              </button>
+            )}
+            {active && (
+              <button
                 className="rounded p-1 text-muted-foreground opacity-60 transition-opacity hover:text-foreground hover:opacity-100"
                 title="重命名会话"
                 onClick={() => { setRenaming(active); setRenameText(active.title); }}
@@ -1058,6 +1109,28 @@ export function ChatPage() {
           </div>
         </div>
 
+        {filterOpen && (
+          <div className="flex items-center gap-2 border-b px-4 py-1.5">
+            <Search className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+            <input
+              ref={filterInputRef}
+              value={msgFilter}
+              onChange={(e) => setMsgFilter(e.target.value)}
+              placeholder="过滤当前会话的消息（匹配文本/工具名/参数/结果）"
+              className="h-7 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+            />
+            {filterQ && (
+              <span className="shrink-0 text-xs text-muted-foreground">{filteredMessages.length}/{messages.length} 条</span>
+            )}
+            <button
+              className="shrink-0 rounded p-1 text-muted-foreground hover:text-foreground"
+              title="清除并关闭"
+              onClick={toggleFilter}
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        )}
         <ScrollArea className="flex-1" viewportRef={scrollRef}>
           <div className="mx-auto max-w-3xl space-y-3 p-4">
             {messages.length > RENDER_LIMIT && (

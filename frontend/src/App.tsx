@@ -38,13 +38,14 @@ export default function App() {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const mod = e.metaKey || e.ctrlKey;
-      if (!mod || (e.key !== "n" && e.key !== "N" && e.key !== "k" && e.key !== "K")) return;
+      const key = e.key.toLowerCase();
+      if (!mod || (key !== "n" && key !== "k" && key !== "f")) return;
       e.preventDefault();
       setPage("chat");
       // Deferred: when switching from another page, ChatPage mounts on the
       // next render — a synchronous dispatch would fire before its listener
       // exists and the action would be lost.
-      const ev = new CustomEvent(e.key === "k" || e.key === "K" ? "wb-focus-composer" : "wb-new-chat");
+      const ev = new CustomEvent(key === "k" ? "wb-focus-composer" : key === "f" ? "wb-toggle-filter" : "wb-new-chat");
       setTimeout(() => window.dispatchEvent(ev), 50);
     };
     window.addEventListener("keydown", onKey);
@@ -157,6 +158,7 @@ export default function App() {
                 ["Shift + Enter", "换行"],
                 ["⌘/Ctrl + N", "新对话（全局）"],
                 ["⌘/Ctrl + K", "聚焦输入框（全局）"],
+                ["⌘/Ctrl + F", "会话内搜索（全局）"],
                 ["/export", "导出会话 Markdown"],
                 ["/exporthtml", "导出会话 HTML"],
                 ["/stats", "会话统计"],
