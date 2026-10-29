@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Events } from "@wailsio/runtime";
 import {
   Plus, Send, Square, Trash2, Pencil, MessageSquare, Bot, Users, Loader2,
@@ -18,7 +18,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
-import { computeEditFlags, computeRunningTools, computeToolDurations, fmtTime, mdToSpeech, type UIMessage } from "@/lib/chatUtils";
+import { computeEditFlags, computeRunningTools, computeToolDurations, dayLabel, fmtTime, isDayChange, mdToSpeech, type UIMessage } from "@/lib/chatUtils";
 import { MessageMarkdown, CopyButton } from "@/components/MessageMarkdown";
 import { ToolCallCard } from "@/components/ToolCallCard";
 import {
@@ -1195,8 +1195,12 @@ export function ChatPage() {
               </div>
             )}
             {visibleMessages.map((m, i, arr) => {
+              const prev = i > 0 ? arr[i - 1] : undefined;
+              const dayChanged = isDayChange(prev?.timestamp, m.timestamp);
               return (
-                <MessageBubble
+                <Fragment key={m.id}>
+                  {dayChanged && <DaySeparator ts={m.timestamp} />}
+                  <MessageBubble
                   key={m.id}
                   m={m}
                   isLastAssistant={m.kind === "assistant" && i === arr.length - 1}
@@ -1209,7 +1213,8 @@ export function ChatPage() {
                   onEdit={startEdit}
                   canEdit={editFlags.get(m.id) === true && !running && !!activeID}
                   onConfirm={answerConfirm}
-                />
+                  />
+                </Fragment>
               );
             })}
             <div ref={bottomRef} />
@@ -1665,6 +1670,17 @@ function ConfirmCard({ m, onConfirm }: {
           {status === "approved" ? "模型已继续执行该工具调用" : "模型已收到拒绝结果"}
         </div>
       )}
+    </div>
+  );
+}
+
+/** DaySeparator marks calendar-day boundaries in long conversations. */
+function DaySeparator({ ts }: { ts: string | undefined }) {
+  return (
+    <div className="flex items-center gap-3 py-1" aria-hidden>
+      <div className="h-px flex-1 bg-border" />
+      <span className="shrink-0 rounded-full bg-muted px-3 py-0.5 text-[11px] text-muted-foreground">{dayLabel(ts)}</span>
+      <div className="h-px flex-1 bg-border" />
     </div>
   );
 }

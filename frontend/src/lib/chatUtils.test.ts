@@ -86,3 +86,17 @@ describe("mdToSpeech", () => {
     expect(out).toContain("这是 加粗 与 代码");
   });
 });
+
+import { dayLabel, isDayChange } from "./chatUtils";
+
+describe("isDayChange / dayLabel", () => {
+  it("marks calendar-day boundaries and labels them in Chinese", () => {
+    const a = new Date(2026, 9, 29, 23, 0).toISOString();
+    const b = new Date(2026, 9, 30, 0, 30).toISOString();
+    expect(isDayChange(a, b)).toBe(true);
+    expect(isDayChange(b, b)).toBe(false);
+    expect(isDayChange(undefined, b)).toBe(true);
+    expect(dayLabel(b)).toContain("10月30日");
+    expect(dayLabel("bad")).toBe("");
+  });
+});

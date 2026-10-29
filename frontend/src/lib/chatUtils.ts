@@ -117,3 +117,22 @@ export function computeEditFlags(messages: UIMessage[]): Map<string, boolean> {
   return flags;
 }
 
+
+/** isDayChange reports whether the two timestamps fall on different calendar
+ * days (used to render day separators in long-lived conversations). */
+export function isDayChange(prevIso: string | undefined, iso: string | undefined): boolean {
+  if (!iso) return false;
+  if (!prevIso) return true; // first message always opens a day header
+  const a = new Date(prevIso);
+  const b = new Date(iso);
+  if (isNaN(a.getTime()) || isNaN(b.getTime())) return false;
+  return a.getFullYear() !== b.getFullYear() || a.getMonth() !== b.getMonth() || a.getDate() !== b.getDate();
+}
+
+/** dayLabel formats a timestamp as "10月30日 星期四" style day header. */
+export function dayLabel(iso: string | undefined): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return "";
+  return d.toLocaleDateString("zh-CN", { month: "long", day: "numeric", weekday: "long" });
+}
