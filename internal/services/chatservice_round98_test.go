@@ -490,3 +490,14 @@ func TestSessionModelOverride(t *testing.T) {
 		t.Fatalf("override not cleared: %q", *bodies)
 	}
 }
+
+// TestSetSessionModelUnknownSession: the picker's RPC must reject unknown
+// session IDs instead of silently succeeding (same contract as RenameSession).
+func TestSetSessionModelUnknownSession(t *testing.T) {
+	var reply atomic.Value
+	reply.Store("ok")
+	chat, _, _ := newChatFixture(t, &reply)
+	if err := chat.SetSessionModel("sess_missing", "fake-large"); err == nil {
+		t.Fatal("expected error for unknown session")
+	}
+}

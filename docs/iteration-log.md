@@ -4,6 +4,12 @@
 
 ## 视觉测试与体验设计
 
+### 第一百一十一轮迭代：新特性边界加固 + 桩覆盖 + 文档同步（已实施）
+
+- **SetSessionModel 边界**：对未知会话 ID 返回错误（与 RenameSession 同契约），审计仅在成功后落笔。`TestSetSessionModelUnknownSession`。
+- **视觉桩覆盖新 UI**：供应商模型列表加 `gpt-5-max`、确认会话带 `modelOverride`、SetSessionModel 桩处理器（哈希键与生成绑定一致，另暴露 `__seedConfig`/`__lastList` 调试全局）。桩走查确认：头部模型选择器渲染会话覆盖值、下拉含「Agent 默认模型」+ 全部供应商模型、切换触发 RPC（toast + 调用描述符 + 数据回读全链路验证；受控 Select 的回显环节受桩环境合成事件限制无法驱动 Radix 提交动画，属测试环境限制）。
+- **README 同步**：会话级模型选择、生成期间排队发送、智能会话命名（设置行）。
+
 ### 第一百一十轮迭代：智能会话命名（已实施）
 
 **依据**：对齐 ChatGPT/Claude Desktop 的自动标题能力——首轮对话结束后由模型生成简短中文标题，替代「首条消息前 30 字」的机械截断。

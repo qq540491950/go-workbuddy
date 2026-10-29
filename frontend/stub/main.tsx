@@ -27,7 +27,10 @@ const seedConfig = {
       protocol: "openai",
       baseUrl: "https://api.openai.com/v1",
       apiKey: "sk-stub",
-      models: [{ id: "gpt-5-mini", multimodal: true, contextWindow: 400000, priceIn: 2, priceOut: 8 }],
+      models: [
+        { id: "gpt-5-mini", multimodal: true, contextWindow: 400000, priceIn: 2, priceOut: 8 },
+        { id: "gpt-5-max", multimodal: true, contextWindow: 400000, priceIn: 10, priceOut: 40 },
+      ],
       isDefault: true,
     },
   ],
@@ -72,7 +75,7 @@ const seedConfig = {
   skills: [],
   mcpServers: [],
   sessions: [
-    { id: "sess_confirm", title: "需要确认的写入", targetType: "agent", targetId: "agent_1", createdAt: "2026-09-18T01:00:00Z", updatedAt: "2026-09-18T01:05:00Z" },
+    { id: "sess_confirm", title: "需要确认的写入", targetType: "agent", targetId: "agent_1", createdAt: "2026-09-18T01:00:00Z", updatedAt: "2026-09-18T01:05:00Z", modelOverride: "gpt-5-mini" },
     { id: "sess_plain", title: "普通对话", targetType: "team", targetId: "team_1", createdAt: "2026-09-17T09:00:00Z", updatedAt: "2026-09-17T09:10:00Z" },
   ],
 };
@@ -105,13 +108,23 @@ const handlers: Record<string, (args: any[]) => any> = {
   // GetConfig
   "362021961": () => seedConfig,
   // ListSessions
-  "1516353476": () => seedConfig.sessions,
+  "1516353476": () => {
+    (window as any).__lastList = JSON.parse(JSON.stringify(seedConfig.sessions));
+    return seedConfig.sessions;
+  },
   // GetSessionMessages(sessionID)
   "3662319581": (args) => histories[args[0]] ?? [],
   // IsRunning(sessionID)
   "3574706456": () => false,
   // SessionStats(sessionID)
   "568481502": () => ({ messages: 1, toolCalls: 1, toolFailures: 0, assistantTurns: 0, tokensIn: 120, tokensOut: 80, tokensTotal: 200 }),
+  // SetSessionModel(sessionID, modelID)
+  "1164146246": (args) => {
+    for (const sess of seedConfig.sessions) {
+      if (sess.id === args[0]) sess.modelOverride = args[1] || "";
+    }
+    return null;
+  },
   // AppInfo
   "2350821288": () => ({ name: "WorkBuddy Agent", version: "stub", adk: "google adk-go v2" }),
   // ConfirmToolCall(sessionID, callID, approved)
@@ -150,6 +163,7 @@ const handlers: Record<string, (args: any[]) => any> = {
 };
 
 (window as any).__lastCalls = [];
+(window as any).__seedConfig = seedConfig;
 setTransport({
   call: async (_objectID, _method, _windowName, descriptor) => {
     (window as any).__lastCalls.push(descriptor);

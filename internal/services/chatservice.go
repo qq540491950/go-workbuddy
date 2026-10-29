@@ -290,13 +290,22 @@ func (c *ChatService) SearchSessions(query string) []config.ChatSession {
 // SetSessionModel pins a chat to a specific model of its target agent's
 // provider (per-session model override); empty clears the override.
 func (c *ChatService) SetSessionModel(sessionID, modelID string) error {
+	var notFound error
 	err := c.S.Store.Update(func(cfg *config.Config) {
+		found := false
 		for i := range cfg.Sessions {
 			if cfg.Sessions[i].ID == sessionID {
 				cfg.Sessions[i].ModelOverride = strings.TrimSpace(modelID)
+				found = true
 			}
 		}
+		if !found {
+			notFound = fmt.Errorf("session %q not found", sessionID)
+		}
 	})
+	if err == nil {
+		err = notFound
+	}
 	if err == nil {
 		c.audit(sessionID, "session_model_set", "system", "session", mustJSON(map[string]string{"model": modelID}), "")
 	}
