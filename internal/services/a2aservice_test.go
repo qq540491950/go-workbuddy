@@ -127,3 +127,71 @@ func TestA2AServiceLoopback(t *testing.T) {
 		t.Fatalf("still published after StopAgent: %+v", sts)
 	}
 }
+
+// TestConfigMutationStopsPublishedAgent: editing or deleting a published
+// agent takes its A2A server offline (the executor holds the tree built at
+// Start time; remote clients would otherwise keep invoking a stale agent).
+func TestConfigMutationStopsPublishedAgent(t *testing.T) {
+	modelSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(readAll(r), `"stream":false`) {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"choices":[{"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}]}`))
+			return
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte(sseText("ok") + sseDone))
+	}))
+	defer modelSrv.Close()
+
+	dir := t.TempDir()
+	store, err := config.Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = store.Update(func(cfg *config.Config) {
+		cfg.Providers = append(cfg.Providers, config.ModelProvider{
+			ID: "p1", Name: "P", Protocol: config.ProtocolOpenAI,
+			BaseURL: modelSrv.URL, Models: []config.ModelInfo{{ID: "m"}}, IsDefault: true,
+		})
+		cfg.Agents = append(cfg.Agents, config.AgentConfig{ID: "a1", Name: "发布助手", ProviderID: "p1", Model: "m"})
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, sessions, err := newTestSessionService(filepath.Join(dir, "sessions.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	svc := &Services{Store: store, Kit: agentkit.NewKit(store, mcpmgr.New()), MCP: mcpmgr.New()}
+	a2a := NewA2AService(svc, sessions)
+	svc.A2A = a2a // config mutations must reach the published-server registry
+
+	if _, err := a2a.Start("a1", 0); err != nil {
+		t.Fatal(err)
+	}
+	if len(a2a.Status()) != 1 {
+		t.Fatal("expected one published agent")
+	}
+
+	// Editing the agent unpublishes it.
+	cs := NewConfigService(svc)
+	edited := store.Get().Agents[0]
+	edited.SystemPrompt = "改过的提示词"
+	if err := cs.SaveAgent(edited); err != nil {
+		t.Fatal(err)
+	}
+	if len(a2a.Status()) != 0 {
+		t.Fatalf("edited agent still published: %+v", a2a.Status())
+	}
+
+	// Re-publish then delete: deletion also unpublishes.
+	if _, err := a2a.Start("a1", 0); err != nil {
+		t.Fatal(err)
+	}
+	if err := cs.DeleteAgent("a1"); err != nil {
+		t.Fatal(err)
+	}
+	if len(a2a.Status()) != 0 {
+		t.Fatalf("deleted agent still published: %+v", a2a.Status())
+	}
+}

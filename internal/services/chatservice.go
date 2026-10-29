@@ -673,6 +673,41 @@ func (c *ChatService) deleteEvents(sessionID string, ids []string) error {
 	).Error
 }
 
+// renderTodoList renders a plan_todos tool result as a compact checklist line
+// set for the export renderers (raw JSON payloads are unreadable in exports).
+func renderTodoList(resp map[string]any) string {
+	todos, ok := resp["todos"].([]any)
+	if !ok || len(todos) == 0 {
+		return ""
+	}
+	done := 0
+	var lines []string
+	for _, raw := range todos {
+		td, ok := raw.(map[string]any)
+		if !ok {
+			continue
+		}
+		content, _ := td["content"].(string)
+		status, _ := td["status"].(string)
+		if strings.TrimSpace(content) == "" {
+			continue
+		}
+		mark := "○"
+		switch status {
+		case "completed":
+			mark = "✓"
+			done++
+		case "in_progress":
+			mark = "▶"
+		}
+		lines = append(lines, "- "+mark+" "+content)
+	}
+	if len(lines) == 0 {
+		return ""
+	}
+	return fmt.Sprintf("**任务计划**（%d/%d 完成）\n\n%s", done, len(lines), strings.Join(lines, "\n"))
+}
+
 // displayNameOf resolves a session target's display name from the config
 // (team / agent); unknown IDs fall back to the raw id. Shared by both export
 // renderers so Markdown and HTML never disagree.
@@ -743,6 +778,12 @@ func (c *ChatService) ExportSession(sessionID string) (string, error) {
 			args, _ := json.Marshal(m.ToolArgs)
 			fmt.Fprintf(&sb, "> 🔧 工具调用 **%s** `%s`\n\n", m.ToolName, string(args))
 		case "tool_result":
+			if m.ToolName == "plan_todos" {
+				if list := renderTodoList(m.ToolResp); list != "" {
+					fmt.Fprintf(&sb, "> %s\n\n", list)
+					continue
+				}
+			}
 			resp, _ := json.Marshal(m.ToolResp)
 			fmt.Fprintf(&sb, "> ✅ 工具结果 **%s** `%s`\n\n", m.ToolName, string(resp))
 		case "confirm_request":
@@ -837,6 +878,13 @@ func (c *ChatService) ExportSessionHTML(sessionID string) (string, error) {
 			fmt.Fprintf(&body, "<details><summary>🔧 工具调用 <b>%s</b></summary>\n<pre>%s</pre>\n</details>\n\n",
 				m.ToolName, htmlEscapeString(string(args)))
 		case "tool_result":
+			if m.ToolName == "plan_todos" {
+				if list := renderTodoList(m.ToolResp); list != "" {
+					list = strings.ReplaceAll(list, "\n", "<br>\n")
+					fmt.Fprintf(&body, "> %s\n\n", list)
+					continue
+				}
+			}
 			resp, _ := json.Marshal(m.ToolResp)
 			fmt.Fprintf(&body, "<details><summary>✅ 工具结果 <b>%s</b></summary>\n<pre>%s</pre>\n</details>\n\n",
 				m.ToolName, htmlEscapeString(string(resp)))

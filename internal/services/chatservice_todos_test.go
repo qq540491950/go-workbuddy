@@ -3,6 +3,7 @@ package services
 import (
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 
@@ -102,5 +103,19 @@ func TestPlanTodosRoundTrip(t *testing.T) {
 	readJSON := mustJSON(readResp["todos"])
 	if !strings.Contains(string(readJSON), "写初稿") || !strings.Contains(string(readJSON), "pending") {
 		t.Fatalf("read-back lost the stored plan: %s", readJSON)
+	}
+
+	// The Markdown export renders the plan as a checklist, not raw JSON.
+	path, err := chat.ExportSession(sess.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	doc := string(data)
+	if !strings.Contains(doc, "任务计划") || !strings.Contains(doc, "▶ 收集素材") || !strings.Contains(doc, "○ 写初稿") {
+		t.Fatalf("export missing plan checklist:\n%s", doc)
 	}
 }
