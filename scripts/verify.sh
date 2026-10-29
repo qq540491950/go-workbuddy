@@ -15,10 +15,10 @@ vet_out="$(go vet ./internal/... . 2>&1 | grep -vE 'ld: warning|object file' || 
 if [ -n "$vet_out" ]; then echo "$vet_out"; fail=1; fi
 
 echo "==> go test"
-go test ./internal/... || fail=1
+go test ./internal/... . || fail=1
 
 echo "==> go test -race"
-go test -race ./internal/... || fail=1
+go test -race ./internal/... . || fail=1
 
 echo "==> wails3 build"
 if ! wails3 build; then

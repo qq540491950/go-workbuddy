@@ -4,6 +4,11 @@
 
 ## 视觉测试与体验设计
 
+### 第一百一十八轮迭代：CI 根包测试覆盖 + 用例数刷新（已实施）
+
+- CI（Test/Race 两步）与 `scripts/verify.sh` 的 go test 范围补入根包 `.`——第 117 轮新增的 `main_test.go`（rotatingWriter）此前不在 CI 测试范围内。
+- README 用例数刷新：156。
+
 ### 第一百一十七轮迭代：新增机制测试补齐 + 导出清单渲染（已实施）
 
 - **A2A 失效钩子测试**：`TestConfigMutationStopsPublishedAgent`——编辑已发布 Agent 使其下线、重新发布后删除同样下线（第 112 轮钩子的首个覆盖）。

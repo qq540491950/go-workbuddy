@@ -117,7 +117,7 @@ UI 通过「浏览器 + 数据桩」做视觉回归：前端以 `wails3 dev` 提
 
 CI（`.github/workflows/ci.yml`）在每次 push / PR 上跑后端 `vet + test + -race` 与前端 `tsc + build`。注意 workflow 会先构建前端：`main.go` 用 `//go:embed all:frontend/dist` 嵌入产物，干净检出时该目录不存在。
 
-测试覆盖（`go test ./internal/...`，148 个用例，`-race` 全绿）：
+测试覆盖（`go test ./internal/... .`，156 个用例，`-race` 全绿）：
 
 - 两个模型适配器：SSE 流式文本、函数调用往返（含 `tool` 消息回传）、HTTP 错误与重试
 - 配置存储：深拷贝隔离、默认种子、持久化往返、损坏文件自愈、脱敏导出不污染运行态

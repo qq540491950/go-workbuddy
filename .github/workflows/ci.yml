@@ -28,7 +28,7 @@ jobs:
       - name: Test
         run: go test -count=1 ./internal/... .
       - name: Race
-        run: go test -race -count=1 ./internal/...
+        run: go test -race -count=1 ./internal/... .
 
   frontend:
     runs-on: ubuntu-latest
