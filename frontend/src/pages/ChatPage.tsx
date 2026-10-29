@@ -67,6 +67,7 @@ const SLASH_COMMANDS = [
   { cmd: "/export", desc: "导出会话为 Markdown" },
   { cmd: "/exporthtml", desc: "导出会话为 HTML" },
   { cmd: "/stats", desc: "查看会话统计" },
+  { cmd: "/todos", desc: "查看当前任务计划" },
   { cmd: "/new", desc: "新建对话" },
 ];
 
@@ -258,6 +259,17 @@ export function ChatPage() {
         if (ev.kind === "error" && ev.sessionId === activeID) streamedErrorRef.current = true;
         markRunning(ev.sessionId, false);
         reloadSessions();
+        // A queued message fires as soon as the turn settles — including
+        // after an error, so the user's follow-up is never stranded.
+        const q = queuedRef.current[ev.sessionId];
+        if (q && ev.sessionId === activeID) {
+          setQueued((prev) => {
+            const next = { ...prev };
+            delete next[ev.sessionId];
+            return next;
+          });
+          setTimeout(() => sendRef.current(q), 80);
+        }
         if (ev.sessionId !== activeID) {
           const title = sessionsRef.current.find((x: { id: string; title: string }) => x.id === ev.sessionId)?.title ?? "后台会话";
           if (ev.kind === "done") toast.success(`「${title}」已完成回复`);
@@ -368,9 +380,21 @@ export function ChatPage() {
     };
   }, []);
 
-  const send = async () => {
-    const text = input.trim();
-    if (!text || !activeID || running) return;
+  // Per-session message queue: sending while a reply streams parks the text
+  // and auto-sends it when the turn settles (Codex-style queueing).
+  const [queued, setQueued] = useState<Record<string, string>>({});
+  const queuedRef = useRef(queued);
+  useEffect(() => { queuedRef.current = queued; }, [queued]);
+
+  const send = async (override?: string) => {
+    const text = (override ?? input).trim();
+    if (!text || !activeID) return;
+    if (running && !override) {
+      setQueued((prev) => ({ ...prev, [activeID]: text }));
+      setInput("");
+      toast("已排队：当前回复完成后自动发送");
+      return;
+    }
     // Slash commands run locally without a model round-trip.
     if (text.startsWith("/")) {
       const cmd = text.split(/\s+/)[0].toLowerCase();
@@ -387,15 +411,33 @@ export function ChatPage() {
           setInput("");
           openStats();
           return;
+        case "/todos": {
+          setInput("");
+          for (let i = messages.length - 1; i >= 0; i--) {
+            const m = messages[i];
+            const todos = m.toolResp?.todos;
+            if (m.kind === "tool_result" && m.toolName === "plan_todos" && Array.isArray(todos) && todos.length > 0) {
+              const done = todos.filter((t: TodoItem) => t.status === "completed").length;
+              const lines = todos.map((t: TodoItem) =>
+                `${t.status === "completed" ? "✓" : t.status === "in_progress" ? "▶" : "○"} ${t.content}`,
+              );
+              toast(`${done}/${todos.length} 完成`, { description: lines.join("\n") });
+              return;
+            }
+          }
+          toast.info("当前会话还没有任务计划（Agent 挂载「任务计划」内置工具后可用）");
+          return;
+        }
         case "/new":
           setInput("");
           setNewChatOpen(true);
           return;
         default:
-          toast.error(`未知命令 ${cmd}。可用：/export /exporthtml /stats /new`);
+          toast.error(`未知命令 ${cmd}。可用：/export /exporthtml /stats /todos /new`);
           return;
       }
     }
+    if (running) return;
     setInput("");
     markRunning(activeID, true);
     const wasEditing = editing;
@@ -439,6 +481,11 @@ export function ChatPage() {
       setInput((cur) => (cur === "" ? text : cur));
     }
   };
+
+  // Latest send for the stream subscription: the subscription is created
+  // once per session and must not fire a stale closure.
+  const sendRef = useRef(send);
+  useEffect(() => { sendRef.current = send; });
 
   const cancel = () => {
     if (activeID) Chat.Cancel(activeID);
@@ -886,6 +933,15 @@ export function ChatPage() {
                 {active.targetType === "team" ? "团队" : "Agent"}: {targetLabel}
               </Badge>
             )}
+            {active && (
+              <button
+                className="rounded p-1 text-muted-foreground opacity-60 transition-opacity hover:text-foreground hover:opacity-100"
+                title="重命名会话"
+                onClick={() => { setRenaming(active); setRenameText(active.title); }}
+              >
+                <Pencil className="h-3.5 w-3.5" />
+              </button>
+            )}
           </div>
           <div className="flex items-center gap-2">
             {sessionUsage && sessionUsage.totalTokens > 0 && (
@@ -1005,6 +1061,21 @@ export function ChatPage() {
               <PlanStrip todos={activePlan} />
             </div>
           )}
+          {activeID && queued[activeID] && (
+            <div className="mx-auto mb-2 flex max-w-3xl items-center gap-2 rounded-lg border border-primary/30 bg-primary/5 px-3 py-1.5 text-xs">
+              <span className="min-w-0 flex-1 truncate">已排队：{queued[activeID]}</span>
+              <button
+                className="shrink-0 underline underline-offset-2 hover:text-foreground"
+                onClick={() => setQueued((prev) => {
+                  const next = { ...prev };
+                  delete next[activeID];
+                  return next;
+                })}
+              >
+                取消
+              </button>
+            </div>
+          )}
           <div className="mx-auto max-w-3xl">
             {editing && (
               <div className="mb-2 flex items-center justify-between rounded-md border border-primary/40 bg-primary/5 px-3 py-1.5 text-xs text-muted-foreground">
@@ -1122,7 +1193,7 @@ export function ChatPage() {
                 <Square className="mr-1 h-4 w-4" /> 停止
               </Button>
             ) : (
-              <Button onClick={send} disabled={!active || !input.trim()}>
+              <Button onClick={() => send()} disabled={!active || (!input.trim() && !running)}>
                 <Send className="mr-1 h-4 w-4" /> {editing ? "重发" : "发送"}
               </Button>
             )}
