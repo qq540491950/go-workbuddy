@@ -4,6 +4,17 @@
 
 ## 视觉测试与体验设计
 
+### 第一百一十九轮迭代：staticcheck 清零（已实施）
+
+引入 `honnef.co/go/tools/staticcheck`（2026.2.2）全仓扫描，修复全部 5 项发现：
+
+- **Anthropic 非流式响应丢失 usage（实质 bug）**：非流式路径（A2A executor 所用）的 `usage = full.Usage` 从未被消费——服务端 token 记账恒为空。改经 `withUsageA` 附加（nil 安全）。
+- `internal/memory` 死代码：`text`/`calls` 组装后从未写入 entry（Content 存结构化 JSON），只保留空判定。
+- `autoTitle` 标题 Trim 的 cutset 重复字符（`!!`）。
+- `SaveRemoteAgent` 错误串大写开头（ST1005）改「缺少 Card URL」。
+
+复检 staticcheck 零发现；`go test` 全绿；verify.sh ALL GREEN。
+
 ### 第一百一十八轮迭代：CI 根包测试覆盖 + 用例数刷新（已实施）
 
 - CI（Test/Race 两步）与 `scripts/verify.sh` 的 go test 范围补入根包 `.`——第 117 轮新增的 `main_test.go`（rotatingWriter）此前不在 CI 测试范围内。

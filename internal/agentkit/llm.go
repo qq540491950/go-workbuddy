@@ -754,7 +754,9 @@ func (a *anthropicLLM) GenerateContent(ctx context.Context, req *model.LLMReques
 					tools = append(tools, t)
 				}
 			}
-			yield(a.final(sb.String(), tools), nil)
+			// Non-stream responses (the A2A executor path) must carry usage
+			// too — without this the server-side token accounting was empty.
+			yield(withUsageA(a.final(sb.String(), tools), usage), nil)
 			return
 		}
 

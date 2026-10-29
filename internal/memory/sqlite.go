@@ -69,12 +69,10 @@ func (s *SQLiteService) AddSessionToMemory(_ context.Context, sess session.Sessi
 				calls = append(calls, p.FunctionCall.Name+"("+string(args)+")")
 			}
 		}
-		text := strings.TrimSpace(strings.Join(textParts, "\n"))
-		if text == "" && len(calls) == 0 {
+		// Entries persist the full structured content; the extracted text is
+		// only used for the emptiness check below.
+		if strings.TrimSpace(strings.Join(textParts, "\n")) == "" && len(calls) == 0 {
 			continue
-		}
-		if len(calls) > 0 {
-			text = strings.TrimSpace(text + "\n[工具调用: " + strings.Join(calls, "; ") + "]")
 		}
 		entry := memoryEntry{
 			ID:        ev.ID,

@@ -596,7 +596,7 @@ func (c *ConfigService) SaveRemoteAgent(r config.RemoteAgentConfig) error {
 		return fmt.Errorf("远程 Agent 名称不能为空")
 	}
 	if r.CardURL == "" {
-		return fmt.Errorf("Card URL 不能为空")
+		return fmt.Errorf("缺少 Card URL")
 	}
 	if r.ID == "" {
 		r.ID = newID("ra_")

@@ -1428,7 +1428,7 @@ func (c *ChatService) autoTitle(sessionID string, cfg config.Config, fallback, u
 			}
 		}
 	}
-	clean := strings.TrimSpace(strings.Trim(title.String(), " \"'「」『』。.!!？?\n\t"))
+	clean := strings.TrimSpace(strings.Trim(title.String(), " \"'「」『』。.!？?\n\t"))
 	clean = truncateRunes(clean, 30)
 	if clean == "" || strings.HasPrefix(clean, "{") {
 		return // empty or non-text payload: keep the fallback
