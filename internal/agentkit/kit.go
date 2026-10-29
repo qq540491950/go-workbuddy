@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"google.golang.org/adk/v2/agent"
 	"google.golang.org/adk/v2/agent/llmagent"
@@ -76,6 +77,9 @@ func (k *Kit) TestKnowledgeSearch(query string) (string, error) {
 	}
 	cfg := k.store.Get()
 	opts := k.searchOptions(cfg)
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	opts.Ctx = ctx
 	if opts.Workspace == "" {
 		return "", fmt.Errorf("请先在设置中配置工作区目录")
 	}
@@ -145,7 +149,7 @@ func (k *Kit) buildLLMAgentWithSubAgents(ac config.AgentConfig, cfg config.Confi
 
 	// Skills (progressive disclosure via ADK skill toolset).
 	if len(ac.SkillIDs) > 0 {
-		ts, err := k.skillToolset(ac.SkillIDs, cfg)
+		ts, err := k.skillToolset(ac, cfg)
 		if err != nil {
 			return nil, fmt.Errorf("agent %q: %w", ac.Name, err)
 		}
@@ -154,17 +158,31 @@ func (k *Kit) buildLLMAgentWithSubAgents(ac config.AgentConfig, cfg config.Confi
 		}
 	}
 
-	// MCP servers.
+	// MCP servers. A server whose transport cannot even be built (missing
+	// command/URL, OAuth misconfiguration) is reported instead of silently
+	// running an agent that is missing tools the user attached — the same
+	// contract as the skill toolset above.
+	var mcpErrs []string
 	for _, id := range ac.MCPServerIDs {
+		found := false
 		for _, s := range cfg.MCPServers {
 			if s.ID == id {
+				found = true
 				ts, err := k.mcp.Toolset(s)
-				if err == nil {
+				if err != nil {
+					mcpErrs = append(mcpErrs, fmt.Sprintf("MCP「%s」不可用: %v", s.Name, err))
+				} else {
 					toolsets = append(toolsets, ts)
 				}
 				break
 			}
 		}
+		if !found {
+			mcpErrs = append(mcpErrs, fmt.Sprintf("MCP 服务器 %q 不存在", id))
+		}
+	}
+	if len(mcpErrs) > 0 {
+		return nil, fmt.Errorf("agent %q: %s", ac.Name, strings.Join(mcpErrs, "；"))
 	}
 
 	lc := k.llmConfig(ac, m, tools, toolsets)
@@ -322,15 +340,28 @@ func (k *Kit) searchOptions(cfg config.Config) SearchOptions {
 }
 
 // skillToolset builds an ADK skill toolset covering the selected skills by
-// materializing them as SKILL.md under the app skills directory. Failing to
-// write a skill is reported instead of silently running an agent that is
+// materializing them as SKILL.md under a per-agent staging directory. Failing
+// to write a skill is reported instead of silently running an agent that is
 // missing a capability the user attached.
-func (k *Kit) skillToolset(ids []string, cfg config.Config) (tool.Toolset, error) {
+//
+// The staging directory is scoped per agent (skills/agents/<key>): the ADK
+// filesystem source exposes every skill in the tree it is pointed at, so a
+// shared directory would leak skills between agents and keep unmounted or
+// deleted skills loadable. Directories not in the wanted set are pruned before
+// loading, so detaching or deleting a skill takes effect on the next build.
+func (k *Kit) skillToolset(ac config.AgentConfig, cfg config.Config) (tool.Toolset, error) {
+	ids := ac.SkillIDs
 	want := map[string]bool{}
+	wantNames := map[string]bool{}
 	for _, id := range ids {
 		want[id] = true
 	}
-	dir := k.store.SkillsDir()
+	for _, s := range cfg.Skills {
+		if want[s.ID] {
+			wantNames[sanitizeSkillName(s.Name)] = true
+		}
+	}
+	dir := filepath.Join(k.store.SkillsDir(), "agents", agentSkillKey(ac))
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return nil, fmt.Errorf("create skills dir: %w", err)
 	}
@@ -350,6 +381,15 @@ func (k *Kit) skillToolset(ids []string, cfg config.Config) (tool.Toolset, error
 			return nil, fmt.Errorf("write skill %q: %w", s.Name, err)
 		}
 	}
+	// Prune skills that are no longer attached to this agent (dangling IDs
+	// included: they materialize nothing, so any leftover dir is stale).
+	if entries, err := os.ReadDir(dir); err == nil {
+		for _, e := range entries {
+			if e.IsDir() && !wantNames[e.Name()] {
+				_ = os.RemoveAll(filepath.Join(dir, e.Name()))
+			}
+		}
+	}
 	src := skill.NewFileSystemSource(os.DirFS(dir))
 	preloaded, cleanup, err := skill.WithCompletePreloadSource(context.Background(), src)
 	if err != nil {
@@ -361,6 +401,31 @@ func (k *Kit) skillToolset(ids []string, cfg config.Config) (tool.Toolset, error
 		return nil, fmt.Errorf("create skill toolset: %w", err)
 	}
 	return ts, nil
+}
+
+// agentSkillKey is the per-agent skill staging directory name. The stable
+// agent ID is preferred; the sanitized name covers configs without an ID
+// (tests, ad-hoc builds).
+func agentSkillKey(ac config.AgentConfig) string {
+	if ac.ID != "" {
+		return ac.ID
+	}
+	return sanitizeAgentName(ac.Name)
+}
+
+// RemoveMaterializedSkill deletes the materialized SKILL.md directories of a
+// skill: the per-agent staging dirs and the legacy shared layout. Best effort
+// — the next agent build prunes stale entries anyway.
+func RemoveMaterializedSkill(skillsDir, skillName string) {
+	name := sanitizeSkillName(skillName)
+	if agents, err := os.ReadDir(filepath.Join(skillsDir, "agents")); err == nil {
+		for _, a := range agents {
+			if a.IsDir() {
+				_ = os.RemoveAll(filepath.Join(skillsDir, "agents", a.Name(), name))
+			}
+		}
+	}
+	_ = os.RemoveAll(filepath.Join(skillsDir, name))
 }
 
 // applyPromptVars resolves template variables in system prompts:
@@ -615,7 +680,13 @@ func ReadFileTool(workspace string) (tool.Tool, error) {
 		const limit = 64 * 1024
 		content := string(data)
 		if len(content) > limit {
-			content = content[:limit] + "\n...[truncated]"
+			// Byte-exact truncation could split a UTF-8 sequence (invalid JSON
+			// payload down the line); back up to the nearest rune boundary.
+			cut := limit
+			for cut > 0 && !utf8.RuneStart(content[cut]) {
+				cut--
+			}
+			content = content[:cut] + "\n...[truncated]"
 		}
 		return readFileResult{Content: content}, nil
 	})

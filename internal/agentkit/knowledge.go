@@ -39,7 +39,12 @@ func SearchKnowledgeTool(opts SearchOptions) (tool.Tool, error) {
 		if strings.TrimSpace(args.Query) == "" {
 			return filesResult{}, os.ErrInvalid
 		}
-		res, err := searchHybrid(opts, args.Query)
+		// The run context bounds embedding HTTP calls: a cancelled or
+		// timed-out turn stops in-flight indexing instead of holding the
+		// index lock behind context.Background().
+		o := opts
+		o.Ctx = ctx
+		res, err := searchHybrid(o, args.Query)
 		if err != nil {
 			return filesResult{}, err
 		}

@@ -14,6 +14,7 @@ import (
 	"io"
 	"iter"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -218,11 +219,11 @@ type oaToolCall struct {
 }
 
 type oaMessage struct {
-	Role       string        `json:"role"`
-	Content    any           `json:"content,omitempty"` // string or content-part array
-	ToolCalls  []oaToolCall  `json:"tool_calls,omitempty"`
-	ToolCallID string        `json:"tool_call_id,omitempty"`
-	Name       string        `json:"name,omitempty"`
+	Role       string       `json:"role"`
+	Content    any          `json:"content,omitempty"` // string or content-part array
+	ToolCalls  []oaToolCall `json:"tool_calls,omitempty"`
+	ToolCallID string       `json:"tool_call_id,omitempty"`
+	Name       string       `json:"name,omitempty"`
 }
 
 type oaContentPart struct {
@@ -575,7 +576,7 @@ type anMessage struct {
 }
 
 type anRequest struct {
-	Model     string   `json:"model"`
+	Model     string      `json:"model"`
 	Messages  []anMessage `json:"messages"`
 	System    string      `json:"system,omitempty"`
 	MaxTokens int64       `json:"max_tokens"`
@@ -849,10 +850,31 @@ func (a *anthropicLLM) post(ctx context.Context, body anRequest) (*http.Response
 // retryDelays are the fixed waits between transient-failure retries.
 var retryDelays = []time.Duration{500 * time.Millisecond, 1500 * time.Millisecond}
 
+// maxRetryAfter caps a server-provided Retry-After wait: honouring a huge
+// value verbatim would eat the whole turn timeout budget.
+const maxRetryAfter = 8 * time.Second
+
+// retryAfterDelay parses a Retry-After header (seconds form); 0 when absent
+// or unparseable.
+func retryAfterDelay(h string) time.Duration {
+	if h == "" {
+		return 0
+	}
+	if secs, err := strconv.Atoi(strings.TrimSpace(h)); err == nil && secs > 0 {
+		d := time.Duration(secs) * time.Second
+		if d > maxRetryAfter {
+			return maxRetryAfter
+		}
+		return d
+	}
+	return 0
+}
+
 // postWithRetry executes the request built by build, retrying transient
-// failures (network errors and 502/503/504) up to len(retryDelays) extra
-// times with backoff. Retries only happen when no response bytes have been
-// consumed, so streaming output is never duplicated.
+// failures (network errors, 429 rate limiting and 502/503/504) up to
+// len(retryDelays) extra times with backoff. A 429 with a Retry-After header
+// waits at least that long (capped). Retries only happen when no response
+// bytes have been consumed, so streaming output is never duplicated.
 func postWithRetry(ctx context.Context, build func() (*http.Request, error), model, kind string) (*http.Response, error) {
 	var lastErr error
 	for attempt := 0; ; attempt++ {
@@ -861,10 +883,19 @@ func postWithRetry(ctx context.Context, build func() (*http.Request, error), mod
 			return nil, err
 		}
 		resp, err := httpClient.Do(req)
+		var delay time.Duration
+		if attempt < len(retryDelays) {
+			delay = retryDelays[attempt]
+		}
 		if err != nil {
 			lastErr = err
-		} else if resp.StatusCode == http.StatusBadGateway || resp.StatusCode == http.StatusServiceUnavailable || resp.StatusCode == http.StatusGatewayTimeout {
+		} else if resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode == http.StatusBadGateway || resp.StatusCode == http.StatusServiceUnavailable || resp.StatusCode == http.StatusGatewayTimeout {
 			io.Copy(io.Discard, io.LimitReader(resp.Body, 1<<20))
+			if resp.StatusCode == http.StatusTooManyRequests {
+				if ra := retryAfterDelay(resp.Header.Get("Retry-After")); ra > delay {
+					delay = ra
+				}
+			}
 			resp.Body.Close()
 			lastErr = fmt.Errorf("%s %s: HTTP %d", kind, model, resp.StatusCode)
 		} else {
@@ -876,7 +907,7 @@ func postWithRetry(ctx context.Context, build func() (*http.Request, error), mod
 		select {
 		case <-ctx.Done():
 			return nil, ctx.Err()
-		case <-time.After(retryDelays[attempt]):
+		case <-time.After(delay):
 		}
 	}
 }

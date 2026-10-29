@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"google.golang.org/adk/v2/model"
 	"google.golang.org/genai"
@@ -98,7 +99,7 @@ func TestOpenAICompatToolCallRoundTrip(t *testing.T) {
 	req := &model.LLMRequest{
 		Contents: []*genai.Content{genai.NewContentFromText("北京天气怎么样", genai.RoleUser)},
 		Config: &genai.GenerateContentConfig{
-			Temperature: &temp,
+			Temperature:       &temp,
 			SystemInstruction: genai.NewContentFromText("你是天气助手", genai.RoleUser),
 			Tools: []*genai.Tool{{FunctionDeclarations: []*genai.FunctionDeclaration{{
 				Name:        "get_weather",
@@ -388,5 +389,50 @@ func TestAnthropicImageAttachment(t *testing.T) {
 	src := img["source"].(map[string]any)
 	if src["media_type"] != "image/jpeg" || src["type"] != "base64" {
 		t.Fatalf("image source = %v", src)
+	}
+}
+
+// TestPostWithRetryRetries429: rate limiting is transient — the request is
+// retried instead of failing the turn, and a Retry-After header raises the
+// wait (capped so a turn keeps its timeout budget).
+func TestPostWithRetryRetries429(t *testing.T) {
+	attempts := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		attempts++
+		if attempts <= 2 {
+			w.Header().Set("Retry-After", "0")
+			w.WriteHeader(http.StatusTooManyRequests)
+			return
+		}
+		_, _ = w.Write([]byte("ok"))
+	}))
+	defer srv.Close()
+
+	build := func() (*http.Request, error) { return http.NewRequest(http.MethodPost, srv.URL, nil) }
+	resp, err := postWithRetry(context.Background(), build, "m", "test")
+	if err != nil {
+		t.Fatalf("postWithRetry: %v", err)
+	}
+	defer resp.Body.Close()
+	if attempts != 3 {
+		t.Fatalf("attempts = %d, want 3 (two 429 retries)", attempts)
+	}
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d", resp.StatusCode)
+	}
+}
+
+func TestRetryAfterDelayCap(t *testing.T) {
+	if got := retryAfterDelay(""); got != 0 {
+		t.Fatalf("empty header = %v", got)
+	}
+	if got := retryAfterDelay("abc"); got != 0 {
+		t.Fatalf("junk header = %v", got)
+	}
+	if got := retryAfterDelay("2"); got != 2*time.Second {
+		t.Fatalf("2s header = %v", got)
+	}
+	if got := retryAfterDelay("3600"); got != maxRetryAfter {
+		t.Fatalf("huge header = %v, want cap %v", got, maxRetryAfter)
 	}
 }

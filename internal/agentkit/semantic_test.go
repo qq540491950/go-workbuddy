@@ -1,6 +1,7 @@
 package agentkit
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"hash/fnv"
@@ -317,7 +318,7 @@ func TestEmbeddingsProtocolContract(t *testing.T) {
 	defer srv.Close()
 
 	emb := &EmbeddingConfig{BaseURL: srv.URL, APIKey: "sk-test", Model: "m"}
-	vecs, err := embedBatchReq(emb, []string{"a", "b"})
+	vecs, err := embedBatchReq(context.Background(), emb, []string{"a", "b"})
 	if err != nil {
 		t.Fatal(err)
 	}

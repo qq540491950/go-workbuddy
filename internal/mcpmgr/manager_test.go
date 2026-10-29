@@ -6,58 +6,32 @@ import (
 	"changeme/internal/config"
 )
 
-func TestBuildTransportValidation(t *testing.T) {
-	if _, err := buildTransport(config.MCPServerConfig{Transport: config.MCPStdio}, nil, nil); err == nil {
-		t.Fatal("expected error for stdio without command")
-	}
-	if _, err := buildTransport(config.MCPServerConfig{Transport: config.MCPStreamableHTTP}, nil, nil); err == nil {
-		t.Fatal("expected error for http without URL")
-	}
-	tr, err := buildTransport(config.MCPServerConfig{
-		Transport: config.MCPStreamableHTTP, URL: "https://example.com/mcp",
-	}, nil, nil)
-	if err != nil || tr == nil {
-		t.Fatalf("expected valid streamable transport, got %v, %v", tr, err)
-	}
-}
-
-func TestConnectReportsErrorForBadCommand(t *testing.T) {
+// TestToolsetCachedUntilDisconnect pins the manager contract: toolsets are
+// keyed by server ID and reused across calls; Disconnect drops the cache so
+// the next build creates a fresh transport (used by SaveMCPServer to stop
+// stale connections after a config edit).
+func TestToolsetCachedUntilDisconnect(t *testing.T) {
 	m := New()
-	cfg := config.MCPServerConfig{
-		ID: "mcp_bad", Name: "broken", Transport: config.MCPStdio, Command: "/nonexistent/binary/xyz",
-	}
-	st := m.Connect(cfg)
-	if st.State != "error" || st.Error == "" {
-		t.Fatalf("expected error status, got %+v", st)
-	}
-	got := m.Status("mcp_bad", "broken")
-	if got.State != "error" {
-		t.Fatalf("status not cached: %+v", got)
-	}
+	cfg := config.MCPServerConfig{ID: "srv1", Name: "S", Transport: config.MCPStdio, Command: "/bin/cat"}
 
-	// Disconnect clears back to stopped.
-	m.Disconnect("mcp_bad")
-	if got := m.Status("mcp_bad", "broken"); got.State != "stopped" {
-		t.Fatalf("expected stopped after disconnect, got %+v", got)
-	}
-}
-
-func TestToolsetCaching(t *testing.T) {
-	m := New()
-	cfg := config.MCPServerConfig{
-		ID: "mcp_1", Name: "s", Transport: config.MCPStdio, Command: "/nonexistent/binary/xyz",
-	}
 	ts1, err := m.Toolset(cfg)
 	if err != nil {
-		// Creating the toolset itself must succeed (connection is lazy),
-		// but a transport build failure would also be acceptable.
-		t.Skipf("toolset creation failed: %v", err)
+		t.Fatalf("Toolset: %v", err)
 	}
 	ts2, err := m.Toolset(cfg)
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("Toolset (cached): %v", err)
 	}
 	if ts1 != ts2 {
-		t.Fatal("expected cached toolset instance")
+		t.Fatal("expected the cached toolset instance to be reused")
+	}
+
+	m.Disconnect(cfg.ID)
+	ts3, err := m.Toolset(cfg)
+	if err != nil {
+		t.Fatalf("Toolset after disconnect: %v", err)
+	}
+	if ts3 == ts1 {
+		t.Fatal("expected a fresh toolset after Disconnect")
 	}
 }

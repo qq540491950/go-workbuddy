@@ -74,6 +74,10 @@ type SearchOptions struct {
 	Workspace string
 	Index     *KnowledgeIndex  // nil => keyword only
 	Embedding *EmbeddingConfig // nil => keyword only
+	// Ctx bounds embedding HTTP calls (indexing and query); nil means
+	// context.Background(). The knowledge tool passes its run context so a
+	// cancelled/timed-out turn stops in-flight embedding requests.
+	Ctx context.Context
 }
 
 // searchHybrid runs semantic search when possible and blends it with keyword
@@ -82,6 +86,9 @@ type SearchOptions struct {
 func searchHybrid(opts SearchOptions, query string) (string, error) {
 	if opts.Index == nil || opts.Embedding == nil {
 		return searchKnowledge(opts.Workspace, query)
+	}
+	if opts.Ctx == nil {
+		opts.Ctx = context.Background()
 	}
 	out, err := semanticSearch(opts, query)
 	if err != nil {
@@ -99,10 +106,10 @@ func searchHybrid(opts SearchOptions, query string) (string, error) {
 // similarity with keyword hits. A changed embedding model triggers a full
 // rebuild, because vectors from different models are not comparable.
 func semanticSearch(opts SearchOptions, query string) (string, error) {
-	if err := opts.Index.ensureIndexed(opts.Workspace, opts.Embedding); err != nil {
+	if err := opts.Index.ensureIndexed(opts.Ctx, opts.Workspace, opts.Embedding); err != nil {
 		return "", err
 	}
-	qvec, err := embedOne(opts.Embedding, query)
+	qvec, err := embedOne(opts.Ctx, opts.Embedding, query)
 	if err != nil {
 		return "", err
 	}
@@ -173,7 +180,7 @@ func withRefs(text string, refs []string) string {
 // re-embeds changed files (nested dirs supported, rows keyed by relative
 // path), drops removed files, rebuilds everything when the embedding model
 // changed.
-func (k *KnowledgeIndex) ensureIndexed(workspace string, emb *EmbeddingConfig) error {
+func (k *KnowledgeIndex) ensureIndexed(ctx context.Context, workspace string, emb *EmbeddingConfig) error {
 	k.mu.Lock()
 	defer k.mu.Unlock()
 
@@ -290,7 +297,7 @@ func (k *KnowledgeIndex) ensureIndexed(workspace string, emb *EmbeddingConfig) e
 		go func() {
 			defer wg.Done()
 			for j := range jobsCh {
-				vecs, err := embedAll(emb, j.text)
+				vecs, err := embedAll(ctx, emb, j.text)
 				if err != nil {
 					errCh <- fmt.Errorf("embed %s: %w", j.file, err)
 					continue
@@ -329,11 +336,11 @@ func (k *KnowledgeIndex) ensureIndexed(workspace string, emb *EmbeddingConfig) e
 
 // embedAll splits chunks into batches, embeds each and concatenates the
 // vectors in chunk order.
-func embedAll(emb *EmbeddingConfig, chunks []string) ([][]float64, error) {
+func embedAll(ctx context.Context, emb *EmbeddingConfig, chunks []string) ([][]float64, error) {
 	out := make([][]float64, 0, len(chunks))
 	for i := 0; i < len(chunks); i += embedBatch {
 		end := minInt(i+embedBatch, len(chunks))
-		vecs, err := embedBatchReq(emb, chunks[i:end])
+		vecs, err := embedBatchReq(ctx, emb, chunks[i:end])
 		if err != nil {
 			return nil, err
 		}
@@ -359,9 +366,9 @@ type embedResponse struct {
 
 // embedBatchReq embeds a batch of inputs; response embeddings come back in
 // input order via the index field.
-func embedBatchReq(emb *EmbeddingConfig, inputs []string) ([][]float64, error) {
+func embedBatchReq(ctx context.Context, emb *EmbeddingConfig, inputs []string) ([][]float64, error) {
 	body, _ := json.Marshal(embedRequest{Model: emb.Model, Input: inputs})
-	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost,
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
 		strings.TrimRight(emb.BaseURL, "/")+"/embeddings", bytes.NewReader(body))
 	if err != nil {
 		return nil, err
@@ -400,8 +407,8 @@ func embedBatchReq(emb *EmbeddingConfig, inputs []string) ([][]float64, error) {
 	return vecs, nil
 }
 
-func embedOne(emb *EmbeddingConfig, input string) ([]float64, error) {
-	vecs, err := embedBatchReq(emb, []string{input})
+func embedOne(ctx context.Context, emb *EmbeddingConfig, input string) ([]float64, error) {
+	vecs, err := embedBatchReq(ctx, emb, []string{input})
 	if err != nil {
 		return nil, err
 	}

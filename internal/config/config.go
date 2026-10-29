@@ -421,8 +421,13 @@ func Open(dir string) (*Store, error) {
 	}
 	if len(data) > 0 {
 		if err := json.Unmarshal(data, &s.cfg); err != nil {
-			// Corrupt config: keep the file as backup and start fresh.
-			_ = os.WriteFile(s.path+".bak", data, 0o644)
+			// Corrupt config: keep the file as backup and start fresh. The
+			// backup may contain API keys, so it gets the same 0600 as the
+			// live config (WriteFile does not tighten an existing file's
+			// mode, hence the explicit Chmod).
+			if werr := os.WriteFile(s.path+".bak", data, 0o600); werr == nil {
+				_ = os.Chmod(s.path+".bak", 0o600)
+			}
 			s.cfg = Default()
 		}
 	}

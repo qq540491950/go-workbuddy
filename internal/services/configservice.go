@@ -6,9 +6,9 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"io/fs"
 	"net/url"
 	"os"
-	"io/fs"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -344,14 +344,20 @@ func parseSKILLMarkdown(content string) (name, desc, body string) {
 	return "", "", content
 }
 
-// DeleteSkill removes a skill by id.
+// DeleteSkill removes a skill by id and best-effort deletes its materialized
+// SKILL.md directories (per-agent staging dirs and the legacy shared layout).
+// The next agent build prunes stale entries anyway; this keeps the disk clean
+// immediately.
 func (c *ConfigService) DeleteSkill(id string) error {
-	return c.S.Store.Update(func(cfg *config.Config) {
+	var removed config.SkillConfig
+	_ = c.S.Store.Update(func(cfg *config.Config) {
 		out := cfg.Skills[:0]
 		for _, s := range cfg.Skills {
-			if s.ID != id {
-				out = append(out, s)
+			if s.ID == id {
+				removed = s
+				continue
 			}
+			out = append(out, s)
 		}
 		cfg.Skills = out
 		for i := range cfg.Agents {
@@ -364,15 +370,34 @@ func (c *ConfigService) DeleteSkill(id string) error {
 			cfg.Agents[i].SkillIDs = ids
 		}
 	})
+	if removed.Name != "" {
+		agentkit.RemoveMaterializedSkill(c.S.Store.SkillsDir(), removed.Name)
+	}
+	return nil
 }
 
-// SaveMCPServer inserts or updates an MCP server config.
+// SaveMCPServer inserts or updates an MCP server config. Replacing a server
+// with changed settings drops its cached toolset/connection: the manager keys
+// toolsets by ID forever, so without this the next turn would keep talking to
+// the OLD transport (URL, token, args, env) while the UI shows the new one.
 func (c *ConfigService) SaveMCPServer(s config.MCPServerConfig) error {
 	if s.Name == "" {
 		return fmt.Errorf("server name is required")
 	}
 	if s.ID == "" {
 		s.ID = newID("mcp_")
+	}
+	changed := false
+	if old := c.S.Store.Get(); s.ID != "" {
+		for _, o := range old.MCPServers {
+			if o.ID == s.ID {
+				changed = string(mustJSON(o)) != string(mustJSON(s))
+				break
+			}
+		}
+	}
+	if changed {
+		c.S.MCP.Disconnect(s.ID)
 	}
 	return c.S.Store.Update(func(cfg *config.Config) {
 		replaced := false

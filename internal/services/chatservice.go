@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -154,6 +155,7 @@ type ChatService struct {
 	appName   string
 	userID    string
 	auditPath string // JSONL tool-audit trail; empty = disabled
+	auditMu   sync.Mutex
 }
 
 // runHandle identifies one in-flight turn. The pointer identity lets a
@@ -204,7 +206,9 @@ func (c *ChatService) NewSession(targetType, targetID, title string) (config.Cha
 	err := c.S.Store.Update(func(cfg *config.Config) {
 		cfg.Sessions = append([]config.ChatSession{cs}, cfg.Sessions...)
 	})
-	c.audit(cs.ID, "session_created", "system", targetType, mustJSON(map[string]string{"targetId": targetID, "title": cs.Title}), "")
+	if err == nil {
+		c.audit(cs.ID, "session_created", "system", targetType, mustJSON(map[string]string{"targetId": targetID, "title": cs.Title}), "")
+	}
 	return cs, err
 }
 
@@ -287,38 +291,68 @@ func (c *ChatService) PinSession(id string, pinned bool) error {
 	})
 }
 
-// RenameSession updates a session title.
+// RenameSession updates a session title. Unknown IDs are an error, and the
+// audit record is only written on success so a failed rename does not leave a
+// false "renamed" entry behind.
 func (c *ChatService) RenameSession(id, title string) error {
-	c.audit(id, "session_renamed", "system", "session", mustJSON(map[string]string{"title": title}), "")
-	return c.S.Store.Update(func(cfg *config.Config) {
+	var notFound error
+	err := c.S.Store.Update(func(cfg *config.Config) {
+		found := false
 		for i := range cfg.Sessions {
 			if cfg.Sessions[i].ID == id {
 				cfg.Sessions[i].Title = title
+				found = true
 			}
 		}
+		if !found {
+			notFound = fmt.Errorf("session %q not found", id)
+		}
 	})
+	if err == nil {
+		err = notFound
+	}
+	if err == nil {
+		c.audit(id, "session_renamed", "system", "session", mustJSON(map[string]string{"title": title}), "")
+	}
+	return err
 }
 
 // DeleteSession removes a chat and its stored events. The config entry is
 // dropped only after the database delete succeeds; otherwise the session
 // would vanish from the sidebar while its rows stayed behind (and could be
-// resurrected by fork/search).
+// resurrected by fork/search). An in-flight run is cancelled first: an
+// orphaned turn would keep burning tokens and re-create events for the
+// deleted session until its timeout.
 func (c *ChatService) DeleteSession(id string) error {
-	c.audit(id, "session_deleted", "system", "session", mustJSON(map[string]string{"sessionId": id}), "")
+	c.Cancel(id)
 	if err := c.sessions.Delete(context.Background(), &session.DeleteRequest{
 		AppName: c.appName, UserID: c.userID, SessionID: id,
 	}); err != nil {
 		return fmt.Errorf("delete session events: %w", err)
 	}
-	return c.S.Store.Update(func(cfg *config.Config) {
+	var notFound error
+	if err := c.S.Store.Update(func(cfg *config.Config) {
+		found := false
 		out := cfg.Sessions[:0]
 		for _, s := range cfg.Sessions {
 			if s.ID != id {
 				out = append(out, s)
+			} else {
+				found = true
 			}
 		}
 		cfg.Sessions = out
-	})
+		if !found {
+			notFound = fmt.Errorf("session %q not found", id)
+		}
+	}); err != nil {
+		return err
+	}
+	if notFound != nil {
+		return notFound
+	}
+	c.audit(id, "session_deleted", "system", "session", mustJSON(map[string]string{"sessionId": id}), "")
+	return nil
 }
 
 // GetSessionMessages renders the stored ADK events for a session.
@@ -497,70 +531,100 @@ func (c *ChatService) Send(sessionID, text string, attachments []AttachmentIn) e
 }
 
 // trimLastTurn removes all stored events from the last user message onward
-// (inclusive) and returns that message's text.
-func (c *ChatService) trimLastTurn(sessionID string) (string, error) {
+// (inclusive) and returns that message's text and image attachments, so
+// Regenerate/EditAndResend re-run the turn faithfully. HITL resume events
+// (a FunctionResponse stored under the user author by ConfirmToolCall) are
+// not user messages and never start a turn boundary — treating them as one
+// made every regenerate after a tool confirmation fail.
+func (c *ChatService) trimLastTurn(sessionID string) (string, []AttachmentIn, error) {
 	resp, err := c.sessions.Get(context.Background(), &session.GetRequest{
 		AppName: c.appName, UserID: c.userID, SessionID: sessionID,
 	})
 	if err != nil {
-		return "", err
+		return "", nil, err
 	}
 	if resp.Session == nil {
-		return "", fmt.Errorf("session %q not found", sessionID)
+		return "", nil, fmt.Errorf("session %q not found", sessionID)
 	}
 	text := ""
+	var atts []AttachmentIn
 	var evIDs []string
 	for ev := range resp.Session.Events().All() {
 		if ev == nil || ev.Content == nil {
 			continue
 		}
-		if ev.Author == "user" {
+		if ev.Author == "user" && !hasFunctionResponse(ev) {
 			evIDs = []string{ev.ID}
 			var sb strings.Builder
+			atts = nil
 			for _, p := range ev.Content.Parts {
-				if p != nil && p.Text != "" && !p.Thought {
+				if p == nil {
+					continue
+				}
+				switch {
+				case p.Text != "" && !p.Thought:
 					sb.WriteString(p.Text)
+				case p.InlineData != nil && len(p.InlineData.Data) > 0:
+					atts = append(atts, AttachmentIn{
+						Name: "attachment-" + strconv.Itoa(len(atts)+1),
+						MIME: p.InlineData.MIMEType,
+						Data: base64.StdEncoding.EncodeToString(p.InlineData.Data),
+					})
 				}
 			}
 			text = sb.String()
 			continue
 		}
-		if text != "" {
+		if text != "" || len(atts) > 0 {
 			evIDs = append(evIDs, ev.ID)
 		}
 	}
-	if text == "" {
-		return "", fmt.Errorf("没有可重新生成的用户消息")
+	if text == "" && len(atts) == 0 {
+		return "", nil, fmt.Errorf("没有可重新生成的用户消息")
 	}
 	if c.db != nil && len(evIDs) > 0 {
 		if err := c.deleteEvents(sessionID, evIDs); err != nil {
-			return "", fmt.Errorf("裁剪历史失败: %w", err)
+			return "", nil, fmt.Errorf("裁剪历史失败: %w", err)
 		}
 	}
-	return text, nil
+	return text, atts, nil
+}
+
+// hasFunctionResponse reports whether the event carries a FunctionResponse
+// part (HITL resumes and tool results), i.e. it is not a plain user message.
+func hasFunctionResponse(ev *session.Event) bool {
+	for _, p := range ev.Content.Parts {
+		if p != nil && p.FunctionResponse != nil {
+			return true
+		}
+	}
+	return false
 }
 
 var _ = context.Background
 
 // Regenerate redoes the last user turn: it trims the trailing conversation
-// (from the last user message onward, inclusive) and re-runs the same message.
+// (from the last user message onward, inclusive) and re-runs the same message
+// with its original attachments.
 func (c *ChatService) Regenerate(sessionID string) error {
-	text, err := c.trimLastTurn(sessionID)
+	text, atts, err := c.trimLastTurn(sessionID)
 	if err != nil {
 		return err
 	}
-	return c.sendTurn(sessionID, text, nil)
+	return c.sendTurn(sessionID, text, atts)
 }
 
-// EditAndResend replaces the text of the last user turn and re-runs it.
+// EditAndResend replaces the text of the last user turn and re-runs it,
+// keeping the turn's original attachments.
 func (c *ChatService) EditAndResend(sessionID, newText string) error {
 	if strings.TrimSpace(newText) == "" {
 		return fmt.Errorf("消息内容不能为空")
 	}
-	if _, err := c.trimLastTurn(sessionID); err != nil {
+	_, atts, err := c.trimLastTurn(sessionID)
+	if err != nil {
 		return err
 	}
-	return c.sendTurn(sessionID, newText, nil)
+	return c.sendTurn(sessionID, newText, atts)
 }
 
 // deleteEvents removes stored events by ID (used by Regenerate).
@@ -569,6 +633,26 @@ func (c *ChatService) deleteEvents(sessionID string, ids []string) error {
 		"DELETE FROM events WHERE app_name = ? AND user_id = ? AND session_id = ? AND id IN ?",
 		c.appName, c.userID, sessionID, ids,
 	).Error
+}
+
+// displayNameOf resolves a session target's display name from the config
+// (team / agent); unknown IDs fall back to the raw id. Shared by both export
+// renderers so Markdown and HTML never disagree.
+func displayNameOf(cfg config.Config, targetType, id string) string {
+	if targetType == "team" {
+		for _, t := range cfg.Teams {
+			if t.ID == id {
+				return t.Name
+			}
+		}
+		return id
+	}
+	for _, a := range cfg.Agents {
+		if a.ID == id {
+			return a.Name
+		}
+	}
+	return id
 }
 
 // ExportSession writes the conversation as Markdown into the workspace export
@@ -590,22 +674,7 @@ func (c *ChatService) ExportSession(sessionID string) (string, error) {
 		return "", err
 	}
 
-	nameOf := func(targetType, id string) string {
-		if targetType == "team" {
-			for _, t := range cfg.Teams {
-				if t.ID == id {
-					return t.Name
-				}
-			}
-			return id
-		}
-		for _, a := range cfg.Agents {
-			if a.ID == id {
-				return a.Name
-			}
-		}
-		return id
-	}
+	nameOf := func(targetType, id string) string { return displayNameOf(cfg, targetType, id) }
 
 	var sb strings.Builder
 	fmt.Fprintf(&sb, "# %s\n\n", meta.Title)
@@ -707,7 +776,15 @@ func (c *ChatService) ExportSessionHTML(sessionID string) (string, error) {
 
 	var body strings.Builder
 	fmt.Fprintf(&body, "# %s\n\n", meta.Title)
-	fmt.Fprintf(&body, "- 对象: %s `%s`\n\n", map[bool]string{true: "团队", false: "Agent"}[meta.TargetType == "team"], meta.TargetID)
+	kind := "Agent"
+	switch meta.TargetType {
+	case "team":
+		kind = "团队"
+	case "remote":
+		kind = "远程 Agent"
+	}
+	fmt.Fprintf(&body, "- 对象: %s %s\n", kind, displayNameOf(cfg, meta.TargetType, meta.TargetID))
+	fmt.Fprintf(&body, "- 创建时间: %s\n\n", meta.CreatedAt.Format("2006-01-02 15:04"))
 	if meta.ForkedFrom != "" {
 		if src := c.resolveSessionTarget(cfg, meta.ForkedFrom); src != nil {
 			fmt.Fprintf(&body, "- 分叉自: %s\n\n", src.Title)
@@ -729,6 +806,15 @@ func (c *ChatService) ExportSessionHTML(sessionID string) (string, error) {
 				m.ToolName, htmlEscapeString(string(resp)))
 		case "confirm_request":
 			fmt.Fprintf(&body, "> 🛡️ **HITL 确认** %s（`%s`）\n\n", m.ToolName, m.CallID)
+		case "confirm_result":
+			decision := "拒绝"
+			if m.ToolResp["confirmed"] == true {
+				decision = "批准"
+			}
+			fmt.Fprintf(&body, "> 🛡️ **HITL 决策**: %s\n\n", decision)
+		case "message":
+			// compatibility with older renders
+			fmt.Fprintf(&body, "## 🤖 %s\n\n%s\n\n", m.Author, m.Text)
 		}
 	}
 
@@ -1091,7 +1177,10 @@ func (c *ChatService) runTurn(target *config.ChatSession, guardOn bool, msg *gen
 		}
 		// Final event for this model turn.
 		if u := usageOf(ev); u != nil {
-			turnUsage = u
+			// A turn with a tool loop / team transfer makes several model
+			// calls; accumulate instead of keeping only the last call's
+			// numbers (which under-reported multi-step turns).
+			turnUsage = addUsage(turnUsage, u)
 			sessionUsage = addUsage(sessionUsage, u)
 		}
 		if maxSessionTokens > 0 && !budgetExceeded && budgetBaseline+sessionUsageTotal(sessionUsage) > maxSessionTokens {
@@ -1248,7 +1337,9 @@ func (c *ChatService) ForkSession(sessionID string) (config.ChatSession, error) 
 	err := c.S.Store.Update(func(cfg *config.Config) {
 		cfg.Sessions = append([]config.ChatSession{branch}, cfg.Sessions...)
 	})
-	c.audit(branch.ID, "session_forked", "system", "session", mustJSON(map[string]string{"forkedFrom": sessionID}), "")
+	if err == nil {
+		c.audit(branch.ID, "session_forked", "system", "session", mustJSON(map[string]string{"forkedFrom": sessionID}), "")
+	}
 	return branch, err
 }
 
@@ -1434,14 +1525,14 @@ const auditMaxBytes = 10 << 20
 
 // audit appends one JSONL line for the tool audit trail. At auditMaxBytes the
 // file rotates to <path>.old. Failures are silently ignored: auditing must
-// never break the conversation.
+// never break the conversation. Guarded by a mutex — parallel sessions rotate
+// and append concurrently.
 func (c *ChatService) audit(sessionID, phase, author, tool string, payload []byte, errMsg string) {
 	if c.auditPath == "" || !c.S.Store.Get().Settings.ToolsAudit {
 		return
 	}
-	if st, err := os.Stat(c.auditPath); err == nil && st.Size() >= auditMaxBytes {
-		_ = os.Rename(c.auditPath, c.auditPath+".old")
-	}
+	c.auditMu.Lock()
+	defer c.auditMu.Unlock()
 	rec, _ := json.Marshal(map[string]any{
 		"ts": nowUTC(), "sessionId": sessionID, "phase": phase,
 		"author": author, "tool": tool, "error": errMsg,

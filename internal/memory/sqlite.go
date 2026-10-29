@@ -99,7 +99,10 @@ func (s *SQLiteService) AddSessionToMemory(_ context.Context, sess session.Sessi
 }
 
 // SearchMemory finds entries whose text matches the query keywords, ranked by
-// hit count (relevance), newest first on ties.
+// hit count (relevance), newest first on ties. Candidates are pre-sorted by
+// recency before the LIMIT cut: without a deterministic order SQLite returns
+// rows in scan order, so once the store exceeds the candidate window the most
+// relevant old entries could silently drop out of consideration.
 func (s *SQLiteService) SearchMemory(_ context.Context, req *memory.SearchRequest) (*memory.SearchResponse, error) {
 	var rows []memoryEntry
 	q := s.db.Where("app_name = ? AND user_id = ?", req.AppName, req.UserID)
@@ -113,7 +116,7 @@ func (s *SQLiteService) SearchMemory(_ context.Context, req *memory.SearchReques
 		}
 		q = q.Where("("+strings.Join(conditions, " OR ")+")", args...)
 	}
-	if err := q.Limit(200).Find(&rows).Error; err != nil {
+	if err := q.Order("timestamp DESC").Limit(200).Find(&rows).Error; err != nil {
 		return nil, err
 	}
 

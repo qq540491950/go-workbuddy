@@ -4,6 +4,34 @@
 
 ## 视觉测试与体验设计
 
+### 第九十八轮迭代：后端正确性批（技能隔离 + MCP 失效 + Regenerate 保真 + 审计诚实，已实施）
+
+**依据**：三路只读体检确认的后端 15 项问题中，本轮修复正确性相关的 12 项。
+
+**P1 — 技能目录跨 Agent 泄漏**
+- `skillToolset` 物化到共享 `skills/` 根目录且从不清理，而 ADK FileSystemSource 加载整棵树：Agent A 挂载的技能对 Agent B 一样可用，已删除的技能仍可被 `load_skill`（技能内容直接进提示词）。
+- 修复：物化目录改为按 Agent 隔离 `skills/agents/<agentID>/`；构建前修剪不属于本 Agent 挂载集的子目录（卸载/删除技能在下次构建即生效）；新增 `agentkit.RemoveMaterializedSkill` 供 `DeleteSkill` 即时清理各 Agent 副本与旧版共享布局。
+- 证据：`TestSkillMaterialization`（断言不落共享根目录）+ `TestSkillToolsetPrunesUnmountedSkills`（跨 Agent 隔离 + 卸载修剪 + 删除清理）。
+
+**P1/P2 — 正确性与一致性**
+- MCP 构建失败静默吞掉（`kit.go` 对 `Toolset` 错误直接丢弃、悬空 ID 无声跳过）：改为聚合报错，与技能工具集「失败要报错」契约一致。`TestBuildAgentReportsMCPFailures`。
+- MCP 配置编辑后旧连接永不失效（manager 按 ID 永久缓存 toolset，改 URL/token 后仍连旧地址）：`SaveMCPServer` 检测配置变化即 `Disconnect`；未变化不扰动。`TestToolsetCachedUntilDisconnect` + `TestSaveMCPServerInvalidatesStaleConnection`。
+- Regenerate/EditAndResend 丢图片附件；HITL 确认过的会话无法重生（确认的 FunctionResponse 以 user 身份落库，被误当作用户消息，trim 后 text 为空）：`trimLastTurn` 现在提取 `InlineData` 重建附件、跳过带 FunctionResponse 的 user 事件，Regenerate/EditAndResend 携带原附件重跑。`TestRegeneratePreservesAttachments` / `TestEditAndResendKeepsAttachments` / `TestRegenerateAfterHitlConfirm`。
+- 单轮 token 用量只统计最后一次模型调用：`turnUsage` 改为累加，多步工具循环的 message 事件显示整轮总和。`TestTurnUsageAccumulatesAcrossToolLoop`。
+- `audit()` 并发不安全（并行会话同时轮转/追加）且首段轮转检查是死代码：加 `auditMu` 互斥、删冗余检查。
+- 生命周期审计不诚实（Rename/Delete/New/Fork 无论成败都记审计）：统一为「成功才记录」，且 Rename/Delete 对不存在的会话返回错误。`TestRenameSessionAuditOnlyOnSuccess`。
+- `DeleteSession` 不取消运行中的 turn（孤儿轮次继续烧 token、向已删会话写事件直至超时）：删除前先 `Cancel`。`TestDeleteSessionCancelsRunningTurn`（0.03s 完成，验证取消即时性）。
+- HTML 导出与 Markdown 导出行为不一致：补齐 `confirm_result`（HITL 决策）与 `message` 兼容分支、远程对象显示「远程 Agent」+解析名称、补创建时间行；`nameOf` 抽为共享 `displayNameOf`。`TestExportHTMLIncludesHITLAndNames`。
+
+**P2/P3 — 健壮性**
+- `read_workspace_file` 64KB 按字节截断会切断 UTF-8 多字节字符（中文文档 2/3 概率产出乱码）：回退到最近 rune 边界。
+- `postWithRetry` 不重试 429（最常见的限流瞬时错误直接失败）：加入重试，解析 `Retry-After`（上限 8s 防吃满轮次超时）。`TestPostWithRetryRetries429` / `TestRetryAfterDelayCap`。
+- 记忆检索候选集无确定性排序（`Limit(200)` 任意 200 条，超窗后老的高相关记忆可能永远检索不到）：`ORDER BY timestamp DESC` 后再截断，保证「最近优先」确定性。`TestSearchMemoryRecencyWindow`（210 条同分，断言最新 20 条胜出）。
+- 知识库嵌入请求用 `context.Background()`：轮次取消/超时无法中断在建索引（持锁数分钟）：`SearchOptions.Ctx` 贯穿 ensureIndexed → embedAll → embedBatchReq，工具处理器传入运行 ctx。
+- 损坏配置的备份 `.bak` 以 0644 写入（含 API Key，违反本仓库 0600 规则）：改 0600 + Chmod 兜底。`TestOpenCorruptConfigBackupIsPrivate`。
+
+**测试证据**：`go test ./internal/...` 全绿（含本轮新增 14 个用例）；`go test -race ./internal/...` 全绿；`go vet` 零告警；`./scripts/verify.sh` ALL GREEN。
+
 ### 第九十七轮迭代：全面缺陷修复（P0 数据破坏 + 稳定性 + 前端体验 + 工程化，已实施）
 
 **依据**：对后端、前端、工程流程做三路只读体检，共确认 1 项 P0、10 项 P1、8 项 P2、7 项 P3。

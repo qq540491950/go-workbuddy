@@ -73,7 +73,10 @@ export function DeleteRemoteAgent(id: string): $CancellablePromise<void> {
 }
 
 /**
- * DeleteSkill removes a skill by id.
+ * DeleteSkill removes a skill by id and best-effort deletes its materialized
+ * SKILL.md directories (per-agent staging dirs and the legacy shared layout).
+ * The next agent build prunes stale entries anyway; this keeps the disk clean
+ * immediately.
  */
 export function DeleteSkill(id: string): $CancellablePromise<void> {
     return $Call.ByID(3210932935, id);
@@ -140,7 +143,10 @@ export function SaveAgent(a: config$0.AgentConfig): $CancellablePromise<void> {
 }
 
 /**
- * SaveMCPServer inserts or updates an MCP server config.
+ * SaveMCPServer inserts or updates an MCP server config. Replacing a server
+ * with changed settings drops its cached toolset/connection: the manager keys
+ * toolsets by ID forever, so without this the next turn would keep talking to
+ * the OLD transport (URL, token, args, env) while the UI shows the new one.
  */
 export function SaveMCPServer(s: config$0.MCPServerConfig): $CancellablePromise<void> {
     return $Call.ByID(2532663851, s);

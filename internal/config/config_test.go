@@ -166,3 +166,23 @@ func TestModelInfoUnmarshalRejectsBadObject(t *testing.T) {
 		t.Fatalf("got %+v, want empty entry", m)
 	}
 }
+
+// TestOpenCorruptConfigBackupIsPrivate: the .bak of a corrupt config holds the
+// original bytes (possibly API keys), so it must not be world-readable.
+func TestOpenCorruptConfigBackupIsPrivate(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.json")
+	if err := os.WriteFile(path, []byte("{not json"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Open(dir); err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Stat(path + ".bak")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if perm := info.Mode().Perm(); perm != 0o600 {
+		t.Fatalf(".bak mode = %o, want 600", perm)
+	}
+}

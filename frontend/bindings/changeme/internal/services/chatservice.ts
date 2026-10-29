@@ -46,14 +46,17 @@ export function ConfirmToolCall(sessionID: string, callID: string, approved: boo
  * DeleteSession removes a chat and its stored events. The config entry is
  * dropped only after the database delete succeeds; otherwise the session
  * would vanish from the sidebar while its rows stayed behind (and could be
- * resurrected by fork/search).
+ * resurrected by fork/search). An in-flight run is cancelled first: an
+ * orphaned turn would keep burning tokens and re-create events for the
+ * deleted session until its timeout.
  */
 export function DeleteSession(id: string): $CancellablePromise<void> {
     return $Call.ByID(2720233066, id);
 }
 
 /**
- * EditAndResend replaces the text of the last user turn and re-runs it.
+ * EditAndResend replaces the text of the last user turn and re-runs it,
+ * keeping the turn's original attachments.
  */
 export function EditAndResend(sessionID: string, newText: string): $CancellablePromise<void> {
     return $Call.ByID(4065508909, sessionID, newText);
@@ -129,7 +132,8 @@ export function PinSession(id: string, pinned: boolean): $CancellablePromise<voi
 
 /**
  * Regenerate redoes the last user turn: it trims the trailing conversation
- * (from the last user message onward, inclusive) and re-runs the same message.
+ * (from the last user message onward, inclusive) and re-runs the same message
+ * with its original attachments.
  */
 export function Regenerate(sessionID: string): $CancellablePromise<void> {
     return $Call.ByID(368507619, sessionID);
@@ -144,7 +148,9 @@ export function RememberSession(sessionID: string): $CancellablePromise<number> 
 }
 
 /**
- * RenameSession updates a session title.
+ * RenameSession updates a session title. Unknown IDs are an error, and the
+ * audit record is only written on success so a failed rename does not leave a
+ * false "renamed" entry behind.
  */
 export function RenameSession(id: string, title: string): $CancellablePromise<void> {
     return $Call.ByID(3416606985, id, title);

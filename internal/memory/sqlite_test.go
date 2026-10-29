@@ -2,6 +2,7 @@ package memory
 
 import (
 	"context"
+	"fmt"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -128,5 +129,52 @@ func TestSearchIsUserScoped(t *testing.T) {
 	}
 	if len(resp.Memories) != 0 {
 		t.Fatal("memories leaked across users")
+	}
+}
+
+// TestSearchMemoryRecencyWindow: the candidate cut is deterministic (newest
+// first). Without ORDER BY, SQLite's scan order decides which 200 rows are
+// considered, and the newest — typically most relevant — memories could fall
+// outside the window once the store grows.
+func TestSearchMemoryRecencyWindow(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(filepath.Join(t.TempDir(), "w.db")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	svc, err := NewSQLiteService(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	base := time.Now().Add(-time.Hour)
+	const total = 210
+	for i := 0; i < total; i++ {
+		row := memoryEntry{
+			ID:        fmt.Sprintf("e-%03d", i),
+			AppName:   "app",
+			UserID:    "u",
+			Author:    "assistant",
+			Content:   string(mustJSON(&genai.Content{Role: genai.RoleModel, Parts: []*genai.Part{{Text: "关键词 部署 说明"}}})),
+			Timestamp: base.Add(time.Duration(i) * time.Second),
+		}
+		if err := db.Create(&row).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	resp, err := svc.SearchMemory(context.Background(), &memory.SearchRequest{AppName: "app", UserID: "u", Query: "部署"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(resp.Memories) != 20 {
+		t.Fatalf("expected top-20, got %d", len(resp.Memories))
+	}
+	// All scores tie (one keyword hit each) → newest 20 must win.
+	newest := map[string]bool{}
+	for i := total - 20; i < total; i++ {
+		newest[fmt.Sprintf("e-%03d", i)] = true
+	}
+	for _, m := range resp.Memories {
+		if !newest[m.ID] {
+			t.Fatalf("stale candidate %s survived the recency window", m.ID)
+		}
 	}
 }
