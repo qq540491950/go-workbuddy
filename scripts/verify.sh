@@ -9,6 +9,7 @@ fail=0
 # main.go 用 //go:embed all:frontend/dist，干净检出时该目录不存在会让 vet 失败。
 echo "==> frontend build (dist needed by go:embed)"
 (cd frontend && npm run --silent build) || fail=1
+(cd frontend && npm run --silent test) || fail=1
 
 echo "==> go vet"
 vet_out="$(go vet ./internal/... . 2>&1 | grep -vE 'ld: warning|object file' || true)"

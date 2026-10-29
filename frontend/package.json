@@ -11,6 +11,7 @@
     "stub": "vite --config vite.stub.ts --port 9246",
     "build:dev": "tsc && vite build --minify false --mode development",
     "build": "tsc && vite build --mode production",
+    "test": "vitest run",
     "preview": "vite preview"
   },
   "dependencies": {
@@ -36,6 +37,7 @@
     "@vitejs/plugin-react": "^6.0.0",
     "tailwindcss": "^4.3.3",
     "typescript": "^5.2.2",
-    "vite": "^8.0.5"
+    "vite": "^8.0.5",
+    "vitest": "^5.0.5"
   }
 }

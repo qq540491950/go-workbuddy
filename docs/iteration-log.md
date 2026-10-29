@@ -4,6 +4,14 @@
 
 ## 视觉测试与体验设计
 
+### 第一百二十八轮迭代：前端测试基建（vitest，已实施）
+
+前端此前零测试。本轮建立单元测试层：
+
+- 纯函数从 ChatPage.tsx（约 1800 行）提取至 `lib/chatUtils.ts`（mdToSpeech、fmtTime、computeToolDurations、computeRunningTools、computeEditFlags + UIMessage 类型）；MCP env 解析提取至 `lib/mcpEnv.ts`（键去空白）。
+- vitest 8 个用例：并行工具按名配对与 HITL 重置时钟、运行中集合、编辑标记、跨天时间戳、语音文本剥离、env 值含 `=` 保留（第 126 轮 P1 修复的回归钉）。
+- `npm test`（vitest run）接入 `scripts/verify.sh` 与 CI 前端任务——前端行为回归从此有守门。
+
 ### 第一百二十六轮迭代：六轮体检批 — 表单与交互收尾（已实施）
 
 第六轮只读体检（管理页表单/交互逐行）确认 8 项，全部修复：

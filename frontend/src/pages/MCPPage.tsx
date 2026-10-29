@@ -17,6 +17,7 @@ import {
 import {
   Config, MCP, MCPTransport,
   type MCPServerConfig, type ServerStatus, errText } from "@/lib/api";
+import { parseEnvText } from "@/lib/mcpEnv";
 
 function blankServer(): MCPServerConfig {
   return {
@@ -90,17 +91,7 @@ export function MCPPage() {
     const s: MCPServerConfig = {
       ...editing,
       args: argsText.split("\n").map((x) => x.trim()).filter(Boolean),
-      env: Object.fromEntries(
-        envText
-          .split("\n")
-          .map((l) => {
-            // split("=", 2) truncates values containing '=' (base64 padding,
-            // connection strings) — split at the FIRST '=' only.
-            const i = l.indexOf("=");
-            return i > 0 ? [l.slice(0, i), l.slice(i + 1)] : null;
-          })
-          .filter((p): p is [string, string] => !!p && p[0].trim().length > 0),
-      ),
+      env: parseEnvText(envText),
     };
     try {
       await Config.SaveMCPServer(s);
