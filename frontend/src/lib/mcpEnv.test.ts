@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseEnvText } from "./mcpEnv";
+import { envToText, parseEnvText } from "./mcpEnv";
 
 describe("parseEnvText", () => {
   it("keeps '=' inside values (base64 padding, connection strings)", () => {
@@ -13,5 +13,18 @@ describe("parseEnvText", () => {
       KEY: "ok",
       KEY2: " spaced",
     });
+  });
+});
+
+describe("envToText round-trip", () => {
+  it("round-trips newline-free values losslessly", () => {
+    const env = { TOKEN: "abc=def==", URL: "postgres://u:p@h/db" };
+    expect(parseEnvText(envToText(env))).toEqual(env);
+  });
+  it("documents the newline-in-value limitation", () => {
+    // A value holding a newline cannot survive the line-based editor: the
+    // tail becomes an orphan line and is dropped. Imported configs only.
+    const env = { A: "line1\nline2" };
+    expect(parseEnvText(envToText(env))).toEqual({ A: "line1" });
   });
 });

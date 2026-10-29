@@ -12,3 +12,13 @@ export function parseEnvText(text: string): Record<string, string> {
       .filter((p): p is [string, string] => !!p && p[0].trim().length > 0),
   );
 }
+
+/** envToText is the inverse of parseEnvText for the editor's textarea.
+ * Note: values containing newlines cannot be represented in the line-based
+ * editor (imported configs could hold them) — the tail after the first
+ * newline is dropped by parseEnvText on save. */
+export function envToText(env: Record<string, string> | undefined | null): string {
+  return Object.entries(env ?? {})
+    .map(([k, v]) => `${k}=${v}`)
+    .join("\n");
+}

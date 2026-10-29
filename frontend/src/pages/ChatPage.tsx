@@ -875,6 +875,11 @@ export function ChatPage() {
     () => (filterQ ? filteredMessages.slice(-RENDER_LIMIT) : messages.slice(-RENDER_LIMIT)),
     [filterQ, filteredMessages, messages],
   );
+  // The slice source and how many entries sit above the render window: the
+  // day separator of the first visible message must compare against the REAL
+  // previous message, or a truncation window would paint a fake day header.
+  const renderSource = filterQ ? filteredMessages : messages;
+  const omitted = Math.max(0, renderSource.length - visibleMessages.length);
 
   const filterOpenRef = useRef(false);
   const toggleFilter = useCallback(() => {
@@ -1161,8 +1166,6 @@ export function ChatPage() {
         <ScrollArea className="flex-1" viewportRef={scrollRef}>
           <div className="mx-auto max-w-3xl space-y-3 p-4">
             {(() => {
-              const source = filterQ ? filteredMessages : messages;
-              const omitted = source.length - visibleMessages.length;
               if (omitted <= 0) return null;
               return (
                 <div className="rounded-lg border bg-muted/40 px-3 py-2 text-center text-xs text-muted-foreground">
@@ -1195,13 +1198,16 @@ export function ChatPage() {
               </div>
             )}
             {visibleMessages.map((m, i, arr) => {
-              const prev = i > 0 ? arr[i - 1] : undefined;
-              const dayChanged = isDayChange(prev?.timestamp, m.timestamp);
+              // The first visible message compares against the real previous
+              // entry when the window is truncated (else no separator).
+              const prevTs = i === 0
+                ? (omitted > 0 ? renderSource[renderSource.length - visibleMessages.length - 1]?.timestamp : undefined)
+                : arr[i - 1].timestamp;
+              const dayChanged = isDayChange(prevTs, m.timestamp);
               return (
                 <Fragment key={m.id}>
                   {dayChanged && <DaySeparator ts={m.timestamp} />}
                   <MessageBubble
-                  key={m.id}
                   m={m}
                   isLastAssistant={m.kind === "assistant" && i === arr.length - 1}
                   onRegenerate={regenerate}
@@ -1677,10 +1683,10 @@ function ConfirmCard({ m, onConfirm }: {
 /** DaySeparator marks calendar-day boundaries in long conversations. */
 function DaySeparator({ ts }: { ts: string | undefined }) {
   return (
-    <div className="flex items-center gap-3 py-1" aria-hidden>
-      <div className="h-px flex-1 bg-border" />
+    <div role="separator" aria-label={dayLabel(ts)} className="flex items-center gap-3 py-1">
+      <div className="h-px flex-1 bg-border" aria-hidden />
       <span className="shrink-0 rounded-full bg-muted px-3 py-0.5 text-[11px] text-muted-foreground">{dayLabel(ts)}</span>
-      <div className="h-px flex-1 bg-border" />
+      <div className="h-px flex-1 bg-border" aria-hidden />
     </div>
   );
 }
