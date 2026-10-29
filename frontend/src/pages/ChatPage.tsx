@@ -365,19 +365,17 @@ export function ChatPage() {
   }, []);
 
   // Cmd/Ctrl+N opens the new-chat dialog; Cmd/Ctrl+K focuses the composer.
+  // The keydown listener lives in App (the help panel documents them on every
+  // page); ChatPage reacts to the dispatched custom events.
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      const mod = e.metaKey || e.ctrlKey;
-      if (mod && (e.key === "n" || e.key === "N")) {
-        e.preventDefault();
-        setNewChatOpen(true);
-      } else if (mod && (e.key === "k" || e.key === "K")) {
-        e.preventDefault();
-        inputRef.current?.focus();
-      }
+    const onNew = () => setNewChatOpen(true);
+    const onFocus = () => inputRef.current?.focus();
+    window.addEventListener("wb-new-chat", onNew);
+    window.addEventListener("wb-focus-composer", onFocus);
+    return () => {
+      window.removeEventListener("wb-new-chat", onNew);
+      window.removeEventListener("wb-focus-composer", onFocus);
     };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
   }, []);
 
   // Window-level drag guard: dropping a file outside the composer must not

@@ -157,14 +157,25 @@ export function ArtifactPreview({ path, onClose }: { path: string | null | undef
       setError("");
       return;
     }
+    // Stale-response guard: a slow open for file A must not paint under file
+    // B when the user re-targets quickly (knowledge-base previews do this).
+    let cancelled = false;
     setLoading(true);
     Artifact.Open(path)
       .then((a) => {
+        if (cancelled) return;
         if (!a) throw new Error("未找到文件");
         setArt(a);
       })
-      .catch((e) => setError(errText(e)))
-      .finally(() => setLoading(false));
+      .catch((e) => {
+        if (!cancelled) setError(errText(e));
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [path]);
 
   return (

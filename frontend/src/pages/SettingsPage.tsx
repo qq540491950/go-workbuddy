@@ -38,10 +38,14 @@ export function SettingsPage() {
   const [kbNewName, setKbNewName] = useState("");
   const [kbNewContent, setKbNewContent] = useState("");
 
+  // Last-saved settings snapshot: flag toggles that persist immediately must
+  // not flush half-typed fields from elsewhere on the page.
+  const savedRef = useRef<Settings | null>(null);
   const reload = useCallback(() => {
     Config.GetConfig()
       .then((c) => {
         setSettings(c.settings);
+        savedRef.current = c.settings ?? null;
         // Sync the A2A form with persisted values so the toggle never
         // overwrites a configured port back to the default.
         setA2APort(String(c.settings?.a2aPort || 8080));
@@ -79,6 +83,7 @@ export function SettingsPage() {
     setSaving(true);
     try {
       await Config.SaveSettings(settings);
+      savedRef.current = settings;
       cacheTheme(settings);
       applyTheme({ themeMode: settings.themeMode, accent: settings.accent, fontScale: settings.fontScale });
       toast.success("设置已保存");
@@ -396,8 +401,11 @@ export function SettingsPage() {
               <Switch
                 checked={settings.autoRemember}
                 onCheckedChange={(v) => {
+                  // Persist ONLY this flag: the old whole-settings save would
+                  // flush any half-typed proxy/workspace field the user left
+                  // unsaved elsewhere on the page.
                   update({ autoRemember: v });
-                  Config.SaveSettings({ ...settings, autoRemember: v }).catch((e) => toast.error(`保存失败: ${errText(e)}`));
+                  Config.SaveSettings({ ...(savedRef.current ?? settings), autoRemember: v }).catch((e) => toast.error(`保存失败: ${errText(e)}`));
                 }}
               />
             </div>
@@ -654,13 +662,15 @@ export function SettingsPage() {
                     return;
                   }
                   const next = {
-                    ...settings,
+                    ...(savedRef.current ?? settings),
                     a2aAutoStart: v,
                     a2aAgentId: agentId,
                     a2aPort: Number.isInteger(port) ? port : 0,
                   };
                   update(next);
-                  Config.SaveSettings(next).catch((e) => toast.error(`保存失败: ${errText(e)}`));
+                  Config.SaveSettings(next)
+                    .then(() => { savedRef.current = next; })
+                    .catch((e) => toast.error(`保存失败: ${errText(e)}`));
                 }}
               />
             </div>

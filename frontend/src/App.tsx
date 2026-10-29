@@ -31,6 +31,25 @@ type NavKey = (typeof navItems)[number]["key"];
 
 export default function App() {
   const [page, setPage] = useState<NavKey>("chat");
+
+  // Global shortcuts (documented in the help panel on every page): ⌘N jumps
+  // to the chat page and opens the new-chat dialog; ⌘K focuses the composer.
+  // ChatPage consumes them via window events so they survive page switches.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const mod = e.metaKey || e.ctrlKey;
+      if (!mod || (e.key !== "n" && e.key !== "N" && e.key !== "k" && e.key !== "K")) return;
+      e.preventDefault();
+      setPage("chat");
+      // Deferred: when switching from another page, ChatPage mounts on the
+      // next render — a synchronous dispatch would fire before its listener
+      // exists and the action would be lost.
+      const ev = new CustomEvent(e.key === "k" || e.key === "K" ? "wb-focus-composer" : "wb-new-chat");
+      setTimeout(() => window.dispatchEvent(ev), 50);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
   const [helpOpen, setHelpOpen] = useState(false);
   const [prefs, setPrefs] = useState<ThemePrefs>(() => cachedTheme());
   const [isDark, setIsDark] = useState(() => applyTheme(cachedTheme()));
@@ -134,10 +153,10 @@ export default function App() {
             </DialogHeader>
             <div className="grid gap-2 text-sm">
               {[
-                ["⌘/Ctrl + N", "新建对话"],
-                ["⌘/Ctrl + K", "聚焦输入框"],
                 ["Enter", "发送消息"],
                 ["Shift + Enter", "换行"],
+                ["⌘/Ctrl + N", "新对话（全局）"],
+                ["⌘/Ctrl + K", "聚焦输入框（全局）"],
                 ["/export", "导出会话 Markdown"],
                 ["/exporthtml", "导出会话 HTML"],
                 ["/stats", "会话统计"],
