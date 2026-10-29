@@ -58,14 +58,17 @@ frontend/stub/               # 浏览器视觉回归：setTransport 数据桩 + 
 - **全局代理**：`agentkit.ApplyGlobalProxy` 在启动时改写 `http.DefaultTransport.Proxy`——模型适配器、embeddings、MCP、gemini SDK、a2a-go 的出站流量统一生效；新增直连客户端时务必走 DefaultTransport 或在代理测试中钉住覆盖。
 - **A2A 双向**：客户端 = `agentkit.BuildRemoteAgent`（remoteagent v2，AgentCardProvider 每次调用重解析）；服务端 = `a2aservice.go` / 测试中 `a2asrv.NewHandler + adka2a(v2).NewExecutor`（与 ADK launcher 同配方）。Agent Card 必须含 `SupportedInterfaces`（JSONRPC 绑定），否则客户端报 "no supported interfaces"。
 - **假模型服务器**：OpenAI 兼容桩必须同时处理 `"stream":false`（返回普通 chat.completion JSON）与 SSE（A2A executor 以非流式调用模型）。
-- **知识库索引**：`knowledge.index.db` 独立于 sessions.db；按文件 mtime 增量；换 Embedding 模型全量重建；Embedding 故障优雅回退关键词。
+- **知识库索引**：`knowledge.index.db` 独立于 sessions.db；按文件 mtime 增量；变更文件重嵌入前先删除其旧行（否则缩小文件会留下过期分块）；换 Embedding 模型全量重建；Embedding 故障优雅回退关键词。
+- **配置读取**：`Store.Get()` 返回深拷贝（切片/map 均独立），可以随意修改返回值；`Store.Settings()` 用于只需要全局设置的热路径。`ExportConfig(false)` 依赖这一点——脱敏只能作用在副本上。
+- **取消登记**：每轮运行在 `runs[sessionID]` 登记 `*runHandle`，释放时只在指针仍属于自己时删除，避免旧轮次清掉新轮次的取消函数。
+- **单轮超时**：Agent 未配置 `MaxTurnSeconds` 时默认 600 秒兜底；`runTurn` 的 recover 把 panic 转为 `error` + `done` 事件，界面不会卡在运行态。
 - **导出脱敏**：`ExportConfig(false)` 剥离供应商 API Key 与 MCP AuthToken；`MCPTokens` 任何导出都不携带。
 
 ## 约定
 
 - 测试与被测代码同包同目录（`*_test.go`），e2e 用 `httptest` 假服务器（fake SSE 模型 / 假授权服务器 / 内存 A2A 服务端），不依赖外部网络。
 - UI 文案为中文；错误经 `errText()` 透传到 toast。
-- 每轮功能迭代在 README.md「视觉测试与体验设计」章节**顶部**追加「### 第 N 轮迭代：<主题>（已实施）」记录（含依据、实现要点、测试证据）。
+- 每轮功能迭代在 `docs/iteration-log.md` 顶层「视觉测试与体验设计」章节**顶部**追加「### 第 N 轮迭代：<主题>（已实施）」记录（含依据、实现要点、测试证据）。README 只保留概览与「质量与验证」。
 - 提交信息采用约定式前缀（feat / fix / docs / test / chore / refactor）+ scope，如 `feat(chat): 主题 — 要点`；正文列出实现与测试清单。
 
 ## 已知边界

@@ -14,13 +14,13 @@ import (
 	"time"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
-	"gorm.io/gorm"
 	"google.golang.org/adk/v2/agent"
 	"google.golang.org/adk/v2/runner"
 	"google.golang.org/adk/v2/session"
 	"google.golang.org/adk/v2/session/compaction"
 	"google.golang.org/adk/v2/tool/toolconfirmation"
 	"google.golang.org/genai"
+	"gorm.io/gorm"
 
 	"github.com/gomarkdown/markdown"
 	htmlrenderer "github.com/gomarkdown/markdown/html"
@@ -110,6 +110,9 @@ type ChatMessage struct {
 const (
 	maxAttachmentBytes = 6 << 20 // 6 MB decoded per file
 	maxAttachments     = 4
+	// defaultTurnTimeoutSeconds bounds a single turn when the agent sets no
+	// explicit MaxTurnSeconds. Without it a stalled HTTP stream hangs forever.
+	defaultTurnTimeoutSeconds = 10 * 60
 )
 
 var attachmentMIMEAllowed = map[string]bool{
@@ -145,12 +148,19 @@ type ChatService struct {
 	S *Services
 
 	mu        sync.Mutex
-	cancels   map[string]context.CancelFunc
+	runs      map[string]*runHandle
 	sessions  session.Service
 	db        *gorm.DB // shared SQLite handle for event trimming (Regenerate)
 	appName   string
 	userID    string
 	auditPath string // JSONL tool-audit trail; empty = disabled
+}
+
+// runHandle identifies one in-flight turn. The pointer identity lets a
+// finishing run remove only its own registration; a plain map delete would
+// drop a newer run's cancel func when turns overlap.
+type runHandle struct {
+	cancel context.CancelFunc
 }
 
 // SetToolAuditPath enables the JSONL tool-call audit trail at path.
@@ -160,7 +170,7 @@ func (c *ChatService) SetToolAuditPath(path string) { c.auditPath = path }
 func NewChatService(s *Services, sessions session.Service, db *gorm.DB) *ChatService {
 	return &ChatService{
 		S:        s,
-		cancels:  map[string]context.CancelFunc{},
+		runs:     map[string]*runHandle{},
 		sessions: sessions,
 		db:       db,
 		appName:  "workbuddy",
@@ -289,12 +299,17 @@ func (c *ChatService) RenameSession(id, title string) error {
 	})
 }
 
-// DeleteSession removes a chat and its stored events.
+// DeleteSession removes a chat and its stored events. The config entry is
+// dropped only after the database delete succeeds; otherwise the session
+// would vanish from the sidebar while its rows stayed behind (and could be
+// resurrected by fork/search).
 func (c *ChatService) DeleteSession(id string) error {
 	c.audit(id, "session_deleted", "system", "session", mustJSON(map[string]string{"sessionId": id}), "")
-	_ = c.sessions.Delete(context.Background(), &session.DeleteRequest{
+	if err := c.sessions.Delete(context.Background(), &session.DeleteRequest{
 		AppName: c.appName, UserID: c.userID, SessionID: id,
-	})
+	}); err != nil {
+		return fmt.Errorf("delete session events: %w", err)
+	}
 	return c.S.Store.Update(func(cfg *config.Config) {
 		out := cfg.Sessions[:0]
 		for _, s := range cfg.Sessions {
@@ -651,7 +666,7 @@ func (c *ChatService) ExportSession(sessionID string) (string, error) {
 	if base == "" {
 		base = "session"
 	}
-	path := filepath.Join(dir, fmt.Sprintf("%s-%s.md", base, sessionID[len(sessionID)-6:]))
+	path := filepath.Join(dir, fmt.Sprintf("%s-%s.md", base, shortID(sessionID)))
 	if err := os.WriteFile(path, []byte(sb.String()), 0o644); err != nil {
 		return "", err
 	}
@@ -754,7 +769,7 @@ img{max-width:100%%}
 <body>
 %s
 </body>
-</html>`, meta.Title, string(html))
+</html>`, htmlEscapeString(meta.Title), string(html))
 
 	workspace := cfg.Settings.WorkspaceDir
 	if workspace == "" {
@@ -764,7 +779,7 @@ img{max-width:100%%}
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return "", err
 	}
-	path := filepath.Join(dir, fmt.Sprintf("%s-%s.html", sanitizeExportName(meta.Title), sessionID[len(sessionID)-6:]))
+	path := filepath.Join(dir, fmt.Sprintf("%s-%s.html", sanitizeExportName(meta.Title), shortID(sessionID)))
 	if err := os.WriteFile(path, []byte(page), 0o644); err != nil {
 		return "", err
 	}
@@ -789,6 +804,16 @@ func sanitizeExportName(name string) string {
 		}
 	}
 	return strings.Trim(sb.String(), "-")
+}
+
+// shortID returns the last 6 characters of id, or the whole id when shorter.
+// Direct slicing panics on IDs under 6 chars, and these methods are reachable
+// from JS with arbitrary input.
+func shortID(id string) string {
+	if len(id) <= 6 {
+		return id
+	}
+	return id[len(id)-6:]
 }
 
 // resolveSessionTarget finds the ChatSession metadata for a session ID.
@@ -908,8 +933,13 @@ func (c *ChatService) ConfirmToolCall(sessionID, callID string, approved bool) e
 // behind Send (user text) and ConfirmToolCall (HITL FunctionResponse resume);
 // titleFromText is non-empty only for genuine user messages (drives the
 // user-bubble event and auto-title).
-func (c *ChatService) runTurn(target *config.ChatSession, guardOn bool, msg *genai.Content, titleFromText string) error {
+//
+// A panic anywhere in the agent/tool stack is converted into an error event:
+// one misbehaving MCP server or tool must not take the whole desktop process
+// down with the user's unsaved work in it.
+func (c *ChatService) runTurn(target *config.ChatSession, guardOn bool, msg *genai.Content, titleFromText string) (err error) {
 	sessionID := target.ID
+	defer c.recoverRun(sessionID, &err)
 	cfg := c.S.Store.Get()
 	// Per-agent run guardrails (0 = unlimited); teams fall back to unlimited.
 	maxTurnSeconds, maxToolCalls := 0, 0
@@ -917,6 +947,11 @@ func (c *ChatService) runTurn(target *config.ChatSession, guardOn bool, msg *gen
 	if agentCfg := c.targetAgentConfig(cfg, target); agentCfg != nil {
 		maxTurnSeconds, maxToolCalls = agentCfg.MaxTurnSeconds, agentCfg.MaxToolCalls
 		maxSessionTokens = agentCfg.MaxSessionTokens
+	}
+	// Safety net: a stalled provider (no bytes, no EOF) would otherwise hang
+	// the run forever and the Wails call would never return.
+	if maxTurnSeconds <= 0 {
+		maxTurnSeconds = defaultTurnTimeoutSeconds
 	}
 	var budgetBaseline int64
 	budgetExceeded := false
@@ -929,7 +964,6 @@ func (c *ChatService) runTurn(target *config.ChatSession, guardOn bool, msg *gen
 
 	// Build the agent tree from the current configuration.
 	var root agent.Agent
-	var err error
 	switch target.TargetType {
 	case "team":
 		for _, t := range cfg.Teams {
@@ -1012,17 +1046,8 @@ func (c *ChatService) runTurn(target *config.ChatSession, guardOn bool, msg *gen
 		defer cancelTimeout()
 	}
 	defer cancel()
-	c.mu.Lock()
-	if old := c.cancels[sessionID]; old != nil {
-		old()
-	}
-	c.cancels[sessionID] = cancel
-	c.mu.Unlock()
-	defer func() {
-		c.mu.Lock()
-		delete(c.cancels, sessionID)
-		c.mu.Unlock()
-	}()
+	release := c.registerRun(sessionID, cancel)
+	defer release()
 
 	var turnUsage *UsageInfo
 	var sessionUsage *UsageInfo
@@ -1033,15 +1058,17 @@ func (c *ChatService) runTurn(target *config.ChatSession, guardOn bool, msg *gen
 	}) {
 		if ctx.Err() != nil {
 			if ctx.Err() == context.DeadlineExceeded {
-				emit(ChatStreamEvent{Kind: "error", Text: fmt.Sprintf("本轮已达最长运行时间（%d 秒），已停止。", maxTurnSeconds)})
-			} else {
-				emit(ChatStreamEvent{Kind: "error", Text: "已取消"})
+				msg := fmt.Sprintf("本轮已达最长运行时间（%d 秒），已停止。", maxTurnSeconds)
+				emit(ChatStreamEvent{Kind: "error", Text: msg})
+				return fmt.Errorf("%s", msg)
 			}
-			return nil
+			emit(ChatStreamEvent{Kind: "error", Text: "已取消"})
+			return context.Canceled
 		}
 		if err != nil {
 			emit(ChatStreamEvent{Kind: "error", Text: err.Error()})
-			return nil
+			// Surface the failure to the caller instead of reporting success.
+			return fmt.Errorf("run turn: %w", err)
 		}
 		if ev == nil || ev.Content == nil || ev.Author == "user" {
 			continue
@@ -1049,7 +1076,15 @@ func (c *ChatService) runTurn(target *config.ChatSession, guardOn bool, msg *gen
 		if ev.Partial {
 			for _, p := range ev.Content.Parts {
 				if p != nil && p.Text != "" {
-					emit(ChatStreamEvent{Kind: "delta", Author: ev.Author, Text: p.Text})
+					text := p.Text
+					// Guardrails must cover the streaming path too: deltas reach
+					// the UI before the final aggregated message is sanitized.
+					// A secret split across two deltas is only caught by the
+					// final message event, which replaces the streamed text.
+					if guardOn {
+						text = agentkit.ApplyOutputGuardrail(text)
+					}
+					emit(ChatStreamEvent{Kind: "delta", Author: ev.Author, Text: text})
 				}
 			}
 			continue
@@ -1244,17 +1279,17 @@ func (c *ChatService) RememberSession(sessionID string) (int, error) {
 
 // SessionStats aggregates observability metrics for one conversation.
 type SessionStats struct {
-	Messages       int         `json:"messages"`
-	ToolCalls      int         `json:"toolCalls"`
-	ToolFailures   int         `json:"toolFailures"`
-	AssistantTurns int         `json:"assistantTurns"`
-	TokensIn       int64       `json:"tokensIn"`
-	TokensOut      int64       `json:"tokensOut"`
-	TokensTotal    int64       `json:"tokensTotal"`
-	Daily          []StatDay   `json:"daily,omitempty"`  // per-day token/cost breakdown
+	Messages       int          `json:"messages"`
+	ToolCalls      int          `json:"toolCalls"`
+	ToolFailures   int          `json:"toolFailures"`
+	AssistantTurns int          `json:"assistantTurns"`
+	TokensIn       int64        `json:"tokensIn"`
+	TokensOut      int64        `json:"tokensOut"`
+	TokensTotal    int64        `json:"tokensTotal"`
+	Daily          []StatDay    `json:"daily,omitempty"`   // per-day token/cost breakdown
 	Authors        []AuthorStat `json:"authors,omitempty"` // per-participant breakdown (team timelines)
-	FirstAt        *time.Time  `json:"firstAt,omitempty"`
-	LastAt         *time.Time  `json:"lastAt,omitempty"`
+	FirstAt        *time.Time   `json:"firstAt,omitempty"`
+	LastAt         *time.Time   `json:"lastAt,omitempty"`
 }
 
 // AuthorStat breaks usage down per conversation participant (team members,
@@ -1269,11 +1304,11 @@ type AuthorStat struct {
 // StatDay is one calendar day of usage with an estimated cost using the
 // session target's current model prices (¥/1M tokens).
 type StatDay struct {
-	Date          string  `json:"date"` // YYYY-MM-DD (local)
-	PromptTokens  int64   `json:"promptTokens"`
-	CompletionTokens int64 `json:"completionTokens"`
-	TotalTokens   int64   `json:"totalTokens"`
-	EstimatedCost float64 `json:"estimatedCost"`
+	Date             string  `json:"date"` // YYYY-MM-DD (local)
+	PromptTokens     int64   `json:"promptTokens"`
+	CompletionTokens int64   `json:"completionTokens"`
+	TotalTokens      int64   `json:"totalTokens"`
+	EstimatedCost    float64 `json:"estimatedCost"`
 }
 
 // SessionStats computes aggregate metrics from the stored ADK events.
@@ -1446,12 +1481,25 @@ func mustJSON(v any) []byte {
 	return b
 }
 
+// recoverRun converts a panic in the agent/tool stack into a stream error plus
+// a done event, so the UI always leaves the running state. Used as a deferred
+// helper from runTurn.
+func (c *ChatService) recoverRun(sessionID string, err *error) {
+	r := recover()
+	if r == nil {
+		return
+	}
+	c.emitChat(sessionID, ChatStreamEvent{Kind: "error", Text: fmt.Sprintf("运行出错：%v", r)})
+	c.emitChat(sessionID, ChatStreamEvent{Kind: "done"})
+	*err = fmt.Errorf("run turn panicked: %v", r)
+}
+
 // Cancel aborts the in-flight run of a session, if any.
 func (c *ChatService) Cancel(sessionID string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if cancel, ok := c.cancels[sessionID]; ok {
-		cancel()
+	if h, ok := c.runs[sessionID]; ok {
+		h.cancel()
 	}
 }
 
@@ -1459,5 +1507,26 @@ func (c *ChatService) Cancel(sessionID string) {
 func (c *ChatService) IsRunning(sessionID string) bool {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	return c.cancels[sessionID] != nil
+	return c.runs[sessionID] != nil
+}
+
+// registerRun cancels any previous run for the session and records the new
+// handle. The returned release must be called (deferred) when the run ends.
+func (c *ChatService) registerRun(sessionID string, cancel context.CancelFunc) (release func()) {
+	h := &runHandle{cancel: cancel}
+	c.mu.Lock()
+	old := c.runs[sessionID]
+	c.runs[sessionID] = h
+	c.mu.Unlock()
+	if old != nil {
+		old.cancel()
+	}
+	return func() {
+		c.mu.Lock()
+		// Only unregister our own handle: a newer turn may already own the slot.
+		if c.runs[sessionID] == h {
+			delete(c.runs, sessionID)
+		}
+		c.mu.Unlock()
+	}
 }

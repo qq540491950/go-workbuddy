@@ -46,9 +46,9 @@ func NewModelFromProvider(p config.ModelProvider, modelID string) (model.LLM, er
 
 // Kit assembles ADK agent trees from app configuration.
 type Kit struct {
-	store    *config.Store
-	mcp      *mcpmgr.Manager
-	memory   tool.Tool // long-term memory search tool (nil if memory unavailable)
+	store     *config.Store
+	mcp       *mcpmgr.Manager
+	memory    tool.Tool       // long-term memory search tool (nil if memory unavailable)
 	knowledge *KnowledgeIndex // workspace knowledge vector index (nil => keyword search)
 }
 
@@ -119,12 +119,23 @@ func (k *Kit) buildLLMAgentWithSubAgents(ac config.AgentConfig, cfg config.Confi
 	for _, name := range ac.BuiltinTools {
 		switch name {
 		case "time":
-			tools = append(tools, TimeTool())
+			t, err := TimeTool()
+			if err != nil {
+				return nil, fmt.Errorf("agent %q: %w", ac.Name, err)
+			}
+			tools = append(tools, t)
 		case "files":
-			tools = append(tools, ListFilesTool(k.workspace()), ReadFileTool(k.workspace()),
-				WriteFileTool(k.workspace(), confirmsTool(ac, "files")))
+			builtin, err := workspaceFileTools(k.workspace(), confirmsTool(ac, "files"))
+			if err != nil {
+				return nil, fmt.Errorf("agent %q: %w", ac.Name, err)
+			}
+			tools = append(tools, builtin...)
 		case "knowledge":
-			tools = append(tools, SearchKnowledgeTool(k.searchOptions(cfg)))
+			t, err := SearchKnowledgeTool(k.searchOptions(cfg))
+			if err != nil {
+				return nil, fmt.Errorf("agent %q: %w", ac.Name, err)
+			}
+			tools = append(tools, t)
 		case "memory":
 			if k.memory != nil {
 				tools = append(tools, k.memory)
@@ -134,7 +145,11 @@ func (k *Kit) buildLLMAgentWithSubAgents(ac config.AgentConfig, cfg config.Confi
 
 	// Skills (progressive disclosure via ADK skill toolset).
 	if len(ac.SkillIDs) > 0 {
-		if ts := k.skillToolset(ac.SkillIDs, cfg); ts != nil {
+		ts, err := k.skillToolset(ac.SkillIDs, cfg)
+		if err != nil {
+			return nil, fmt.Errorf("agent %q: %w", ac.Name, err)
+		}
+		if ts != nil {
 			toolsets = append(toolsets, ts)
 		}
 	}
@@ -174,13 +189,13 @@ func (k *Kit) llmConfig(ac config.AgentConfig, m model.LLM, tools []tool.Tool, t
 		gcc.MaxOutputTokens = int32(ac.MaxTokens)
 	}
 	return llmagent.Config{
-		Name:                  sanitizeAgentName(ac.Name),
-		Model:                 m,
-		Description:           firstNonEmpty(ac.Description, ac.Name),
-		InstructionProvider:   func(agent.ReadonlyContext) (string, error) { return instruction, nil },
-		GenerateContentConfig: gcc,
-		Tools:                 tools,
-		Toolsets:              toolsets,
+		Name:                     sanitizeAgentName(ac.Name),
+		Model:                    m,
+		Description:              firstNonEmpty(ac.Description, ac.Name),
+		InstructionProvider:      func(agent.ReadonlyContext) (string, error) { return instruction, nil },
+		GenerateContentConfig:    gcc,
+		Tools:                    tools,
+		Toolsets:                 toolsets,
 		DisallowTransferToParent: false,
 	}
 }
@@ -307,37 +322,45 @@ func (k *Kit) searchOptions(cfg config.Config) SearchOptions {
 }
 
 // skillToolset builds an ADK skill toolset covering the selected skills by
-// materializing them as SKILL.md under the app skills directory.
-func (k *Kit) skillToolset(ids []string, cfg config.Config) tool.Toolset {
+// materializing them as SKILL.md under the app skills directory. Failing to
+// write a skill is reported instead of silently running an agent that is
+// missing a capability the user attached.
+func (k *Kit) skillToolset(ids []string, cfg config.Config) (tool.Toolset, error) {
 	want := map[string]bool{}
 	for _, id := range ids {
 		want[id] = true
 	}
 	dir := k.store.SkillsDir()
-	_ = os.MkdirAll(dir, 0o755)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return nil, fmt.Errorf("create skills dir: %w", err)
+	}
 	for _, s := range cfg.Skills {
 		if !want[s.ID] {
 			continue
 		}
 		dirSkill := filepath.Join(dir, sanitizeSkillName(s.Name))
-		_ = os.MkdirAll(dirSkill, 0o755)
+		if err := os.MkdirAll(dirSkill, 0o755); err != nil {
+			return nil, fmt.Errorf("create skill dir %q: %w", s.Name, err)
+		}
 		body, err := skill.Build(&skill.Frontmatter{Name: sanitizeSkillName(s.Name), Description: s.Description}, s.Content)
 		if err != nil {
-			continue
+			return nil, fmt.Errorf("build skill %q: %w", s.Name, err)
 		}
-		_ = os.WriteFile(filepath.Join(dirSkill, "SKILL.md"), body, 0o644)
+		if err := os.WriteFile(filepath.Join(dirSkill, "SKILL.md"), body, 0o644); err != nil {
+			return nil, fmt.Errorf("write skill %q: %w", s.Name, err)
+		}
 	}
 	src := skill.NewFileSystemSource(os.DirFS(dir))
 	preloaded, cleanup, err := skill.WithCompletePreloadSource(context.Background(), src)
 	if err != nil {
-		return nil
+		return nil, fmt.Errorf("load skills: %w", err)
 	}
 	_ = cleanup // sources live for the process lifetime
 	ts, err := skilltoolset.New(context.Background(), skilltoolset.Config{Source: preloaded})
 	if err != nil {
-		return nil
+		return nil, fmt.Errorf("create skill toolset: %w", err)
 	}
-	return ts
+	return ts, nil
 }
 
 // applyPromptVars resolves template variables in system prompts:
@@ -440,9 +463,26 @@ type timeResult struct {
 	Timezone string `json:"timezone"`
 }
 
+// workspaceFileTools builds the list/read/write set for the "files" category.
+func workspaceFileTools(workspace string, requireConfirmation bool) ([]tool.Tool, error) {
+	list, err := ListFilesTool(workspace)
+	if err != nil {
+		return nil, err
+	}
+	read, err := ReadFileTool(workspace)
+	if err != nil {
+		return nil, err
+	}
+	write, err := WriteFileTool(workspace, requireConfirmation)
+	if err != nil {
+		return nil, err
+	}
+	return []tool.Tool{list, read, write}, nil
+}
+
 // TimeTool reports the current time.
-func TimeTool() tool.Tool {
-	t, _ := functiontool.New(functiontool.Config{
+func TimeTool() (tool.Tool, error) {
+	return functiontool.New(functiontool.Config{
 		Name:        "get_current_time",
 		Description: "Get the current date and time, optionally in a specific IANA timezone.",
 	}, func(ctx agent.Context, args timeArgs) (timeResult, error) {
@@ -458,14 +498,11 @@ func TimeTool() tool.Tool {
 		}
 		return timeResult{Now: time.Now().In(tz).Format(time.RFC3339), Timezone: name}, nil
 	})
-	return t
 }
 
 type pathArgs struct {
 	Path string `json:"path" jsonschema:"relative path inside the workspace"`
 }
-
-
 
 // SafeWorkspacePath resolves rel inside workspace and blocks traversal.
 func SafeWorkspacePath(workspace, rel string) (string, error) {
@@ -487,12 +524,52 @@ func safeWorkspacePath(workspace, rel string) (string, error) {
 	if !strings.HasPrefix(full, absRoot+string(filepath.Separator)) && full != absRoot {
 		return "", fmt.Errorf("path escapes the workspace")
 	}
-	return full, nil
+	// The lexical check above cannot see symlinks: a link inside the
+	// workspace pointing at ~/.ssh passes it. Resolve both sides and compare
+	// again. A path that does not exist yet (write target, possibly with new
+	// parent directories) is validated through its deepest existing ancestor.
+	realRoot, err := filepath.EvalSymlinks(absRoot)
+	if err != nil {
+		return "", err
+	}
+	realFull, err := filepath.EvalSymlinks(full)
+	if err == nil {
+		if !isWithin(realRoot, realFull) {
+			return "", fmt.Errorf("path escapes the workspace")
+		}
+		return realFull, nil
+	}
+	if !os.IsNotExist(err) {
+		return "", err
+	}
+	ancestor := filepath.Dir(full)
+	for {
+		realAncestor, aerr := filepath.EvalSymlinks(ancestor)
+		if aerr == nil {
+			if !isWithin(realRoot, realAncestor) {
+				return "", fmt.Errorf("path escapes the workspace")
+			}
+			return full, nil
+		}
+		if !os.IsNotExist(aerr) {
+			return "", aerr
+		}
+		parent := filepath.Dir(ancestor)
+		if parent == ancestor {
+			return "", aerr
+		}
+		ancestor = parent
+	}
+}
+
+// isWithin reports whether target is root itself or lives under it.
+func isWithin(root, target string) bool {
+	return target == root || strings.HasPrefix(target, root+string(filepath.Separator))
 }
 
 // ListFilesTool lists workspace files.
-func ListFilesTool(workspace string) tool.Tool {
-	t, _ := functiontool.New(functiontool.Config{
+func ListFilesTool(workspace string) (tool.Tool, error) {
+	return functiontool.New(functiontool.Config{
 		Name:        "list_workspace_files",
 		Description: "List files and folders under a path inside the user's workspace.",
 	}, func(ctx agent.Context, args pathArgs) (filesResult, error) {
@@ -515,7 +592,6 @@ func ListFilesTool(workspace string) tool.Tool {
 		sort.Strings(names)
 		return filesResult{Entries: strings.Join(names, "\n")}, nil
 	})
-	return t
 }
 
 type readFileResult struct {
@@ -523,8 +599,8 @@ type readFileResult struct {
 }
 
 // ReadFileTool reads a file within the workspace.
-func ReadFileTool(workspace string) tool.Tool {
-	t, _ := functiontool.New(functiontool.Config{
+func ReadFileTool(workspace string) (tool.Tool, error) {
+	return functiontool.New(functiontool.Config{
 		Name:        "read_workspace_file",
 		Description: "Read a text file inside the user's workspace (max 64KB).",
 	}, func(ctx agent.Context, args pathArgs) (readFileResult, error) {
@@ -543,7 +619,6 @@ func ReadFileTool(workspace string) tool.Tool {
 		}
 		return readFileResult{Content: content}, nil
 	})
-	return t
 }
 
 type writeArgs struct {
@@ -552,16 +627,16 @@ type writeArgs struct {
 }
 
 type writeResult struct {
-	OK     bool `json:"ok"`
-	Bytes  int  `json:"bytes"`
+	OK    bool `json:"ok"`
+	Bytes int  `json:"bytes"`
 }
 
 // WriteFileTool writes a file within the workspace. When requireConfirmation
 // is true the tool asks the human operator to approve each call first (ADK
 // HITL): the run pauses on an adk_request_confirmation interrupt and only
 // proceeds after a FunctionResponse with {"confirmed": true}.
-func WriteFileTool(workspace string, requireConfirmation bool) tool.Tool {
-	t, _ := functiontool.New(functiontool.Config{
+func WriteFileTool(workspace string, requireConfirmation bool) (tool.Tool, error) {
+	return functiontool.New(functiontool.Config{
 		Name:                "write_workspace_file",
 		Description:         "Create or overwrite a text file inside the user's workspace.",
 		RequireConfirmation: requireConfirmation,
@@ -578,5 +653,4 @@ func WriteFileTool(workspace string, requireConfirmation bool) tool.Tool {
 		}
 		return writeResult{OK: true, Bytes: len(args.Content)}, nil
 	})
-	return t
 }

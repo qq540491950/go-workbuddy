@@ -157,7 +157,7 @@ func (a *AppService) MemoryClear() error {
 // agentShare is the portable per-agent share document. The referenced
 // provider id travels with it so the importer can re-link or flag it.
 type agentShare struct {
-	Version int               `json:"version"`
+	Version int                `json:"version"`
 	Agent   config.AgentConfig `json:"agent"`
 }
 
@@ -188,7 +188,13 @@ func (a *AppService) ExportAgent(agentID string) (string, error) {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return "", err
 	}
-	path := filepath.Join(dir, fmt.Sprintf("%s.agent.json", agent.Name))
+	// The agent name comes from config (and from imported share files), so it
+	// may contain path separators. Sanitize it like chat exports do.
+	name := sanitizeExportName(agent.Name)
+	if name == "" {
+		name = "agent"
+	}
+	path := filepath.Join(dir, fmt.Sprintf("%s.agent.json", name))
 	if err := os.WriteFile(path, data, 0o644); err != nil {
 		return "", err
 	}
@@ -239,7 +245,7 @@ func (a *AppService) ImportAgent(data string) (config.AgentConfig, error) {
 
 // remoteShare is the portable per-remote-agent share document.
 type remoteShare struct {
-	Version int                    `json:"version"`
+	Version int                       `json:"version"`
 	Remote  *config.RemoteAgentConfig `json:"remote"`
 }
 
@@ -269,7 +275,11 @@ func (a *AppService) ExportRemoteAgent(id string) (string, error) {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return "", err
 	}
-	path := filepath.Join(dir, fmt.Sprintf("%s.remote.json", remote.Name))
+	name := sanitizeExportName(remote.Name)
+	if name == "" {
+		name = "remote"
+	}
+	path := filepath.Join(dir, fmt.Sprintf("%s.remote.json", name))
 	if err := os.WriteFile(path, data, 0o644); err != nil {
 		return "", err
 	}
@@ -324,9 +334,9 @@ func (a *AppService) ImportRemoteAgent(data string) (config.RemoteAgentConfig, e
 // configBackup is the portable backup document. Sessions are intentionally
 // excluded: they live in sessions.db and are never overwritten by an import.
 type configBackup struct {
-	Version    int           `json:"version"`
-	ExportedAt time.Time     `json:"exportedAt"`
-	App        string        `json:"app"`
+	Version    int            `json:"version"`
+	ExportedAt time.Time      `json:"exportedAt"`
+	App        string         `json:"app"`
 	Config     *config.Config `json:"config"`
 }
 
@@ -335,6 +345,8 @@ type configBackup struct {
 // With includeSecrets=false all provider API keys are stripped so the file is
 // safe to share.
 func (a *AppService) ExportConfig(includeSecrets bool) (string, error) {
+	// Get returns an independent copy; the masking below must never reach the
+	// live config (that would blank the user's API keys in memory).
 	cfg := a.S.Store.Get()
 	cfg.Sessions = nil
 	// OAuth tokens are secrets AND machine-local: never exported.
@@ -426,7 +438,7 @@ func (m *MCPService) Connect(id string) (mcpmgr.ServerStatus, error) {
 			return m.S.MCP.Connect(s), nil
 		}
 	}
-	return mcpmgr.ServerStatus{}, nil
+	return mcpmgr.ServerStatus{}, fmt.Errorf("MCP 服务器 %q 不存在", id)
 }
 
 // Disconnect drops the connection state of one MCP server.

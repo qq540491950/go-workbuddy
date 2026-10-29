@@ -74,6 +74,11 @@ export function SkillsPage() {
       </div>
 
       <div className="grid gap-3 md:grid-cols-2">
+        {skills.length === 0 && (
+          <div className="col-span-full rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground">
+            还没有 Skill。点击「新增 Skill」创建，或从工作区 knowledge 目录导入。
+          </div>
+        )}
         {skills.map((s) => (
           <Card key={s.id}>
             <CardContent className="p-4">

@@ -26,6 +26,85 @@ func newTestServices(store *config.Store) *Services {
 	return &Services{Store: store, Kit: agentkit.NewKit(store, mcpmgr.New()), MCP: mcpmgr.New()}
 }
 
+// TestRunTurnPanicBecomesErrorEvent: a panic in the agent/tool stack must not
+// crash the process; it surfaces as an error event plus done so the UI leaves
+// the running state.
+func TestRunTurnPanicBecomesErrorEvent(t *testing.T) {
+	var events []ChatStreamEvent
+	origApp := appEventHook
+	appEventHook = func(ev ChatStreamEvent) { events = append(events, ev) }
+	t.Cleanup(func() { appEventHook = origApp })
+
+	chat := &ChatService{runs: map[string]*runHandle{}}
+	var err error
+	func() {
+		defer chat.recoverRun("s1", &err)
+		panic("tool exploded")
+	}()
+
+	if err == nil || !strings.Contains(err.Error(), "tool exploded") {
+		t.Fatalf("panic not converted to error: %v", err)
+	}
+	var sawError, sawDone bool
+	for _, ev := range events {
+		if ev.Kind == "error" && strings.Contains(ev.Text, "tool exploded") {
+			sawError = true
+		}
+		if ev.Kind == "done" {
+			sawDone = true
+		}
+	}
+	if !sawError || !sawDone {
+		t.Fatalf("panic recovery did not emit error+done: %+v", events)
+	}
+
+	// No panic => no events, error untouched.
+	events = nil
+	var clean error
+	func() {
+		defer chat.recoverRun("s1", &clean)
+	}()
+	if clean != nil || len(events) != 0 {
+		t.Fatalf("recoverRun touched a clean run: err=%v events=%+v", clean, events)
+	}
+}
+
+// TestRunHandleUnregistersOnlyOwnEntry pins the overlap case: when turn B
+// starts before turn A has unwound, A's cleanup must not remove B's cancel
+// registration (which would make Cancel a no-op and IsRunning report false
+// for a run that is still streaming).
+func TestRunHandleUnregistersOnlyOwnEntry(t *testing.T) {
+	chat := &ChatService{runs: map[string]*runHandle{}}
+
+	ctxA, cancelA := context.WithCancel(context.Background())
+	defer cancelA()
+	releaseA := chat.registerRun("s1", cancelA)
+
+	ctxB, cancelB := context.WithCancel(context.Background())
+	defer cancelB()
+	releaseB := chat.registerRun("s1", cancelB)
+
+	// Starting B cancels A (only one turn per session).
+	<-ctxA.Done()
+
+	releaseA() // A unwinds after B registered
+	if !chat.IsRunning("s1") {
+		t.Fatal("finishing the old run deregistered the new one")
+	}
+	chat.Cancel("s1")
+	select {
+	case <-ctxB.Done():
+	default:
+		t.Fatal("Cancel did not reach the live run")
+	}
+
+	releaseB()
+	if chat.IsRunning("s1") {
+		t.Fatal("run stayed registered after release")
+	}
+	_ = ctxB
+}
+
 // TestStoreConcurrentUpdates hammers the config store from many goroutines to
 // verify the mutex keeps state consistent (no race, no lost schema).
 func TestStoreConcurrentUpdates(t *testing.T) {

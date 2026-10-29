@@ -1,9 +1,12 @@
-import { useTheme } from "next-themes"
 import { Toaster as Sonner, type ToasterProps } from "sonner"
 import { CircleCheckIcon, InfoIcon, TriangleAlertIcon, OctagonXIcon, Loader2Icon } from "lucide-react"
 
+// The app applies its own theme by toggling the `dark` class on <html>;
+// there is no next-themes provider, so toasts read that class directly
+// instead of silently staying on the system theme.
 const Toaster = ({ ...props }: ToasterProps) => {
-  const { theme = "system" } = useTheme()
+  const dark = document.documentElement.classList.contains("dark")
+  const theme = dark ? "dark" : "light"
 
   return (
     <Sonner

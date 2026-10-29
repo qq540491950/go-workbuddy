@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Events } from "@wailsio/runtime";
 import {
   Plus, Send, Square, Trash2, Pencil, MessageSquare, Bot, Users, Loader2,
@@ -135,11 +135,18 @@ export function ChatPage() {
   const [pendingAtts, setPendingAtts] = useState<AttachmentIn[]>([]);
   const fileRef = useRef<HTMLInputElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const scrollFrame = useRef<number | null>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const messagesRef = useRef<UIMessage[]>([]);
   useEffect(() => { messagesRef.current = messages; }, [messages]);
   const sessionsRef = useRef<ChatSession[]>([]);
   useEffect(() => { sessionsRef.current = sessions; }, [sessions]);
+  const autoSpeakRef = useRef(autoSpeak);
+  useEffect(() => { autoSpeakRef.current = autoSpeak; }, [autoSpeak]);
+  // Set when the stream emitted an inline error, so send()'s catch does not
+  // also toast the same failure.
+  const streamedErrorRef = useRef(false);
 
   // markRunning tracks in-flight turns PER SESSION so several sessions can
   // stream in parallel without blocking each other.
@@ -184,10 +191,14 @@ export function ChatPage() {
   // Load history when switching sessions.
   useEffect(() => {
     if (!activeID) return;
+    // Guards against A->B fast switches: a slow response for the previous
+    // session must not paint its messages under the new one.
+    let cancelled = false;
     setSessionUsage(null);
     setCtxBannerDismissed(false);
     Chat.GetSessionMessages(activeID)
       .then((ms) => {
+        if (cancelled) return;
         // Pair confirm_request with its confirm_result so pending approvals
         // stay interactive (e.g. after an app restart).
         const answered = new Map<string, boolean>();
@@ -215,15 +226,37 @@ export function ChatPage() {
             })),
         );
       })
-      .catch((e) => toast.error(`加载历史失败: ${errText(e)}`));
-    Chat.IsRunning(activeID).then((r) => markRunning(activeID, r)).catch(() => {});
+      .catch((e) => {
+        if (!cancelled) toast.error(`加载历史失败: ${errText(e)}`);
+      });
+    Chat.IsRunning(activeID).then((r) => {
+      if (!cancelled) markRunning(activeID, r);
+    }).catch(() => {});
+    return () => {
+      cancelled = true;
+    };
   }, [activeID]);
 
   // Stream events.
   useEffect(() => {
     const off = Events.On("chat:stream", (e: any) => {
       const ev = Array.isArray(e?.data) ? e.data[0] : e?.data;
-      if (!ev || ev.sessionId !== activeID) return;
+      if (!ev) return;
+      // Completion bookkeeping runs for EVERY session: background runs must
+      // clear their spinner and toast even while the user is in another chat.
+      // (This block used to sit after the active-session filter below, which
+      // made it unreachable for non-active sessions.)
+      if (ev.kind === "done" || ev.kind === "error") {
+        if (ev.kind === "error" && ev.sessionId === activeID) streamedErrorRef.current = true;
+        markRunning(ev.sessionId, false);
+        reloadSessions();
+        if (ev.sessionId !== activeID) {
+          const title = sessionsRef.current.find((x: { id: string; title: string }) => x.id === ev.sessionId)?.title ?? "后台会话";
+          if (ev.kind === "done") toast.success(`「${title}」已完成回复`);
+          else toast.error(`「${title}」本轮出错`);
+        }
+      }
+      if (ev.sessionId !== activeID) return;
       setMessages((prev) => {
         switch (ev.kind) {
           case "user":
@@ -256,6 +289,7 @@ export function ChatPage() {
               id: nextId(), kind: "confirm", author: ev.author, text: "",
               toolName: ev.toolName, toolArgs: ev.toolArgs,
               callId: ev.callId, hint: ev.hint, confirmStatus: "pending",
+              timestamp: new Date().toISOString(),
             } as UIMessage];
           case "error":
             return [...prev, { id: nextId(), kind: "error", author: "system", text: ev.text }];
@@ -267,28 +301,35 @@ export function ChatPage() {
       });
       if (ev.kind === "done") {
         setSessionUsage(ev.sessionUsage ?? null);
-        if (autoSpeak) {
+        // Read the latest flag through a ref: this subscription is created
+        // once per session and would otherwise capture the startup value.
+        if (autoSpeakRef.current) {
           const lastAssistant = [...messagesRef.current].reverse().find((m) => m.kind === "assistant" && m.text);
           if (lastAssistant) speak(lastAssistant.text);
         }
       }
-      if (ev.kind === "done" || ev.kind === "error") {
-        markRunning(ev.sessionId, false);
-        reloadSessions();
-        // Background session finished while the user is elsewhere: surface it.
-        if (ev.sessionId !== activeID) {
-          const title = sessionsRef.current.find((x) => x.id === ev.sessionId)?.title ?? "后台会话";
-          if (ev.kind === "done") toast.success(`「${title}」已完成回复`);
-          else toast.error(`「${title}」本轮出错`);
-        }
-      }
     });
     return off;
-  }, [activeID, reloadSessions, markRunning]);
+  }, [activeID, reloadSessions, markRunning, speak]);
 
+  // Auto-scroll only when the reader is already at the bottom, and coalesce
+  // per animation frame: scrolling smoothly on every token fights the user
+  // and queues animations faster than they finish.
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+    const el = scrollRef.current;
+    if (!el) return;
+    const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 120;
+    if (!nearBottom) return;
+    if (scrollFrame.current != null) return;
+    scrollFrame.current = requestAnimationFrame(() => {
+      scrollFrame.current = null;
+      bottomRef.current?.scrollIntoView({ behavior: "auto", block: "end" });
+    });
   }, [messages]);
+
+  useEffect(() => () => {
+    if (scrollFrame.current != null) cancelAnimationFrame(scrollFrame.current);
+  }, []);
 
   // Cmd/Ctrl+N opens the new-chat dialog; Cmd/Ctrl+K focuses the composer.
   useEffect(() => {
@@ -356,7 +397,12 @@ export function ChatPage() {
         await Chat.Send(activeID, text, atts.length > 0 ? atts : null);
       }
     } catch (e) {
-      toast.error(`发送失败: ${errText(e)}`);
+      // The stream already emitted an inline error bubble for run failures;
+      // Chat.Send returns the same error so the promise settles, but only
+      // surface a toast when nothing was streamed (e.g. validation failure).
+      const msg = errText(e);
+      if (!streamedErrorRef.current) toast.error(`发送失败: ${msg}`);
+      streamedErrorRef.current = false;
       markRunning(activeID, false);
       setPendingAtts(atts); // restore on failure
     }
@@ -368,18 +414,19 @@ export function ChatPage() {
 
   // answerConfirm resolves a HITL tool-confirmation card. The status flips
   // optimistically; a failed resume reverts the card to pending.
-  const answerConfirm = async (msgId: string, callId: string | undefined, approved: boolean) => {
+  const answerConfirm = useCallback(async (msgId: string, callId: string | undefined, approved: boolean) => {
     if (!activeID || !callId || running) return;
     markRunning(activeID, true);
     setMessages((prev) => prev.map((m) => (m.id === msgId ? { ...m, confirmStatus: approved ? "approved" : "rejected" } : m)));
     try {
       await Chat.ConfirmToolCall(activeID, callId, approved);
     } catch (e) {
-      toast.error(`确认失败: ${errText(e)}`);
+      if (!streamedErrorRef.current) toast.error(`确认失败: ${errText(e)}`);
+      streamedErrorRef.current = false;
       setMessages((prev) => prev.map((m) => (m.id === msgId && m.kind === "confirm" ? { ...m, confirmStatus: "pending" } : m)));
       markRunning(activeID, false);
     }
-  };
+  }, [activeID, running, markRunning]);
 
   const MAX_ATT_BYTES = 6 * 1024 * 1024;
   const allowedMIME = ["image/png", "image/jpeg", "image/webp", "image/gif"];
@@ -437,7 +484,7 @@ export function ChatPage() {
     rec.start();
   };
 
-  const regenerate = async () => {
+  const regenerate = useCallback(async () => {
     if (!activeID || running) return;
     markRunning(activeID, true);
     setSessionUsage(null);
@@ -451,10 +498,14 @@ export function ChatPage() {
     try {
       await Chat.Regenerate(activeID);
     } catch (e) {
-      toast.error(`重新生成失败: ${errText(e)}`);
+      if (!streamedErrorRef.current) toast.error(`重新生成失败: ${errText(e)}`);
+      streamedErrorRef.current = false;
       markRunning(activeID, false);
     }
-  };
+  }, [activeID, running, markRunning]);
+
+  /** speakMessage is stable per call site so memoized bubbles can skip it. */
+  const speakMessage = useCallback((text: string) => speak(text), []);
 
   const openStats = async () => {
     if (!activeID) return;
@@ -594,7 +645,7 @@ export function ChatPage() {
   const modelMultimodal = !!target.model?.multimodal;
 
   /** costOf computes ¥ cost from token usage at model rates (per 1M). */
-  const costOf = (u?: UsageInfo | null): string => {
+  const costOf = useCallback((u?: UsageInfo | null): string => {
     if (!u || !target.model) return "";
     const pin = target.model.priceIn ?? 0;
     const pout = target.model.priceOut ?? 0;
@@ -602,14 +653,14 @@ export function ChatPage() {
     const cost = (u.promptTokens / 1e6) * pin + (u.completionTokens / 1e6) * pout;
     if (cost <= 0) return "";
     return cost < 0.01 ? "<¥0.01" : `¥${cost.toFixed(2)}`;
-  };
+  }, [target.model]);
 
-  const startEdit = (text: string) => {
+  const startEdit = useCallback((text: string) => {
     if (running || !activeID) return;
     setInput(text);
     setEditing(true);
     inputRef.current?.focus();
-  };
+  }, [running, activeID, setInput]);
 
   const cancelEdit = () => {
     setEditing(false);
@@ -626,6 +677,10 @@ export function ChatPage() {
 
   const toolDurations = useMemo(() => computeToolDurations(messages), [messages]);
   const runningToolsSet = useMemo(() => computeRunningTools(messages), [messages]);
+  // Precompute once per message change instead of scanning the tail for every
+  // rendered row (that was O(n^2) per token).
+  const editFlags = useMemo(() => computeEditFlags(messages), [messages]);
+  const visibleMessages = useMemo(() => messages.slice(-RENDER_LIMIT), [messages]);
   const slashSuggestions = useMemo(() => {
     if (!input.startsWith("/")) return [];
     const q = input.toLowerCase();
@@ -817,7 +872,7 @@ export function ChatPage() {
           </div>
         </div>
 
-        <ScrollArea className="flex-1">
+        <ScrollArea className="flex-1" viewportRef={scrollRef}>
           <div className="mx-auto max-w-3xl space-y-3 p-4">
             {messages.length > RENDER_LIMIT && (
               <div className="rounded-lg border bg-muted/40 px-3 py-2 text-center text-xs text-muted-foreground">
@@ -834,13 +889,21 @@ export function ChatPage() {
               </div>
             )}
             {messages.length === 0 && !active && providerCount === 0 && <Onboarding />}
+            {messages.length === 0 && !active && providerCount > 0 && (
+              // Providers exist but no chat is selected: previously this
+              // rendered an empty pane with no hint about what to do.
+              <div className="py-24 text-center text-sm text-muted-foreground">
+                <div className="mb-2 text-4xl">💬</div>
+                还没有对话。点击左上角「新对话」选择 Agent 开始。
+              </div>
+            )}
             {messages.length === 0 && active && (
               <div className="py-24 text-center text-sm text-muted-foreground">
                 <div className="mb-2 text-4xl">💬</div>
                 向 <span className="font-medium text-foreground">{targetLabel}</span> 发送第一条消息
               </div>
             )}
-            {messages.slice(-RENDER_LIMIT).map((m, i, arr) => {
+            {visibleMessages.map((m, i, arr) => {
               return (
                 <MessageBubble
                   key={m.id}
@@ -850,10 +913,10 @@ export function ChatPage() {
                   canRegenerate={!running && !!activeID}
                   toolRunning={m.kind === "tool_call" ? runningToolsSet.has(m.id) : false}
                   durationMs={toolDurations.get(m.id)}
-                  onSpeak={() => speak(m.text)}
+                  onSpeak={speakMessage}
                   costOf={costOf}
                   onEdit={startEdit}
-                  canEdit={!running && !!activeID && m.kind === "user" && !messages.slice(i + 1).some((x) => x.kind === "user")}
+                  canEdit={editFlags.get(m.id) === true && !running && !!activeID}
                   onConfirm={answerConfirm}
                 />
               );
@@ -1225,13 +1288,26 @@ function ConfirmCard({ m, onConfirm }: {
   );
 }
 
-/** computeToolDurations pairs tool_result with its call to derive durations. */
+/**
+ * computeToolDurations pairs tool_result with its call to derive durations.
+ * A HITL confirmation parks the run between the call and the result, so the
+ * confirmed call's clock restarts at the confirmation card: otherwise the
+ * displayed time is how long the human took to click, not how long the tool ran.
+ */
 function computeToolDurations(messages: UIMessage[]): Map<string, number> {
   const map = new Map<string, number>();
   const pending: { id: string; toolName: string; ts: number }[] = [];
   for (const m of messages) {
-    if (m.kind !== "tool_call" && m.kind !== "tool_result") continue;
     const ts = m.timestamp ? Date.parse(m.timestamp) : Date.now();
+    if (m.kind === "confirm") {
+      // The paused tool is the most recent call of the same name.
+      if (m.timestamp) {
+        const idx = [...pending].reverse().findIndex((p) => p.toolName === m.toolName);
+        if (idx >= 0) pending[pending.length - 1 - idx].ts = ts;
+      }
+      continue;
+    }
+    if (m.kind !== "tool_call" && m.kind !== "tool_result") continue;
     if (m.kind === "tool_call") {
       pending.push({ id: m.id, toolName: m.toolName ?? "", ts });
     } else {
@@ -1261,13 +1337,32 @@ function computeRunningTools(messages: UIMessage[]): Set<string> {
   return running;
 }
 
-function MessageBubble({ m, isLastAssistant, onRegenerate, canRegenerate, toolRunning, onSpeak, costOf, onEdit, canEdit, onConfirm, durationMs }: {
+/**
+ * computeEditFlags marks the user messages that may be edited: only the last
+ * one, because editing replaces that turn and everything after it. Doing this
+ * per row was O(n^2) on every streamed token.
+ */
+function computeEditFlags(messages: UIMessage[]): Map<string, boolean> {
+  const flags = new Map<string, boolean>();
+  let lastUserID: string | null = null;
+  for (const m of messages) {
+    if (m.kind === "user") lastUserID = m.id;
+  }
+  if (lastUserID) flags.set(lastUserID, true);
+  return flags;
+}
+
+// MessageBubble is memoized: streaming appends a new message object for the
+// last bubble each token, and every other bubble must keep the same props to
+// skip re-rendering. Callers therefore pass stable callbacks and precomputed
+// flags instead of per-row closures.
+const MessageBubble = memo(function MessageBubble({ m, isLastAssistant, onRegenerate, canRegenerate, toolRunning, onSpeak, costOf, onEdit, canEdit, onConfirm, durationMs }: {
   m: UIMessage;
   isLastAssistant: boolean;
   onRegenerate: () => void;
   canRegenerate: boolean;
   toolRunning: boolean;
-  onSpeak: () => void;
+  onSpeak: (text: string) => void;
   costOf: (u?: UsageInfo | null) => string;
   onEdit: (text: string) => void;
   canEdit: boolean;
@@ -1335,7 +1430,9 @@ function MessageBubble({ m, isLastAssistant, onRegenerate, canRegenerate, toolRu
         args={m.toolArgs}
         resp={m.toolResp}
         running={m.kind === "tool_call" && toolRunning}
-        durationMs={m.kind === "tool_result" ? m.durationMs : undefined}
+        // durationMs comes from the parent's pairing pass; m.durationMs is
+        // never populated, so reading it silently hid every timing chip.
+        durationMs={durationMs}
       />
     );
   }
@@ -1369,7 +1466,7 @@ function MessageBubble({ m, isLastAssistant, onRegenerate, canRegenerate, toolRu
               <button
                 className="inline-flex items-center gap-0.5 rounded p-0.5 text-[11px] text-muted-foreground hover:text-foreground"
                 title="朗读这条回复"
-                onClick={onSpeak}
+                onClick={() => onSpeak(m.text)}
               >
                 <Volume2 className="h-3 w-3" />
                 朗读
@@ -1399,4 +1496,4 @@ function MessageBubble({ m, isLastAssistant, onRegenerate, canRegenerate, toolRu
       </div>
     </div>
   );
-}
+});

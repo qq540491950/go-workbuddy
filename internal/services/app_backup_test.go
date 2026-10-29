@@ -99,6 +99,11 @@ func TestConfigBackupMasked(t *testing.T) {
 	if strings.Contains(string(data), "sk-secret-123") {
 		t.Fatal("masked export leaked the API key")
 	}
+	// Regression: masking must be applied to a copy. A masked export used to
+	// blank the live provider keys, breaking every later request until restart.
+	if got := store.Get(); len(got.Providers) != 1 || got.Providers[0].APIKey != "sk-secret-123" {
+		t.Fatalf("masked export mutated the live config: %+v", got.Providers)
+	}
 	// OAuth token cache must never be exported (secrets, machine-local).
 	err = store.Update(func(cfg *config.Config) {
 		cfg.MCPTokens = map[string]config.MCPOAuthToken{"m1": {AccessToken: "at-secret", TokenURL: "https://x/token"}}

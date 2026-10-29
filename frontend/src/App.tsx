@@ -1,17 +1,21 @@
-import { useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import { MessageSquare, Bot, Users, Sparkles, Blocks, Boxes, Settings as SettingsIcon, Sun, Moon, CircleHelp } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Toaster } from "@/components/ui/sonner";
-import { ChatPage } from "@/pages/ChatPage";
-import { AgentsPage } from "@/pages/AgentsPage";
-import { TeamsPage } from "@/pages/TeamsPage";
-import { SkillsPage } from "@/pages/SkillsPage";
-import { MCPPage } from "@/pages/MCPPage";
-import { ModelsPage } from "@/pages/ModelsPage";
-import { SettingsPage } from "@/pages/SettingsPage";
+import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { cn } from "@/lib/utils";
 import { applyTheme, cachedTheme, onSystemThemeChange, type ThemePrefs } from "@/lib/theme";
 import { App as AppService, Config } from "@/lib/api";
+
+// Pages load on demand: Chat is the landing view and stays eager, everything
+// else is a settings-style screen that should not sit in the startup bundle.
+import { ChatPage } from "@/pages/ChatPage";
+const AgentsPage = lazy(() => import("@/pages/AgentsPage").then((m) => ({ default: m.AgentsPage })));
+const TeamsPage = lazy(() => import("@/pages/TeamsPage").then((m) => ({ default: m.TeamsPage })));
+const SkillsPage = lazy(() => import("@/pages/SkillsPage").then((m) => ({ default: m.SkillsPage })));
+const MCPPage = lazy(() => import("@/pages/MCPPage").then((m) => ({ default: m.MCPPage })));
+const ModelsPage = lazy(() => import("@/pages/ModelsPage").then((m) => ({ default: m.ModelsPage })));
+const SettingsPage = lazy(() => import("@/pages/SettingsPage").then((m) => ({ default: m.SettingsPage })));
 
 const navItems = [
   { key: "chat", label: "对话", icon: MessageSquare },
@@ -150,13 +154,17 @@ export default function App() {
       </aside>
 
       <main className="min-w-0 flex-1 overflow-hidden">
-        {page === "chat" && <ChatPage />}
-        {page === "agents" && <AgentsPage />}
-        {page === "teams" && <TeamsPage />}
-        {page === "skills" && <SkillsPage />}
-        {page === "mcp" && <MCPPage />}
-        {page === "models" && <ModelsPage />}
-        {page === "settings" && <SettingsPage />}
+        <ErrorBoundary>
+          <Suspense fallback={<div className="p-6 text-sm text-muted-foreground">加载中…</div>}>
+            {page === "chat" && <ChatPage />}
+            {page === "agents" && <AgentsPage />}
+            {page === "teams" && <TeamsPage />}
+            {page === "skills" && <SkillsPage />}
+            {page === "mcp" && <MCPPage />}
+            {page === "models" && <ModelsPage />}
+            {page === "settings" && <SettingsPage />}
+          </Suspense>
+        </ErrorBoundary>
       </main>
 
       <Toaster position="top-center" richColors />

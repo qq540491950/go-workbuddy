@@ -117,7 +117,11 @@ func TestSkillMaterialization(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if ts := kit.skillToolset([]string{"s1"}, store.Get()); ts == nil {
+	ts, err := kit.skillToolset([]string{"s1"}, store.Get())
+	if err != nil {
+		t.Fatalf("skillToolset: %v", err)
+	}
+	if ts == nil {
 		t.Fatal("expected skill toolset, got nil")
 	}
 	// The skill must be materialized as valid SKILL.md.

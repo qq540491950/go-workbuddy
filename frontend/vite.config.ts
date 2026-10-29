@@ -17,4 +17,20 @@ export default defineConfig({
       "@": path.resolve(__dirname, "./src"),
     },
   },
+  build: {
+    // Split the vendor libraries out of the app chunk: React and the
+    // markdown renderer change rarely, so they can be cached across app
+    // updates instead of re-downloaded with every build. Rolldown (Vite 8)
+    // only accepts the function form.
+    rollupOptions: {
+      output: {
+        manualChunks(id: string) {
+          if (!id.includes("node_modules")) return undefined;
+          if (/node_modules\/(react|react-dom|scheduler)\//.test(id)) return "react";
+          if (/node_modules\/(react-markdown|remark-|micromark|mdast-|hast-|unist-|unified|vfile)/.test(id)) return "markdown";
+          return undefined;
+        },
+      },
+    },
+  },
 });

@@ -7,8 +7,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"math"
 	"io/fs"
+	"math"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -31,13 +31,13 @@ type EmbeddingConfig struct {
 
 // KnowledgeChunk is one indexed passage of a knowledge file.
 type KnowledgeChunk struct {
-	ID       uint   `gorm:"primaryKey"`
-	File     string `gorm:"index:idx_knowledge_file"`
-	ModTime  int64  `gorm:"index:idx_knowledge_file"`
-	ChunkIdx int
-	Content  string
-	Model    string
-	Dim      int
+	ID        uint   `gorm:"primaryKey"`
+	File      string `gorm:"index:idx_knowledge_file"`
+	ModTime   int64  `gorm:"index:idx_knowledge_file"`
+	ChunkIdx  int
+	Content   string
+	Model     string
+	Dim       int
 	Embedding []byte // little-endian float32 array
 }
 
@@ -61,9 +61,9 @@ func OpenKnowledgeIndex(path string) (*KnowledgeIndex, error) {
 }
 
 const (
-	chunkRunes    = 700 // chunk size in runes
-	chunkOverlap  = 100 // overlap between consecutive chunks
-	embedBatch    = 32  // inputs per /embeddings request
+	chunkRunes     = 700 // chunk size in runes
+	chunkOverlap   = 100 // overlap between consecutive chunks
+	embedBatch     = 32  // inputs per /embeddings request
 	semanticTopK   = 8
 	semanticWeight = 0.75 // hybrid score: 0.75*cosine + 0.25*keyword
 	embedWorkers   = 4    // concurrent /embeddings requests while indexing
@@ -72,7 +72,7 @@ const (
 // SearchOptions carries everything the knowledge tool needs at run time.
 type SearchOptions struct {
 	Workspace string
-	Index     *KnowledgeIndex // nil => keyword only
+	Index     *KnowledgeIndex  // nil => keyword only
 	Embedding *EmbeddingConfig // nil => keyword only
 }
 
@@ -216,19 +216,22 @@ func (k *KnowledgeIndex) ensureIndexed(workspace string, emb *EmbeddingConfig) e
 		return walkErr
 	}
 
-	// Drop rows of removed or changed files.
+	// Drop rows of removed files, and remember the newest mtime per file.
+	// Rows for one file can span several mod_times (a previous edit may have
+	// left stale rows behind), so take the max rather than an arbitrary row.
 	var known []struct {
 		File    string
 		ModTime int64
 	}
 	if err := k.DB.Model(&KnowledgeChunk{}).
-		Select("distinct file, mod_time").
-		Scan(&known).Error; err != nil {
+		Select("file, mod_time").Scan(&known).Error; err != nil {
 		return err
 	}
 	seen := map[string]int64{}
 	for _, r := range known {
-		seen[r.File] = r.ModTime
+		if mt, ok := seen[r.File]; !ok || r.ModTime > mt {
+			seen[r.File] = r.ModTime
+		}
 	}
 	for f := range seen {
 		if _, ok := present[f]; !ok {
@@ -238,7 +241,10 @@ func (k *KnowledgeIndex) ensureIndexed(workspace string, emb *EmbeddingConfig) e
 		}
 	}
 
-	// Collect files that need (re-)embedding.
+	// Collect files that need (re-)embedding, and clear their existing rows.
+	// Re-embedding appends fresh rows; without this delete a file that shrinks
+	// (3 chunks -> 2) would keep its surplus rows forever, growing the index
+	// and returning stale content on every search.
 	names := make([]string, 0, len(present))
 	for f := range present {
 		if old, ok := seen[f]; !ok || old != present[f] {
@@ -246,6 +252,11 @@ func (k *KnowledgeIndex) ensureIndexed(workspace string, emb *EmbeddingConfig) e
 		}
 	}
 	sort.Strings(names)
+	for _, f := range names {
+		if err := k.DB.Where("file = ?", f).Delete(&KnowledgeChunk{}).Error; err != nil {
+			return err
+		}
+	}
 
 	// Fan the embedding work out to a small worker pool (network-bound),
 	// then write rows sequentially on this goroutine.
@@ -551,4 +562,3 @@ func minInt(a, b int) int {
 	}
 	return b
 }
-

@@ -14,7 +14,7 @@ func TestSafeWorkspacePath(t *testing.T) {
 	}
 
 	cases := []struct {
-		rel    string
+		rel     string
 		wantErr bool
 	}{
 		{"notes.txt", false},
@@ -43,9 +43,48 @@ func TestEmptyWorkspaceRejected(t *testing.T) {
 	}
 }
 
+// TestSafeWorkspacePathBlocksSymlinkEscape: a symlink inside the workspace
+// must not become a way out of it. The lexical prefix check alone passes such
+// a path, so this pins the resolved-path check.
+func TestSafeWorkspacePathBlocksSymlinkEscape(t *testing.T) {
+	root := t.TempDir()
+	outside := t.TempDir()
+	secret := filepath.Join(outside, "secret.txt")
+	if err := os.WriteFile(secret, []byte("top secret"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(root, "leak.txt")
+	if err := os.Symlink(secret, link); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+	if _, err := safeWorkspacePath(root, "leak.txt"); err == nil {
+		t.Fatal("symlink pointing outside the workspace was allowed")
+	}
+
+	// A symlinked directory escaping the workspace is equally blocked.
+	if err := os.Symlink(outside, filepath.Join(root, "outdir")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := safeWorkspacePath(root, "outdir/secret.txt"); err == nil {
+		t.Fatal("path through an escaping symlinked dir was allowed")
+	}
+
+	// A symlink that stays inside remains usable.
+	inner := filepath.Join(root, "inner.txt")
+	if err := os.WriteFile(inner, []byte("ok"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(inner, filepath.Join(root, "inner-link.txt")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := safeWorkspacePath(root, "inner-link.txt"); err != nil {
+		t.Fatalf("in-workspace symlink rejected: %v", err)
+	}
+}
+
 func TestSanitizeAgentName(t *testing.T) {
 	cases := map[string]string{
-		"周报助手":      "agent_", // non-ascii only -> fallback suffix needed; starts with agent_
+		"周报助手":        "agent_", // non-ascii only -> fallback suffix needed; starts with agent_
 		"Weekly Bot!": "weekly_bot",
 		"user":        "user_agent",
 	}

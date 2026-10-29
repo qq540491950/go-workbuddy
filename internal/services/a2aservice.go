@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -10,8 +11,8 @@ import (
 
 	a2acore "github.com/a2aproject/a2a-go/v2/a2a"
 	"github.com/a2aproject/a2a-go/v2/a2asrv"
-	adka2av2 "google.golang.org/adk/v2/server/adka2a/v2"
 	"google.golang.org/adk/v2/runner"
+	adka2av2 "google.golang.org/adk/v2/server/adka2a/v2"
 	"google.golang.org/adk/v2/session"
 
 	"changeme/internal/agentkit"
@@ -110,14 +111,24 @@ func (a *A2AService) Start(agentID string, port int) (A2AStatus, error) {
 	mux.Handle("/a2a/v1/invoke", a2asrv.NewJSONRPCHandler(a2asrv.NewHandler(executor)))
 
 	srv := &http.Server{Handler: mux, ReadHeaderTimeout: 10 * time.Second}
-	go func() {
-		_ = srv.Serve(ln)
-	}()
 	entry := &a2aServer{
 		srv: srv, listener: ln, agentID: agentID,
 		cardName: name, url: "http://" + ln.Addr().String(),
 	}
+	// Register before serving so the failure path below can find the entry.
 	a.servers[agentID] = entry
+	go func() {
+		// Serve only returns on listener failure or shutdown; either way the
+		// agent is no longer reachable, so drop it instead of reporting a
+		// running server that refuses connections.
+		if err := srv.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			a.mu.Lock()
+			if cur, ok := a.servers[agentID]; ok && cur.srv == srv {
+				delete(a.servers, agentID)
+			}
+			a.mu.Unlock()
+		}
+	}()
 	return A2AStatus{Running: true, URL: entry.url, AgentID: agentID, AgentName: name}, nil
 }
 

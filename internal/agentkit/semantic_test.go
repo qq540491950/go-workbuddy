@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"changeme/internal/config"
 )
@@ -165,6 +166,47 @@ func rowCount(t *testing.T, idx *KnowledgeIndex) int64 {
 		t.Fatal(err)
 	}
 	return n
+}
+
+// TestSemanticShrinkingFileDropsStaleChunks: editing a file down to fewer
+// chunks must delete the surplus rows. Leaving them behind grew the index on
+// every edit and could surface content the user had already deleted.
+func TestSemanticShrinkingFileDropsStaleChunks(t *testing.T) {
+	srv := httptest.NewServer(fakeEmbeddings())
+	defer srv.Close()
+
+	long := "# 长文\n\n" + strings.Repeat("这是第一段很长的说明文字，用于产生多个分块。\n\n", 40)
+	ws := seedKnowledge(t, map[string]string{"doc.md": long})
+	idx, err := OpenKnowledgeIndex(filepath.Join(t.TempDir(), "k.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	emb := &EmbeddingConfig{BaseURL: srv.URL, Model: "fake-embed"}
+	opts := SearchOptions{Workspace: ws, Index: idx, Embedding: emb}
+
+	if _, err := searchHybrid(opts, "说明文字"); err != nil {
+		t.Fatal(err)
+	}
+	before := rowCount(t, idx)
+	if before < 2 {
+		t.Fatalf("expected several chunks for the long doc, got %d", before)
+	}
+
+	if err := os.WriteFile(filepath.Join(ws, "knowledge", "doc.md"), []byte("# 短\n\n只剩一句。"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// mtimes have second resolution; bump it so the edit is visible even when
+	// the test runs within the same second as the initial index.
+	future := time.Now().Add(2 * time.Second)
+	if err := os.Chtimes(filepath.Join(ws, "knowledge", "doc.md"), future, future); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := searchHybrid(opts, "说明文字"); err != nil {
+		t.Fatal(err)
+	}
+	if after := rowCount(t, idx); after >= before {
+		t.Fatalf("stale chunks survived the edit: %d -> %d", before, after)
+	}
 }
 
 func TestSemanticModelChangeRebuilds(t *testing.T) {

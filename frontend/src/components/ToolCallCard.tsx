@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { memo, useEffect, useMemo, useState } from "react";
 import {
   CheckCircle2, ChevronRight, FileImage, FileText, Loader2, XCircle,
 } from "lucide-react";
@@ -32,8 +32,23 @@ type ToolCallProps = {
   durationMs?: number;
 };
 
-/** ToolCallCard renders one tool invocation with live status visualization. */
-export function ToolCallCard({ name, args, resp, running, durationMs }: ToolCallProps) {
+/**
+ * formatDuration renders a tool runtime. A HITL confirmation can sit pending
+ * for days, so long waits get a coarse unit instead of "2804084.6s".
+ */
+export function formatDuration(ms: number): string {
+  const s = ms / 1000;
+  if (s < 60) return `${s.toFixed(1)}s`;
+  if (s < 3600) return `${Math.floor(s / 60)}m${String(Math.round(s % 60)).padStart(2, "0")}s`;
+  const h = Math.floor(s / 3600);
+  const m = Math.round((s % 3600) / 60);
+  return `${h}h${String(m).padStart(2, "0")}m`;
+}
+
+/** ToolCallCard renders one tool invocation with live status visualization.
+ *  Memoized because extractArtifactPaths JSON-stringifies args/results and
+ *  would otherwise run for every visible tool on each streamed token. */
+export const ToolCallCard = memo(function ToolCallCard({ name, args, resp, running, durationMs }: ToolCallProps) {
   const [open, setOpen] = useState(false);
   const failed = useMemo(() => {
     if (!resp) return false;
@@ -75,7 +90,7 @@ export function ToolCallCard({ name, args, resp, running, durationMs }: ToolCall
         </Badge>
         <span className="font-mono text-xs">{name}</span>
         {durationMs != null && (
-          <span className="shrink-0 text-[11px] text-muted-foreground">{(durationMs / 1000).toFixed(1)}s</span>
+          <span className="shrink-0 text-[11px] text-muted-foreground">{formatDuration(durationMs)}</span>
         )}
         <span className="hidden min-w-0 flex-1 items-center gap-1 overflow-hidden sm:flex">
           {argChips.map(({ k, text }) => (
@@ -103,7 +118,7 @@ export function ToolCallCard({ name, args, resp, running, durationMs }: ToolCall
       )}
     </div>
   );
-}
+});
 
 export function ArtifactOpenButton({ path, label }: { path: string; label?: string }) {
   const [target, setTarget] = useState<string | null>(null);

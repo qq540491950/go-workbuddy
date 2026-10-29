@@ -39,11 +39,50 @@ type ServerStatus struct {
 type Manager struct {
 	mu         sync.Mutex
 	toolsets   map[string]tool.Toolset
+	conns      map[string]*trackedTransport // closeable connections per server
 	states     map[string]*ServerStatus
 	tokenStore *config.Store // optional: persists OAuth tokens across restarts
 	// onAuthPending, when set, is notified while an OAuth consent flow waits
 	// for the user in the browser (server display name + authorize URL).
 	onAuthPending func(server, authURL string)
+}
+
+// trackedTransport wraps an MCP transport and remembers the connection it
+// opens, so Disconnect can actually close the session (and with it the stdio
+// child process). The ADK toolset keeps its connection private, so this
+// wrapper is the only closeable handle we own.
+type trackedTransport struct {
+	inner mcp.Transport
+	mu    sync.Mutex
+	conn  mcp.Connection
+}
+
+func (t *trackedTransport) Connect(ctx context.Context) (mcp.Connection, error) {
+	conn, err := t.inner.Connect(ctx)
+	if err != nil {
+		return nil, err
+	}
+	t.mu.Lock()
+	prev := t.conn
+	t.conn = conn
+	t.mu.Unlock()
+	// The SDK reconnects by calling Connect again after a broken session;
+	// drop the stale one so repeated reconnects do not accumulate sessions.
+	if prev != nil {
+		_ = prev.Close()
+	}
+	return conn, nil
+}
+
+func (t *trackedTransport) Close() error {
+	t.mu.Lock()
+	conn := t.conn
+	t.conn = nil
+	t.mu.Unlock()
+	if conn == nil {
+		return nil
+	}
+	return conn.Close()
 }
 
 // SetAuthPendingHook registers a callback fired when an OAuth authorization
@@ -56,6 +95,7 @@ func (m *Manager) SetAuthPendingHook(fn func(server, authURL string)) {
 func New() *Manager {
 	return &Manager{
 		toolsets: map[string]tool.Toolset{},
+		conns:    map[string]*trackedTransport{},
 		states:   map[string]*ServerStatus{},
 	}
 }
@@ -114,25 +154,25 @@ func buildTransport(cfg config.MCPServerConfig, tokenStore *config.Store, onAuth
 
 // Toolset returns (creating if needed) the toolset for a server.
 // It does not connect; connection happens lazily on first tool use.
+// Creation happens under the lock: two concurrent connects would otherwise
+// build two transports and leak one of them (plus its stdio child).
 func (m *Manager) Toolset(cfg config.MCPServerConfig) (tool.Toolset, error) {
 	m.mu.Lock()
+	defer m.mu.Unlock()
 	if ts, ok := m.toolsets[cfg.ID]; ok {
-		m.mu.Unlock()
 		return ts, nil
 	}
-	m.mu.Unlock()
-
 	tr, err := m.buildTransportFor(cfg)
 	if err != nil {
 		return nil, err
 	}
-	ts, err := mcptoolset.New(mcptoolset.Config{Transport: tr})
+	tracked := &trackedTransport{inner: tr}
+	ts, err := mcptoolset.New(mcptoolset.Config{Transport: tracked})
 	if err != nil {
 		return nil, fmt.Errorf("create mcp toolset %q: %w", cfg.Name, err)
 	}
-	m.mu.Lock()
 	m.toolsets[cfg.ID] = ts
-	m.mu.Unlock()
+	m.conns[cfg.ID] = tracked
 	return ts, nil
 }
 
@@ -166,12 +206,18 @@ func (m *Manager) Connect(cfg config.MCPServerConfig) ServerStatus {
 // Disconnect drops the cached toolset for a server.
 func (m *Manager) Disconnect(id string) {
 	m.mu.Lock()
-	defer m.mu.Unlock()
+	tr := m.conns[id]
 	delete(m.toolsets, id)
+	delete(m.conns, id)
 	if st, ok := m.states[id]; ok {
 		st.State = "stopped"
 		st.Tools = nil
 		st.CheckedAt = time.Now()
+	}
+	m.mu.Unlock()
+	// Close outside the lock: closing a stdio session waits on the child.
+	if tr != nil {
+		_ = tr.Close()
 	}
 }
 
@@ -204,11 +250,11 @@ func (m *Manager) AllStatus(cfgs []config.MCPServerConfig) []ServerStatus {
 // queries that happen outside of a running invocation.
 type statusCtx struct{ context.Context }
 
-func (statusCtx) UserContent() *genai.Content             { return nil }
-func (statusCtx) InvocationID() string                    { return "" }
-func (statusCtx) AgentName() string                       { return "" }
-func (statusCtx) ReadonlyState() session.ReadonlyState    { return nil }
-func (statusCtx) UserID() string                          { return "" }
-func (statusCtx) AppName() string                         { return "" }
-func (statusCtx) SessionID() string                       { return "" }
-func (statusCtx) Branch() string                          { return "" }
+func (statusCtx) UserContent() *genai.Content          { return nil }
+func (statusCtx) InvocationID() string                 { return "" }
+func (statusCtx) AgentName() string                    { return "" }
+func (statusCtx) ReadonlyState() session.ReadonlyState { return nil }
+func (statusCtx) UserID() string                       { return "" }
+func (statusCtx) AppName() string                      { return "" }
+func (statusCtx) SessionID() string                    { return "" }
+func (statusCtx) Branch() string                       { return "" }

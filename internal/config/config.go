@@ -15,9 +15,9 @@ import (
 type Protocol string
 
 const (
-	ProtocolOpenAI     Protocol = "openai"     // OpenAI Chat Completions compatible (OpenAI, DeepSeek, Kimi, Ollama, vLLM...)
-	ProtocolAnthropic  Protocol = "anthropic"  // Anthropic Messages API (Claude)
-	ProtocolGemini     Protocol = "gemini"     // Google Gemini API
+	ProtocolOpenAI    Protocol = "openai"    // OpenAI Chat Completions compatible (OpenAI, DeepSeek, Kimi, Ollama, vLLM...)
+	ProtocolAnthropic Protocol = "anthropic" // Anthropic Messages API (Claude)
+	ProtocolGemini    Protocol = "gemini"    // Google Gemini API
 )
 
 // ModelInfo describes a model exposed by a provider.
@@ -69,17 +69,17 @@ type ModelProvider struct {
 
 // AgentConfig describes a user-defined agent.
 type AgentConfig struct {
-	ID           string   `json:"id"`
-	Name         string   `json:"name"`
-	Description  string   `json:"description"`
-	ProviderID   string   `json:"providerId"`
-	Model        string   `json:"model"`
-	SystemPrompt string   `json:"systemPrompt"`
-	Temperature  float64  `json:"temperature"`
-	MaxTokens    int      `json:"maxTokens"`
-	SkillIDs     []string `json:"skillIds"`     // skills attached to this agent
-	MCPServerIDs []string `json:"mcpServerIds"` // MCP servers whose tools are available
-	BuiltinTools []string `json:"builtinTools"` // subset of builtin tool names: time, files, knowledge
+	ID           string    `json:"id"`
+	Name         string    `json:"name"`
+	Description  string    `json:"description"`
+	ProviderID   string    `json:"providerId"`
+	Model        string    `json:"model"`
+	SystemPrompt string    `json:"systemPrompt"`
+	Temperature  float64   `json:"temperature"`
+	MaxTokens    int       `json:"maxTokens"`
+	SkillIDs     []string  `json:"skillIds"`     // skills attached to this agent
+	MCPServerIDs []string  `json:"mcpServerIds"` // MCP servers whose tools are available
+	BuiltinTools []string  `json:"builtinTools"` // subset of builtin tool names: time, files, knowledge
 	CreatedAt    time.Time `json:"createdAt"`
 	// EnableGuardrails masks secrets in user input/model output (default on
 	// when unset). Pointers distinguish "unset" from explicit false.
@@ -102,10 +102,10 @@ type AgentConfig struct {
 // (Agent-To-Agent, a2aproject/a2a-go). The agent card is discovered from
 // CardURL's well-known location.
 type RemoteAgentConfig struct {
-	ID          string `json:"id"`
-	Name        string `json:"name"`
-	Description string `json:"description"`
-	CardURL     string `json:"cardUrl"`
+	ID          string    `json:"id"`
+	Name        string    `json:"name"`
+	Description string    `json:"description"`
+	CardURL     string    `json:"cardUrl"`
 	CreatedAt   time.Time `json:"createdAt"`
 }
 
@@ -119,19 +119,19 @@ type TeamConfig struct {
 	MemberAgentIDs []string `json:"memberAgentIds"`
 	// RemoteMemberIDs reference RemoteAgents reachable over A2A; they act as
 	// sub-agents the coordinator can transfer to. The lead is always local.
-	RemoteMemberIDs []string `json:"remoteMemberIds,omitempty"`
-	ProviderID     string   `json:"providerId"` // used by the auto coordinator
-	Model          string   `json:"model"`
-	SystemPrompt   string   `json:"systemPrompt"`
-	CreatedAt      time.Time `json:"createdAt"`
+	RemoteMemberIDs []string  `json:"remoteMemberIds,omitempty"`
+	ProviderID      string    `json:"providerId"` // used by the auto coordinator
+	Model           string    `json:"model"`
+	SystemPrompt    string    `json:"systemPrompt"`
+	CreatedAt       time.Time `json:"createdAt"`
 }
 
 // SkillConfig is a reusable instruction bundle (agentskills.io SKILL.md).
 type SkillConfig struct {
-	ID          string `json:"id"`
-	Name        string `json:"name"`
-	Description string `json:"description"`
-	Content     string `json:"content"` // markdown body of the skill
+	ID          string    `json:"id"`
+	Name        string    `json:"name"`
+	Description string    `json:"description"`
+	Content     string    `json:"content"` // markdown body of the skill
 	CreatedAt   time.Time `json:"createdAt"`
 }
 
@@ -139,7 +139,7 @@ type SkillConfig struct {
 type MCPTransport string
 
 const (
-	MCPStdio   MCPTransport = "stdio"
+	MCPStdio          MCPTransport = "stdio"
 	MCPStreamableHTTP MCPTransport = "streamable-http"
 )
 
@@ -148,18 +148,18 @@ type MCPServerConfig struct {
 	ID        string            `json:"id"`
 	Name      string            `json:"name"`
 	Transport MCPTransport      `json:"transport"`
-	Command   string            `json:"command"`          // stdio
-	Args      []string          `json:"args"`             // stdio
-	Env       map[string]string `json:"env,omitempty"`    // stdio
-	URL       string            `json:"url"`              // streamable-http
+	Command   string            `json:"command"`           // stdio
+	Args      []string          `json:"args"`              // stdio
+	Env       map[string]string `json:"env,omitempty"`     // stdio
+	URL       string            `json:"url"`               // streamable-http
 	Headers   map[string]string `json:"headers,omitempty"` // streamable-http
 	AutoStart bool              `json:"autoStart"`
 	// Streamable-HTTP server authentication:
 	// AuthType "" | "bearer" | "api-key" | "oauth2" (authorization code + PKCE
 	// per the MCP authorization spec, handled by the official go-sdk handler).
-	AuthType          string   `json:"authType,omitempty"`
-	AuthToken         string   `json:"authToken,omitempty"`   // bearer token / api-key value
-	AuthHeader        string   `json:"authHeader,omitempty"`  // api-key header name (default X-API-Key)
+	AuthType          string `json:"authType,omitempty"`
+	AuthToken         string `json:"authToken,omitempty"`  // bearer token / api-key value
+	AuthHeader        string `json:"authHeader,omitempty"` // api-key header name (default X-API-Key)
 	OAuthClientID     string `json:"oauthClientId,omitempty"`
 	OAuthRedirectPort int    `json:"oauthRedirectPort,omitempty"` // 0 => ephemeral port
 }
@@ -231,10 +231,10 @@ type Config struct {
 	Teams        []TeamConfig        `json:"teams"`
 	// MCPTokens caches OAuth tokens for streamable-http MCP servers
 	// (server ID -> token). Secrets live in this 0600 file only.
-	MCPTokens map[string]MCPOAuthToken `json:"mcpTokens,omitempty"`
-	Skills       []SkillConfig       `json:"skills"`
-	MCPServers   []MCPServerConfig   `json:"mcpServers"`
-	Sessions     []ChatSession       `json:"sessions"`
+	MCPTokens  map[string]MCPOAuthToken `json:"mcpTokens,omitempty"`
+	Skills     []SkillConfig            `json:"skills"`
+	MCPServers []MCPServerConfig        `json:"mcpServers"`
+	Sessions   []ChatSession            `json:"sessions"`
 }
 
 // ChatSession is a chat conversation bound to an agent, remote agent or team.
@@ -254,6 +254,68 @@ type ChatSession struct {
 	Preview string `json:"preview,omitempty"`
 	// Archived sessions are hidden from the main sidebar list.
 	Archived bool `json:"archived,omitempty"`
+}
+
+// Clone returns an independent copy of the config. Slices, nested slices and
+// maps are duplicated, so mutating the clone (e.g. blanking API keys for a
+// secret-free export) never touches the live config or its backing arrays.
+func (c Config) Clone() Config {
+	out := c
+	out.Providers = make([]ModelProvider, len(c.Providers))
+	for i, p := range c.Providers {
+		p.Models = append([]ModelInfo(nil), p.Models...)
+		out.Providers[i] = p
+	}
+	if c.Agents != nil {
+		out.Agents = make([]AgentConfig, len(c.Agents))
+		for i, a := range c.Agents {
+			a.SkillIDs = append([]string(nil), a.SkillIDs...)
+			a.MCPServerIDs = append([]string(nil), a.MCPServerIDs...)
+			a.BuiltinTools = append([]string(nil), a.BuiltinTools...)
+			a.ConfirmTools = append([]string(nil), a.ConfirmTools...)
+			if a.EnableGuardrails != nil {
+				v := *a.EnableGuardrails
+				a.EnableGuardrails = &v
+			}
+			out.Agents[i] = a
+		}
+	}
+	if c.Teams != nil {
+		out.Teams = make([]TeamConfig, len(c.Teams))
+		for i, t := range c.Teams {
+			t.MemberAgentIDs = append([]string(nil), t.MemberAgentIDs...)
+			t.RemoteMemberIDs = append([]string(nil), t.RemoteMemberIDs...)
+			out.Teams[i] = t
+		}
+	}
+	if c.MCPServers != nil {
+		out.MCPServers = make([]MCPServerConfig, len(c.MCPServers))
+		for i, m := range c.MCPServers {
+			m.Args = append([]string(nil), m.Args...)
+			m.Env = cloneStringMap(m.Env)
+			m.Headers = cloneStringMap(m.Headers)
+			out.MCPServers[i] = m
+		}
+	}
+	out.RemoteAgents = append([]RemoteAgentConfig(nil), c.RemoteAgents...)
+	out.Skills = append([]SkillConfig(nil), c.Skills...)
+	out.Sessions = append([]ChatSession(nil), c.Sessions...)
+	out.MCPTokens = make(map[string]MCPOAuthToken, len(c.MCPTokens))
+	for k, v := range c.MCPTokens {
+		out.MCPTokens[k] = v
+	}
+	return out
+}
+
+func cloneStringMap(in map[string]string) map[string]string {
+	if in == nil {
+		return nil
+	}
+	out := make(map[string]string, len(in))
+	for k, v := range in {
+		out[k] = v
+	}
+	return out
 }
 
 // Store persists Config as JSON and guards concurrent access.
@@ -396,11 +458,20 @@ func (s *Store) saveLocked() error {
 	return nil
 }
 
-// Get returns a deep copy of the current config.
+// Get returns a deep copy of the current config. Callers may mutate the
+// result freely — slices and maps do not share storage with the live config.
 func (s *Store) Get() Config {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	return s.cfg
+	return s.cfg.Clone()
+}
+
+// Settings returns a copy of the global settings. Settings contains only value
+// fields, so this is cheaper than Get for hot read paths.
+func (s *Store) Settings() Settings {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.cfg.Settings
 }
 
 // Update applies fn to the config under lock and persists it.

@@ -105,8 +105,8 @@ func TestGuardrailMaxTurnSeconds(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := chat.Send(sess.ID, "慢慢回答", nil); err != nil {
-		t.Fatal(err)
+	if err := chat.Send(sess.ID, "慢慢回答", nil); err == nil {
+		t.Fatal("timed-out turn must report an error to the caller")
 	}
 	var sawTimeout bool
 	for _, ev := range *events {
@@ -265,6 +265,12 @@ func TestCompactionIntervalSummarizes(t *testing.T) {
 	var modelCalls atomic.Int64
 	chat, events, _ := newGuardrailTestChat(t, 0, 0, func(w http.ResponseWriter, r *http.Request) {
 		modelCalls.Add(1)
+		// The compaction summarizer calls the model non-streamingly.
+		if strings.Contains(readAll(r), `"stream":false`) {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"choices":[{"message":{"role":"assistant","content":"摘要"},"finish_reason":"stop"}]}`))
+			return
+		}
 		w.Header().Set("Content-Type", "text/event-stream")
 		_, _ = w.Write([]byte(sseText("带压缩的回答") + sseDone))
 	})

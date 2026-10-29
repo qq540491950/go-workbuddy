@@ -135,6 +135,30 @@ func TestExportSessionWritesMarkdown(t *testing.T) {
 	_ = context.Background
 }
 
+// TestShortIDAndExportRejectShortIDs pins the bounds fix: export filenames
+// slice the session ID to 6 characters, which panicked for IDs shorter than
+// that. These methods are reachable from JS with arbitrary input.
+func TestShortIDAndExportRejectShortIDs(t *testing.T) {
+	if got := shortID("sess_0123456789"); got != "456789" {
+		t.Fatalf("shortID long id = %q", got)
+	}
+	if got := shortID("abc"); got != "abc" {
+		t.Fatalf("shortID short id = %q", got)
+	}
+	if got := shortID(""); got != "" {
+		t.Fatalf("shortID empty = %q", got)
+	}
+
+	var reply atomic.Value
+	reply.Store("x")
+	chat, _, _ := newChatFixture(t, &reply)
+	for _, id := range []string{"", "ab", "sess"} {
+		if _, err := chat.ExportSessionHTML(id); err == nil {
+			t.Fatalf("ExportSessionHTML(%q) should fail for unknown session", id)
+		}
+	}
+}
+
 func TestSendAttachesUsageToEvents(t *testing.T) {
 	var reply atomic.Value
 	reply.Store("usage-reply")

@@ -56,6 +56,28 @@ func TestStoreRoundTrip(t *testing.T) {
 	}
 }
 
+func TestStoreGetReturnsIndependentCopy(t *testing.T) {
+	dir := t.TempDir()
+	s, err := Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = s.Update(func(cfg *Config) {
+		cfg.Providers = append(cfg.Providers, ModelProvider{
+			ID: "p1", APIKey: "sk-live", Models: []ModelInfo{{ID: "m1"}},
+		})
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg := s.Get()
+	cfg.Providers[0].APIKey = ""
+	cfg.Providers[0].Models[0].ID = "clobbered"
+	if live := s.Get(); live.Providers[0].APIKey != "sk-live" || live.Providers[0].Models[0].ID != "m1" {
+		t.Fatalf("Get exposed live storage: %+v", live.Providers[0])
+	}
+}
+
 func TestOpenCorruptConfigKeepsBackup(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.json")

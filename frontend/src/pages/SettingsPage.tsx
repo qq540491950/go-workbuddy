@@ -85,7 +85,16 @@ export function SettingsPage() {
     }
   };
 
-  if (!settings) return null;
+  if (!settings) {
+    // A failed load used to render nothing at all, leaving a blank pane with
+    // no way out. Offer a retry instead.
+    return (
+      <div className="flex h-full flex-col items-center justify-center gap-3 p-6 text-sm text-muted-foreground">
+        <div>设置加载失败</div>
+        <Button size="sm" variant="outline" onClick={reload}>重试</Button>
+      </div>
+    );
+  }
 
   return (
     <div className="h-full overflow-y-auto p-6">

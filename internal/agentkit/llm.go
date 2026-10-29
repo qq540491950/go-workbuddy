@@ -22,7 +22,8 @@ import (
 )
 
 // httpClient is shared by both adapters. Streaming responses are bounded by
-// the request context, never by a client-wide timeout.
+// the request context, never by a client-wide timeout. An empty client is
+// intentional: it rides http.DefaultTransport so ApplyGlobalProxy applies.
 var httpClient = &http.Client{}
 
 func readErrBody(body io.Reader) string {

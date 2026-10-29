@@ -31,8 +31,8 @@ type filesResult struct {
 
 // SearchKnowledgeTool searches the workspace knowledge base: hybrid
 // semantic+keyword when an embedding backend is wired in, keyword otherwise.
-func SearchKnowledgeTool(opts SearchOptions) tool.Tool {
-	t, _ := functiontool.New(functiontool.Config{
+func SearchKnowledgeTool(opts SearchOptions) (tool.Tool, error) {
+	return functiontool.New(functiontool.Config{
 		Name:        "search_knowledge",
 		Description: "Search the user's knowledge base (markdown/text files under the workspace 'knowledge' folder). Returns the most relevant file excerpts.",
 	}, func(ctx agent.Context, args queryArgs) (filesResult, error) {
@@ -45,7 +45,6 @@ func SearchKnowledgeTool(opts SearchOptions) tool.Tool {
 		}
 		return filesResult{Entries: res}, nil
 	})
-	return t
 }
 
 // searchKnowledge scans knowledge files and ranks them by keyword hits.

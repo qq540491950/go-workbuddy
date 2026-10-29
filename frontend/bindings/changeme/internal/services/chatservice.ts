@@ -43,7 +43,10 @@ export function ConfirmToolCall(sessionID: string, callID: string, approved: boo
 }
 
 /**
- * DeleteSession removes a chat and its stored events.
+ * DeleteSession removes a chat and its stored events. The config entry is
+ * dropped only after the database delete succeeds; otherwise the session
+ * would vanish from the sidebar while its rows stayed behind (and could be
+ * resurrected by fork/search).
  */
 export function DeleteSession(id: string): $CancellablePromise<void> {
     return $Call.ByID(2720233066, id);
