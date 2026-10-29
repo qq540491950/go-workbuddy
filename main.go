@@ -238,11 +238,23 @@ func newRotatingWriter(path string, maxBytes int64) (*rotatingWriter, error) {
 func (w *rotatingWriter) Write(p []byte) (int, error) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	if st, err := w.f.Stat(); err == nil && st.Size()+int64(len(p)) > w.maxBytes {
+	// A failed reopen leaves w.f nil; every later write retries the open so a
+	// transient EMFILE/permission error does not kill file logging for the
+	// rest of the process lifetime.
+	if w.f == nil {
+		f, err := os.OpenFile(w.path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
+		if err != nil {
+			return 0, err
+		}
+		w.f = f
+	}
+	st, err := w.f.Stat()
+	if err == nil && st.Size()+int64(len(p)) > w.maxBytes {
 		_ = w.f.Close()
 		_ = os.Rename(w.path, w.path+".old")
 		f, err := os.OpenFile(w.path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
 		if err != nil {
+			w.f = nil // retried on the next write
 			return 0, err
 		}
 		w.f = f

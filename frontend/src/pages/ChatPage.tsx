@@ -168,16 +168,19 @@ export function ChatPage() {
   const active = sessions.find((s) => s.id === activeID);
 
   // fireQueued pops the session's queued message and auto-sends it (used both
-  // when a turn settles and when the user returns to a settled session).
+  // when a turn settles and when the user returns to a settled session). A
+  // still-running session keeps its queue; the message is delivered with its
+  // OWN session id so switching chats mid-timer cannot misroute it.
   const fireQueued = useCallback((sessionID: string) => {
     const q = queuedRef.current[sessionID];
     if (!q) return;
+    if (runningMapRef.current[sessionID]) return;
     setQueued((prev) => {
       const next = { ...prev };
       delete next[sessionID];
       return next;
     });
-    setTimeout(() => sendRef.current(q), 80);
+    setTimeout(() => sendRef.current(q, sessionID), 80);
   }, []);
 
   const reloadSessions = useCallback(() => {
@@ -205,6 +208,12 @@ export function ChatPage() {
       setActiveID(sessions[0].id);
     }
   }, [sessions, activeID]);
+
+  // The filter is session-scoped: a query left over from another chat would
+  // present an unexplained empty list here.
+  useEffect(() => {
+    setMsgFilter("");
+  }, [activeID]);
 
   // Load history when switching sessions.
   useEffect(() => {
@@ -403,18 +412,32 @@ export function ChatPage() {
   const [queued, setQueued] = useState<Record<string, string>>({});
   const queuedRef = useRef(queued);
   useEffect(() => { queuedRef.current = queued; }, [queued]);
+  const runningMapRef = useRef(runningMap);
+  useEffect(() => { runningMapRef.current = runningMap; }, [runningMap]);
 
-  const send = async (override?: string) => {
+  const send = async (override?: string, targetID?: string) => {
+    // targetID lets fireQueued deliver to the session the message was queued
+    // for, not whichever chat happens to be active 80ms later.
+    const sid = targetID ?? activeID;
     const text = (override ?? input).trim();
-    if (!text || !activeID) return;
-    if (running && !override) {
-      setQueued((prev) => ({ ...prev, [activeID]: text }));
-      setInput("");
+    if (!text || !sid) return;
+    if (runningMap[sid] && !override) {
+      setQueued((prev) => ({ ...prev, [sid]: text }));
+      if (sid === activeID) setInput("");
       toast("已排队：当前回复完成后自动发送");
       return;
     }
-    // Slash commands run locally without a model round-trip.
-    if (text.startsWith("/")) {
+    if (runningMap[sid]) {
+      // Queued deliveries that raced with a newly-busy session go back into
+      // the queue (fired again when the next turn settles) — never dropped.
+      if (override !== undefined) {
+        setQueued((prev) => ({ ...prev, [sid]: text }));
+      }
+      return;
+    }
+    // Slash commands run locally without a model round-trip (active chat
+    // only — queued sends to background sessions go through as messages).
+    if (sid === activeID && text.startsWith("/")) {
       const cmd = text.split(/\s+/)[0].toLowerCase();
       switch (cmd) {
         case "/export":
@@ -455,13 +478,12 @@ export function ChatPage() {
           return;
       }
     }
-    if (running) return;
-    setInput("");
-    markRunning(activeID, true);
-    const wasEditing = editing;
+    if (sid === activeID) setInput("");
+    markRunning(sid, true);
+    const wasEditing = editing && sid === activeID;
     setEditing(false);
-    const atts = pendingAtts;
-    setPendingAtts([]);
+    const atts = sid === activeID ? pendingAtts : [];
+    if (sid === activeID) setPendingAtts([]);
     turnStartedRef.current = false;
     if (wasEditing) {
       setMessages((prev) => {
@@ -474,14 +496,15 @@ export function ChatPage() {
     }
     try {
       if (wasEditing) {
-        await Chat.EditAndResend(activeID, text);
+        await Chat.EditAndResend(sid, text);
       } else {
-        await Chat.Send(activeID, text, atts.length > 0 ? atts : null);
+        await Chat.Send(sid, text, atts.length > 0 ? atts : null);
       }
       // A resolved promise without a started turn means the backend refused
       // the round (e.g. token budget exhausted): restore what the user typed
-      // instead of silently swallowing it.
-      if (!turnStartedRef.current) {
+      // instead of silently swallowing it. Only the active chat has drafts to
+      // restore — background deliveries carry no UI state.
+      if (sid === activeID && !turnStartedRef.current) {
         setInput((cur) => (cur === "" ? text : cur));
         setPendingAtts((prev) => [...atts, ...prev]);
       }
@@ -492,11 +515,13 @@ export function ChatPage() {
       const msg = errText(e);
       if (!streamedErrorRef.current) toast.error(`发送失败: ${msg}`);
       streamedErrorRef.current = false;
-      markRunning(activeID, false);
-      // Restore the draft and attachments (merging, not clobbering: the user
-      // may have started typing again while the request was in flight).
-      setPendingAtts((prev) => [...atts, ...prev]);
-      setInput((cur) => (cur === "" ? text : cur));
+      markRunning(sid, false);
+      if (sid === activeID) {
+        // Restore the draft and attachments (merging, not clobbering: the
+        // user may have started typing again while the request was in flight).
+        setPendingAtts((prev) => [...atts, ...prev]);
+        setInput((cur) => (cur === "" ? text : cur));
+      }
     }
   };
 
@@ -836,32 +861,34 @@ export function ChatPage() {
   const [msgFilter, setMsgFilter] = useState("");
   const filterInputRef = useRef<HTMLInputElement>(null);
   const filterQ = msgFilter.trim().toLowerCase();
+  // Precomputed lowercase search blob per message: keystroke-time filtering
+  // must not re-JSON.stringify large tool payloads for the whole history.
+  const searchIndex = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const m of messages) {
+      const parts = [m.text, m.hint, m.toolName];
+      if (m.toolResp) parts.push(JSON.stringify(m.toolResp));
+      if (m.toolArgs) parts.push(JSON.stringify(m.toolArgs));
+      map.set(m.id, parts.filter(Boolean).join("\n").toLowerCase());
+    }
+    return map;
+  }, [messages]);
   const filteredMessages = useMemo(() => {
     if (!filterQ) return messages;
-    return messages.filter((m) => {
-      if (m.text && m.text.toLowerCase().includes(filterQ)) return true;
-      if (m.hint && m.hint.toLowerCase().includes(filterQ)) return true;
-      if (m.toolName && m.toolName.toLowerCase().includes(filterQ)) return true;
-      if (m.toolResp && JSON.stringify(m.toolResp).toLowerCase().includes(filterQ)) return true;
-      if (m.toolArgs && JSON.stringify(m.toolArgs).toLowerCase().includes(filterQ)) return true;
-      return false;
-    });
-  }, [messages, filterQ]);
+    return messages.filter((m) => (searchIndex.get(m.id) ?? "").includes(filterQ));
+  }, [messages, filterQ, searchIndex]);
   const visibleMessages = useMemo(
     () => (filterQ ? filteredMessages.slice(-RENDER_LIMIT) : messages.slice(-RENDER_LIMIT)),
     [filterQ, filteredMessages, messages],
   );
 
+  const filterOpenRef = useRef(false);
   const toggleFilter = useCallback(() => {
-    setFilterOpen((v) => {
-      const next = !v;
-      if (next) {
-        setTimeout(() => filterInputRef.current?.focus(), 50);
-      } else {
-        setMsgFilter("");
-      }
-      return next;
-    });
+    const next = !filterOpenRef.current;
+    filterOpenRef.current = next;
+    setFilterOpen(next);
+    if (next) setTimeout(() => filterInputRef.current?.focus(), 50);
+    else setMsgFilter("");
   }, []);
   const slashSuggestions = useMemo(() => {
     if (!input.startsWith("/")) return [];
@@ -1133,11 +1160,16 @@ export function ChatPage() {
         )}
         <ScrollArea className="flex-1" viewportRef={scrollRef}>
           <div className="mx-auto max-w-3xl space-y-3 p-4">
-            {messages.length > RENDER_LIMIT && (
-              <div className="rounded-lg border bg-muted/40 px-3 py-2 text-center text-xs text-muted-foreground">
-                已省略较早的 {messages.length - RENDER_LIMIT} 条消息（完整历史已保存，可导出查看）
-              </div>
-            )}
+            {(() => {
+              const source = filterQ ? filteredMessages : messages;
+              const omitted = source.length - visibleMessages.length;
+              if (omitted <= 0) return null;
+              return (
+                <div className="rounded-lg border bg-muted/40 px-3 py-2 text-center text-xs text-muted-foreground">
+                  已省略较早的 {omitted} 条{filterQ ? "匹配" : ""}消息（完整历史已保存，可导出查看）
+                </div>
+              );
+            })()}
             {contextUsage && contextUsage.pct >= 80 && !ctxBannerDismissed && (
               <div className="flex items-center justify-between rounded-lg border border-amber-500/50 bg-amber-500/10 px-4 py-2.5 text-sm">
                 <span>上下文窗口已使用 {contextUsage.pct.toFixed(0)}%，模型可能开始遗忘早期内容。建议导出会话后开启新对话。</span>

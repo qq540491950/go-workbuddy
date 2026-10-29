@@ -675,7 +675,10 @@ func (c *ChatService) deleteEvents(sessionID string, ids []string) error {
 
 // renderTodoList renders a plan_todos tool result as a compact checklist line
 // set for the export renderers (raw JSON payloads are unreadable in exports).
-func renderTodoList(resp map[string]any) string {
+// escape applies HTML escaping to the model-provided content: the HTML export
+// renders this straight into the page, and todo contents echo tool arguments
+// (model-controlled) — unescaped they would be a stored-XSS vector.
+func renderTodoList(resp map[string]any, escape bool) string {
 	todos, ok := resp["todos"].([]any)
 	if !ok || len(todos) == 0 {
 		return ""
@@ -691,6 +694,9 @@ func renderTodoList(resp map[string]any) string {
 		status, _ := td["status"].(string)
 		if strings.TrimSpace(content) == "" {
 			continue
+		}
+		if escape {
+			content = htmlEscapeString(content)
 		}
 		mark := "○"
 		switch status {
@@ -779,7 +785,7 @@ func (c *ChatService) ExportSession(sessionID string) (string, error) {
 			fmt.Fprintf(&sb, "> 🔧 工具调用 **%s** `%s`\n\n", m.ToolName, string(args))
 		case "tool_result":
 			if m.ToolName == "plan_todos" {
-				if list := renderTodoList(m.ToolResp); list != "" {
+				if list := renderTodoList(m.ToolResp, false); list != "" {
 					fmt.Fprintf(&sb, "> %s\n\n", list)
 					continue
 				}
@@ -879,7 +885,9 @@ func (c *ChatService) ExportSessionHTML(sessionID string) (string, error) {
 				m.ToolName, htmlEscapeString(string(args)))
 		case "tool_result":
 			if m.ToolName == "plan_todos" {
-				if list := renderTodoList(m.ToolResp); list != "" {
+				// Escape first, then swap newlines for <br>: escaping after the
+				// substitution would turn the injected <br> into text.
+				if list := renderTodoList(m.ToolResp, true); list != "" {
 					list = strings.ReplaceAll(list, "\n", "<br>\n")
 					fmt.Fprintf(&body, "> %s\n\n", list)
 					continue
