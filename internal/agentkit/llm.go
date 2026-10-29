@@ -771,9 +771,15 @@ func (a *anthropicLLM) GenerateContent(ctx context.Context, req *model.LLMReques
 					usage = &anUsage{InputTokens: ev.Message.Usage.InputTokens}
 				}
 			case "message_delta":
-				if ev.Usage != nil && usage != nil {
-					usage.OutputTokens = ev.Usage.OutputTokens
+				if ev.Usage == nil {
+					break
 				}
+				// Some proxies drop message_start; synthesize the accumulator
+				// here so output tokens are still counted.
+				if usage == nil {
+					usage = &anUsage{}
+				}
+				usage.OutputTokens = ev.Usage.OutputTokens
 			case "content_block_start":
 				if ev.ContentBlock.Type == "tool_use" {
 					getTool(ev.Index) // reserve slot

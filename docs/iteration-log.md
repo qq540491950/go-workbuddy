@@ -4,6 +4,14 @@
 
 ## 视觉测试与体验设计
 
+### 第一百零六轮迭代：收官 — Anthropic usage 兜底 + 版本 0.4.0（已实施）
+
+- Anthropic 适配器：部分代理转发缺失 `message_start` 事件时，`message_delta` 现在合成用量累加器——输出 token 计数不再恒为 0（会话统计与成本估算依赖它）。
+- 版本号统一提升 `0.3.0 → 0.4.0`（main.go / build/config.yml / Info.plist / package.json），随第 98–105 轮的功能与修复一起构成一个发布单元。
+- README 用例数更新（148）与能力清单补充。
+
+**发布就绪检查**：`./scripts/verify.sh` ALL GREEN（前端构建 → go vet → 全量测试 → -race → wails3 build）。
+
 ### 第一百零五轮迭代：并发与健壮性批（已实施）
 
 **依据**：第二轮体检的其余 7 项确认问题。

@@ -32,7 +32,7 @@ var trayIcon []byte
 
 // Version is the single source of truth for the app version, exposed to the
 // frontend via AppService.AppInfo.
-const Version = "0.3.0"
+const Version = "0.4.0"
 
 func init() {
 	// Register the chat streaming event so the generated bindings carry a
