@@ -301,8 +301,11 @@ export function ChatPage() {
         }
         if (ev.sessionId !== activeID) {
           const title = sessionsRef.current.find((x: { id: string; title: string }) => x.id === ev.sessionId)?.title ?? "后台会话";
-          if (ev.kind === "done") toast.success(`「${title}」已完成回复`);
-          else toast.error(`「${title}」本轮出错`);
+          // Clicking the toast jumps straight to the finished background chat.
+          const open = () => setActiveID(ev.sessionId);
+          const action = { label: "查看", onClick: open };
+          if (ev.kind === "done") toast.success(`「${title}」已完成回复`, { action });
+          else toast.error(`「${title}」本轮出错`, { action });
         }
       }
       if (ev.sessionId !== activeID) return;
