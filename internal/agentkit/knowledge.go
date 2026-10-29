@@ -12,10 +12,11 @@ import (
 )
 
 const (
-	knowledgeDirName    = "knowledge"
-	knowledgeMaxResults = 6
-	knowledgeSnippet    = 240
-	knowledgeMaxFileKB  = 512
+	knowledgeDirName      = "knowledge"
+	knowledgeMaxResults   = 6
+	knowledgeSnippet      = 240
+	knowledgeMaxFileKB    = 512
+	knowledgeMaxScanFiles = 200 // keyword search caps full-text scans per call
 )
 
 type queryArgs struct {
@@ -68,28 +69,46 @@ func searchKnowledge(workspace, query string) (string, error) {
 		score int
 		snip  string
 	}
-	var hits []hit
+	// Keyword search re-reads every file on every call (the vector path has
+	// mtime-incremental indexing; this one does not), so an unbounded corpus
+	// would read hundreds of MB per tool call. Collect candidates first, then
+	// full-text scan only the knowledgeMaxScanFiles most recently modified.
+	type candidate struct {
+		path string
+		rel  string
+		mt   int64
+	}
+	var candidates []candidate
 	walkErr := filepath.WalkDir(dir, func(path string, d os.DirEntry, err error) error {
 		if err != nil {
 			return nil // skip unreadable entries
 		}
-		if d.IsDir() {
-			return nil
-		}
-		if !isKnowledgeFile(d.Name()) {
+		if d.IsDir() || !isKnowledgeFile(d.Name()) {
 			return nil
 		}
 		st, err := d.Info()
 		if err != nil || st.Size() > knowledgeMaxFileKB<<10 {
 			return nil
 		}
-		data, err := os.ReadFile(path)
-		if err != nil {
-			return nil
-		}
 		rel, relErr := filepath.Rel(dir, path)
 		if relErr != nil {
 			rel = d.Name()
+		}
+		candidates = append(candidates, candidate{path: path, rel: rel, mt: st.ModTime().Unix()})
+		return nil
+	})
+	if walkErr != nil {
+		return "", walkErr
+	}
+	sort.Slice(candidates, func(i, j int) bool { return candidates[i].mt > candidates[j].mt })
+	if len(candidates) > knowledgeMaxScanFiles {
+		candidates = candidates[:knowledgeMaxScanFiles]
+	}
+	var hits []hit
+	for _, c := range candidates {
+		data, err := os.ReadFile(c.path)
+		if err != nil {
+			continue
 		}
 		lower := strings.ToLower(string(data))
 		score := 0
@@ -97,13 +116,9 @@ func searchKnowledge(workspace, query string) (string, error) {
 			score += strings.Count(lower, kw)
 		}
 		if score == 0 {
-			return nil
+			continue
 		}
-		hits = append(hits, hit{name: rel, score: score, snip: bestSnippet(string(data), keywords)})
-		return nil
-	})
-	if walkErr != nil {
-		return "", walkErr
+		hits = append(hits, hit{name: c.rel, score: score, snip: bestSnippet(string(data), keywords)})
 	}
 	if len(hits) == 0 {
 		return "知识库中没有找到与查询相关的内容。", nil

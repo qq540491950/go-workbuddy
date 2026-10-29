@@ -50,9 +50,17 @@ type KnowledgeIndex struct {
 
 // OpenKnowledgeIndex creates/opens the knowledge index database.
 func OpenKnowledgeIndex(path string) (*KnowledgeIndex, error) {
-	db, err := gorm.Open(sqlite.Open(path))
+	// Same hardening as the sessions DB: WAL + busy_timeout so a concurrent
+	// reader (search) and writer (background re-index) never fail with
+	// "database is locked", and a single connection to keep write/read
+	// serialization deterministic.
+	dsn := path + "?_pragma=busy_timeout(5000)&_pragma=journal_mode(WAL)"
+	db, err := gorm.Open(sqlite.Open(dsn))
 	if err != nil {
 		return nil, err
+	}
+	if sqlDB, err := db.DB(); err == nil {
+		sqlDB.SetMaxOpenConns(1)
 	}
 	if err := db.AutoMigrate(&KnowledgeChunk{}); err != nil {
 		return nil, err

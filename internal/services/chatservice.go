@@ -266,8 +266,11 @@ func (c *ChatService) SearchSessions(query string) []config.ChatSession {
 	}
 	if c.db != nil {
 		var ids []string
-		pattern := "%" + q + "%"
-		if err := c.db.Raw("SELECT DISTINCT session_id FROM events WHERE content LIKE ? AND app_name = ? AND user_id = ?",
+		// Escape LIKE wildcards so searching "50%" matches the literal text,
+		// not every content containing "50".
+		escaped := strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`).Replace(q)
+		pattern := "%" + escaped + "%"
+		if err := c.db.Raw("SELECT DISTINCT session_id FROM events WHERE content LIKE ? ESCAPE '\\' AND app_name = ? AND user_id = ?",
 			pattern, c.appName, c.userID).Pluck("session_id", &ids); err == nil {
 			for _, id := range ids {
 				matched[id] = true

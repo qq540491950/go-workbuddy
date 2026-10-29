@@ -186,7 +186,14 @@ func (m *Manager) Connect(cfg config.MCPServerConfig) ServerStatus {
 		m.setState(st)
 		return *st
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	// First-time OAuth consent waits up to 5 minutes for the browser flow
+	// (auth.go's fetcher cap); a 30s state-check timeout would always kill the
+	// authorization before the user can finish logging in.
+	limit := 30 * time.Second
+	if cfg.AuthType == "oauth2" {
+		limit = 5 * time.Minute
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), limit)
 	defer cancel()
 	adkTools, err := ts.Tools(statusCtx{ctx})
 	if err != nil {

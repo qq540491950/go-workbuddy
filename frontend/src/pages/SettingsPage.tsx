@@ -42,6 +42,10 @@ export function SettingsPage() {
     Config.GetConfig()
       .then((c) => {
         setSettings(c.settings);
+        // Sync the A2A form with persisted values so the toggle never
+        // overwrites a configured port back to the default.
+        setA2APort(String(c.settings?.a2aPort || 8080));
+        setA2AAgent(c.settings?.a2aAgentId ?? "");
         setProviders(c.providers ?? []);
         setAgents(c.agents ?? []);
       })
@@ -252,12 +256,17 @@ export function SettingsPage() {
             <div className="grid gap-1.5 rounded-lg border p-2.5">
               <div className="grid grid-cols-2 gap-2">
                 <Input value={kbNewName} onChange={(e) => setKbNewName(e.target.value)} placeholder="文件名（如 meeting-notes.md）" />
-                <Input value={kbNewContent} onChange={(e) => setKbNewContent(e.target.value)} placeholder="初始内容（可选）" />
+                <Input value={kbNewContent} onChange={(e) => setKbNewContent(e.target.value)} placeholder="初始内容（必填）" />
               </div>
               <div className="flex items-center gap-2">
                 <Button
                   variant="outline"
+                  disabled={!kbNewName.trim() || !kbNewContent.trim()}
                   onClick={async () => {
+                    if (!kbNewName.trim() || !kbNewContent.trim()) {
+                      toast.error("文件名与初始内容均为必填");
+                      return;
+                    }
                     try {
                       await Config.CreateKnowledgeFile(kbNewName.trim(), kbNewContent);
                       setKbNewName("");
@@ -587,8 +596,13 @@ export function SettingsPage() {
               <Button
                 onClick={async () => {
                   if (!a2aAgent) { toast.error("请选择要发布的 Agent"); return; }
+                  const port = Number(a2aPort);
+                  if (!Number.isInteger(port) || port < 1 || port > 65535) {
+                    toast.error("端口需为 1-65535 的整数");
+                    return;
+                  }
                   try {
-                    await A2A.Start(a2aAgent, Number(a2aPort) || 0);
+                    await A2A.Start(a2aAgent, port);
                     setA2AStatuses((await A2A.Status()) ?? []);
                     toast.success("A2A 服务已启动");
                   } catch (e) {
@@ -629,11 +643,21 @@ export function SettingsPage() {
               <Switch
                 checked={settings.a2aAutoStart}
                 onCheckedChange={(v) => {
+                  const agentId = v ? (a2aAgent || settings.a2aAgentId) : settings.a2aAgentId;
+                  const port = Number(a2aPort);
+                  if (v && !agentId) {
+                    toast.error("开启自动启动前请先选择要发布的 Agent");
+                    return;
+                  }
+                  if (v && (!Number.isInteger(port) || port < 1 || port > 65535)) {
+                    toast.error("端口需为 1-65535 的整数");
+                    return;
+                  }
                   const next = {
                     ...settings,
                     a2aAutoStart: v,
-                    a2aAgentId: v ? (a2aAgent || settings.a2aAgentId) : settings.a2aAgentId,
-                    a2aPort: Number(a2aPort) || 0,
+                    a2aAgentId: agentId,
+                    a2aPort: Number.isInteger(port) ? port : 0,
                   };
                   update(next);
                   Config.SaveSettings(next).catch((e) => toast.error(`保存失败: ${errText(e)}`));

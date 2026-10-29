@@ -143,6 +143,12 @@ func (a *A2AService) StopAgent(agentID string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 	err := entry.srv.Shutdown(ctx)
+	if err != nil {
+		// Graceful shutdown timed out with streaming calls still in flight:
+		// force-close so status matches reality (the entry is deleted below)
+		// and lingering handlers stop writing to the session store.
+		_ = entry.srv.Close()
+	}
 	delete(a.servers, agentID)
 	return err
 }

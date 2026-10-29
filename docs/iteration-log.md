@@ -4,6 +4,29 @@
 
 ## 视觉测试与体验设计
 
+### 第一百零七轮迭代：三轮体检批 — 流解析防御 + 授权超时 + 表单诚实化（已实施）
+
+**依据**：第三轮只读体检（后端 7 项 + 前端 12 项，覆盖前两轮未深查模块）。
+
+**后端 7 项**
+- Anthropic SSE `index` 校验：负数 panic、超大值 OOM（1e8 → 800MB append）——`getTool`/`content_block_start` 拒绝 [0,1024) 之外的索引；OpenAI `addCall` 同样防御。
+- 工具参数流损坏不再静默：`argsToMap` 返回错误，非法 JSON 的调用被跳过（此前以 `{}` 零值参数执行工具，写文件工具会以误导性错误失败），回复文本注明「参数流损坏，已跳过」。`TestOpenAICompatBrokenToolArgsSkipped`。
+- MCP OAuth 首次授权：Connect 对 oauth2 服务器把 30 秒状态检查超时放宽到 5 分钟（与浏览器授权等待上限对齐，此前用户不可能在 30 秒内完成登录）。
+- knowledge.index.db 补齐 sessions.db 同款加固：WAL + busy_timeout(5000) + 单连接（此前搜索读与后台索引写并发即 SQLITE_BUSY 降级）。
+- A2A StopAgent 优雅关停超时后 `srv.Close()` 强制收尾，状态与实际一致。
+- SearchSessions LIKE 通配符转义（搜索 "50%" 不再命中所有含 "50" 的内容）。`TestSearchSessionsEscapesLikeWildcards`。
+- 关键词检索改为先收集清单、按 mtime 取最近 200 个文件全文扫描（此前无上限，数千文件一次搜索读数百 MB）。
+
+**前端 P2 六项**
+- 知识库「初始内容（可选）」与后端必填矛盾：placeholder 改必填 + 创建按钮校验禁用。
+- ToolCallCard 失败判定：解析对象判断 `error != null/""` 与 `isError/is_error === true`（此前子串匹配把 `"error": null` 的成功信封误标为失败）。
+- A2A 表单回填已存 Agent/端口；发布与自动启动前校验端口 1-65535、自动启动必须有 Agent（此前 "abc" 变随机端口静默启动、开关覆写已存端口）。
+- 模型价格/上下文窗口 `Math.max(0, …)` 拒绝负数。
+- 团队保存校验负责人存在且在成员中；移除成员自动清理其负责人身份；纯远程团队可创建（按钮禁用条件修正）。
+- 供应商保存 trim BaseURL + 校验 http(s) 前缀 + 拒绝空模型列表；`fetchModels` 新增计数移出 setState updater。
+
+**测试证据**：新增 3 用例；`go test -race` 全绿；tsc/build 零错误；verify.sh ALL GREEN。
+
 ### 第一百零六轮迭代：收官 — Anthropic usage 兜底 + 版本 0.4.0（已实施）
 
 - Anthropic 适配器：部分代理转发缺失 `message_start` 事件时，`message_delta` 现在合成用量累加器——输出 token 计数不再恒为 0（会话统计与成本估算依赖它）。

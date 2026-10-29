@@ -52,8 +52,12 @@ export const ToolCallCard = memo(function ToolCallCard({ name, args, resp, runni
   const [open, setOpen] = useState(false);
   const failed = useMemo(() => {
     if (!resp) return false;
-    const s = JSON.stringify(resp).toLowerCase();
-    return s.includes('"error"') || s.includes('"is_error":true');
+    // Inspect the parsed payload: substring matching used to flag successful
+    // envelopes that merely carry an "error": null field, and missed MCP's
+    // camelCase isError.
+    if (resp.error !== undefined && resp.error !== null && resp.error !== "") return true;
+    if (resp.isError === true || resp.is_error === true) return true;
+    return false;
   }, [resp]);
 
   const argChips = useMemo(() => {

@@ -76,15 +76,12 @@ export function ModelsPage() {
     setFetching(true);
     try {
       const ids = (await Config.ListProviderModels(editing)) ?? [];
-      let added = 0;
-      setEditing((prev) => {
-        if (!prev) return prev;
-        const have = new Set((prev.models ?? []).map((m) => m.id));
-        const fresh = ids.filter((id) => !have.has(id)).map((id): ModelInfo => ({ id }));
-        added = fresh.length;
-        return { ...prev, models: [...(prev.models ?? []), ...fresh] };
-      });
-      toast.success(added > 0 ? `拉取成功，新增 ${added} 个模型` : `拉取成功，无新增模型（共 ${ids.length} 个）`);
+      // Compute from the closure value, not inside the state updater: React
+      // may defer the updater past the toast below.
+      const have = new Set((editing.models ?? []).map((m) => m.id));
+      const fresh = ids.filter((id) => !have.has(id)).map((id): ModelInfo => ({ id }));
+      setEditing((prev) => (prev ? { ...prev, models: [...(prev.models ?? []), ...fresh] } : prev));
+      toast.success(fresh.length > 0 ? `拉取成功，新增 ${fresh.length} 个模型` : `拉取成功，无新增模型（共 ${ids.length} 个）`);
     } catch (e) {
       toast.error(`拉取失败: ${errText(e)}，可手动输入`);
     } finally {
@@ -98,6 +95,13 @@ export function ModelsPage() {
       toast.error("请填写供应商名称");
       return;
     }
+    // Pasted URLs often carry stray whitespace/newlines that make every
+    // request fail opaquely.
+    const baseUrl = (editing.baseUrl ?? "").trim();
+    if (baseUrl && !/^https?:\/\//.test(baseUrl)) {
+      toast.error("Base URL 需以 http:// 或 https:// 开头");
+      return;
+    }
     // Trim ids and drop empty / duplicate rows.
     const models: ModelInfo[] = [];
     for (const m of editing.models ?? []) {
@@ -105,8 +109,12 @@ export function ModelsPage() {
       if (!id || models.some((x) => x.id === id)) continue;
       models.push({ ...m, id });
     }
+    if (models.length === 0) {
+      toast.error("请至少填写一个模型 ID");
+      return;
+    }
     try {
-      await Config.SaveProvider({ ...editing, models });
+      await Config.SaveProvider({ ...editing, baseUrl, models });
       toast.success("已保存");
       setEditing(null);
       reload();
@@ -308,21 +316,21 @@ export function ModelsPage() {
                         <Input
                           type="number" min="0"
                           value={m.contextWindow ?? ""}
-                          onChange={(e) => updateModel(i, { contextWindow: Number(e.target.value) || 0 })}
+                          onChange={(e) => updateModel(i, { contextWindow: Math.max(0, Number(e.target.value) || 0) })}
                           placeholder="如 128000"
                           className="h-8"
                         />
                         <Input
                           type="number" step="0.1" min="0"
                           value={m.priceIn ?? ""}
-                          onChange={(e) => updateModel(i, { priceIn: Number(e.target.value) || 0 })}
+                          onChange={(e) => updateModel(i, { priceIn: Math.max(0, Number(e.target.value) || 0) })}
                           placeholder="可选"
                           className="h-8"
                         />
                         <Input
                           type="number" step="0.1" min="0"
                           value={m.priceOut ?? ""}
-                          onChange={(e) => updateModel(i, { priceOut: Number(e.target.value) || 0 })}
+                          onChange={(e) => updateModel(i, { priceOut: Math.max(0, Number(e.target.value) || 0) })}
                           placeholder="可选"
                           className="h-8"
                         />

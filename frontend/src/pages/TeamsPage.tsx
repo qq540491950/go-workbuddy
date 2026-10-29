@@ -112,6 +112,14 @@ export function TeamsPage() {
       toast.error("请至少选择一名成员（本地或远程）");
       return;
     }
+    if (!editing.autoCoordinate) {
+      // A missing lead (never picked, or picked then removed from members)
+      // leaves the team without a root coordinator.
+      if (!editing.leadAgentId || !(editing.memberAgentIds ?? []).includes(editing.leadAgentId)) {
+        toast.error("请选择一位本地成员作为负责人");
+        return;
+      }
+    }
     try {
       await Config.SaveTeam(editing);
       toast.success("已保存");
@@ -136,9 +144,14 @@ export function TeamsPage() {
   const toggleMember = (id: string) => {
     if (!editing) return;
     const list = editing.memberAgentIds ?? [];
+    const removing = list.includes(id);
+    const next = removing ? list.filter((x) => x !== id) : [...list, id];
+    // Removing the picked lead would leave an uncoordinated team.
+    const leadAgentId = removing && editing.leadAgentId === id ? "" : editing.leadAgentId;
     setEditing({
       ...editing,
-      memberAgentIds: list.includes(id) ? list.filter((x) => x !== id) : [...list, id],
+      memberAgentIds: next,
+      leadAgentId,
     });
   };
 
@@ -160,7 +173,7 @@ export function TeamsPage() {
           <h1 className="text-lg font-semibold">Agent 团队</h1>
           <p className="text-sm text-muted-foreground">将多个 Agent 组队协作：负责人调度成员，共同完成任务</p>
         </div>
-        <Button onClick={() => setEditing(blankTeam())} disabled={agents.length < 1}>
+        <Button onClick={() => setEditing(blankTeam())} disabled={agents.length < 1 && remotes.length < 1}>
           <Plus className="mr-1 h-4 w-4" /> 新增团队
         </Button>
       </div>

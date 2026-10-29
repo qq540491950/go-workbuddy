@@ -481,3 +481,39 @@ func TestStopSequencesWireFormat(t *testing.T) {
 		t.Fatalf("anthropic stop_sequences = %v", anBody["stop_sequences"])
 	}
 }
+
+// TestOpenAICompatBrokenToolArgsSkipped: truncated/corrupt argument fragments
+// must not reach the tool as silent zero-value {} arguments — the call is
+// skipped and the reply text says so.
+func TestOpenAICompatBrokenToolArgsSkipped(t *testing.T) {
+	chunks := []string{
+		`{"choices":[{"delta":{"tool_calls":[{"index":0,"id":"c1","function":{"name":"write_workspace_file","arguments":"{\"path\":\"x"}}]}}]}`,
+	}
+	srv := sseServer(t, chunks, nil)
+	llm, _ := NewOpenAICompat(OpenAICompatConfig{BaseURL: srv.URL, Model: "m"})
+	var final *model.LLMResponse
+	for resp, err := range llm.GenerateContent(context.Background(), &model.LLMRequest{
+		Contents: []*genai.Content{genai.NewContentFromText("go", genai.RoleUser)},
+		Config: &genai.GenerateContentConfig{Tools: []*genai.Tool{{FunctionDeclarations: []*genai.FunctionDeclaration{{
+			Name: "write_workspace_file",
+		}}}}},
+	}, true) {
+		if err != nil {
+			t.Fatal(err)
+		}
+		if resp != nil {
+			final = resp
+		}
+	}
+	if final == nil {
+		t.Fatal("no final response")
+	}
+	for _, p := range final.Content.Parts {
+		if p.FunctionCall != nil {
+			t.Fatalf("broken-args call leaked to the model: %+v", p.FunctionCall)
+		}
+	}
+	if !strings.Contains(final.Content.Parts[0].Text, "参数流损坏") {
+		t.Fatalf("expected skip note in text: %q", final.Content.Parts[0].Text)
+	}
+}

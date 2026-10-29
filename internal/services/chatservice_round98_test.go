@@ -409,3 +409,31 @@ func TestRenameSessionAuditOnlyOnSuccess(t *testing.T) {
 		t.Fatalf("expected exactly one renamed audit record:\n%s", data)
 	}
 }
+
+// TestSearchSessionsEscapesLikeWildcards: searching "符%" must match the
+// literal text only — unescaped %/_ turned content search into a fuzzy
+// substring match.
+func TestSearchSessionsEscapesLikeWildcards(t *testing.T) {
+	var reply atomic.Value
+	reply.Store("ok")
+	chat, sess1, _ := newChatFixture(t, &reply)
+
+	sess2, err := chat.NewSession("agent", "agent_1", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := chat.Send(sess1.ID, "包含符%号的内容", nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := chat.Send(sess2.ID, "包含符号的内容", nil); err != nil {
+		t.Fatal(err)
+	}
+
+	matched := chat.SearchSessions("符%")
+	if len(matched) != 1 || matched[0].ID != sess1.ID {
+		for _, m := range matched {
+			t.Logf("matched: %s %s", m.ID, m.Title)
+		}
+		t.Fatalf("wildcard not escaped: got %d matches", len(matched))
+	}
+}

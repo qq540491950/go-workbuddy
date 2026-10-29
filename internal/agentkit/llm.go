@@ -152,12 +152,18 @@ func withUsageA(resp *model.LLMResponse, u *anUsage) *model.LLMResponse {
 	return resp
 }
 
-func argsToMap(raw json.RawMessage) map[string]any {
+// argsToMap parses tool-call arguments. An error means the streamed argument
+// fragments never formed valid JSON (truncated stream, dropped lines); callers
+// must not invoke the tool with zero-value arguments — silently running a
+// write tool with empty args is worse than failing the turn loudly.
+func argsToMap(raw []byte) (map[string]any, error) {
 	m := map[string]any{}
 	if len(raw) > 0 {
-		_ = json.Unmarshal(raw, &m)
+		if err := json.Unmarshal(raw, &m); err != nil {
+			return nil, err
+		}
 	}
-	return m
+	return m, nil
 }
 
 // finalLLMResponse assembles the single non-partial event that the ADK
@@ -395,6 +401,9 @@ func (o *openaiCompatLLM) GenerateContent(ctx context.Context, req *model.LLMReq
 		calls := map[int]*oaAccumCall{}
 		var order []int
 		addCall := func(idx int, id, name, argDelta string) *oaAccumCall {
+			if idx < 0 || idx > 1024 {
+				return nil // broken/harsh provider index; ignore the fragment
+			}
 			a := calls[idx]
 			if a == nil {
 				a = &oaAccumCall{id: id, name: name}
@@ -492,10 +501,24 @@ func (o *openaiCompatLLM) GenerateContent(ctx context.Context, req *model.LLMReq
 
 func (o *openaiCompatLLM) final(text string, calls map[int]*oaAccumCall, order []int) *model.LLMResponse {
 	var parts []*genai.Part
+	var skipped []string
 	for _, idx := range order {
 		c := calls[idx]
-		args := argsToMap([]byte(c.args.String()))
+		args, err := argsToMap([]byte(c.args.String()))
+		if err != nil {
+			// Broken argument stream: executing the tool with {} would be a
+			// silent zero-value call. Surface it in the reply text instead.
+			skipped = append(skipped, c.name)
+			continue
+		}
 		parts = append(parts, &genai.Part{FunctionCall: &genai.FunctionCall{ID: c.id, Name: c.name, Args: args}})
+	}
+	if len(skipped) > 0 {
+		sep := ""
+		if text != "" {
+			sep = "\n\n"
+		}
+		text += fmt.Sprintf("%s（工具调用 %s 的参数流损坏，已跳过本次执行，请重试。）", sep, strings.Join(skipped, ", "))
 	}
 	return finalLLMResponse(o.cfg.Model, text, parts)
 }
@@ -685,7 +708,13 @@ func (a *anthropicLLM) GenerateContent(ctx context.Context, req *model.LLMReques
 
 		var sb strings.Builder
 		var tools []*anAccumTool
+		// Anthropic indexes content blocks; a hostile/broken endpoint can send
+		// negative or absurd indexes (panic / OOM via unbounded append).
+		const maxContentBlocks = 1024
 		getTool := func(idx int) *anAccumTool {
+			if idx < 0 || idx >= maxContentBlocks {
+				return nil
+			}
 			for len(tools) <= idx {
 				tools = append(tools, nil)
 			}
@@ -782,6 +811,9 @@ func (a *anthropicLLM) GenerateContent(ctx context.Context, req *model.LLMReques
 				usage.OutputTokens = ev.Usage.OutputTokens
 			case "content_block_start":
 				if ev.ContentBlock.Type == "tool_use" {
+					if ev.Index < 0 || ev.Index >= maxContentBlocks {
+						continue
+					}
 					getTool(ev.Index) // reserve slot
 					tools[ev.Index] = &anAccumTool{id: ev.ContentBlock.ID, name: ev.ContentBlock.Name}
 				}
@@ -815,13 +847,26 @@ func (a *anthropicLLM) GenerateContent(ctx context.Context, req *model.LLMReques
 
 func (a *anthropicLLM) final(text string, tools []*anAccumTool) *model.LLMResponse {
 	var parts []*genai.Part
+	var skipped []string
 	for _, t := range tools {
 		if t == nil {
 			continue
 		}
+		args, err := argsToMap([]byte(t.input.String()))
+		if err != nil {
+			skipped = append(skipped, t.name)
+			continue
+		}
 		parts = append(parts, &genai.Part{FunctionCall: &genai.FunctionCall{
-			ID: t.id, Name: t.name, Args: argsToMap([]byte(t.input.String())),
+			ID: t.id, Name: t.name, Args: args,
 		}})
+	}
+	if len(skipped) > 0 {
+		sep := ""
+		if text != "" {
+			sep = "\n\n"
+		}
+		text += fmt.Sprintf("%s（工具调用 %s 的参数流损坏，已跳过本次执行，请重试。）", sep, strings.Join(skipped, ", "))
 	}
 	return finalLLMResponse(a.cfg.Model, text, parts)
 }
