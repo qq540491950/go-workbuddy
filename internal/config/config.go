@@ -96,6 +96,9 @@ type AgentConfig struct {
 	// (0 = unlimited). The turn that crosses the budget still completes,
 	// the next one is refused.
 	MaxSessionTokens int64 `json:"maxSessionTokens,omitempty"`
+	// StopSequences halts generation when the model emits one of them
+	// (OpenAI "stop" / Anthropic "stop_sequences"). Empty = provider default.
+	StopSequences []string `json:"stopSequences,omitempty"`
 }
 
 // RemoteAgentConfig describes a remote agent reached over the A2A protocol
@@ -273,6 +276,7 @@ func (c Config) Clone() Config {
 			a.MCPServerIDs = append([]string(nil), a.MCPServerIDs...)
 			a.BuiltinTools = append([]string(nil), a.BuiltinTools...)
 			a.ConfirmTools = append([]string(nil), a.ConfirmTools...)
+			a.StopSequences = append([]string(nil), a.StopSequences...)
 			if a.EnableGuardrails != nil {
 				v := *a.EnableGuardrails
 				a.EnableGuardrails = &v

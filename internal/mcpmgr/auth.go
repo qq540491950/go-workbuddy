@@ -66,21 +66,29 @@ func headersOnlyClient(cfg config.MCPServerConfig) *http.Client {
 
 // newOAuthTransport wires the official go-sdk authorization-code handler
 // (OAuth 2.1 + PKCE per the MCP authorization spec) into a streamable HTTP
-// transport. The loopback redirect listener is created here so the redirect
-// URL is stable for the handler; it serves only while the consent flow runs.
-// When tokenStore is non-nil, tokens persist across app restarts: a cached
-// unexpired token (or a refreshable one) skips the browser consent flow.
+// transport. When tokenStore is non-nil, tokens persist across app restarts:
+// a cached unexpired token (or a refreshable one) skips the browser consent
+// flow.
+//
+// The loopback redirect listener is NOT held open for the transport lifetime:
+// binding eagerly would keep the port occupied even when a cached token makes
+// the consent flow unreachable, and a Disconnect+reconnect on the same
+// configured port would then fail with EADDRINUSE. The port is probed once to
+// build a stable redirect URL and the fetcher re-binds it lazily for the
+// duration of each consent flow.
 func newOAuthTransport(cfg config.MCPServerConfig, tokenStore *config.Store, onAuthPending func(authURL string)) (mcp.Transport, error) {
 	if cfg.OAuthClientID == "" {
 		return nil, fmt.Errorf("oauth2 认证需要预注册的 client id")
 	}
-	ln, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", cfg.OAuthRedirectPort))
+	probe, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", cfg.OAuthRedirectPort))
 	if err != nil {
 		return nil, fmt.Errorf("本地回调端口监听失败: %w", err)
 	}
-	redirectURL := fmt.Sprintf("http://127.0.0.1:%d/callback", ln.Addr().(*net.TCPAddr).Port)
+	port := probe.Addr().(*net.TCPAddr).Port
+	probe.Close() // re-bound lazily by the fetcher when a flow actually starts
+	redirectURL := fmt.Sprintf("http://127.0.0.1:%d/callback", port)
 
-	fetcher := newBrowserAuthCodeFetcher(ln, onAuthPending)
+	fetcher := newBrowserAuthCodeFetcher(port, onAuthPending)
 	handlerCfg := &auth.AuthorizationCodeHandlerConfig{
 		PreregisteredClient: &oauthex.ClientCredentials{ClientID: cfg.OAuthClientID},
 		RedirectURL:         redirectURL,
@@ -104,17 +112,22 @@ func newOAuthTransport(cfg config.MCPServerConfig, tokenStore *config.Store, onA
 	}
 	handler, err := auth.NewAuthorizationCodeHandler(handlerCfg)
 	if err != nil {
-		ln.Close()
 		return nil, err
 	}
 	return &mcp.StreamableClientTransport{Endpoint: cfg.URL, OAuthHandler: handler}, nil
 }
 
-// newBrowserAuthCodeFetcher serves the loopback callback on the pre-bound
-// listener, opens the system browser at the authorization URL and resolves
-// with the code the authorization server redirects back with (5 min cap).
-func newBrowserAuthCodeFetcher(ln net.Listener, onAuthPending func(authURL string)) auth.AuthorizationCodeFetcher {
+// newBrowserAuthCodeFetcher serves the loopback callback for the consent flow:
+// it binds the redirect port lazily (only while a flow actually runs), opens
+// the system browser at the authorization URL and resolves with the code the
+// authorization server redirects back with (5 min cap). The listener is always
+// released when the flow ends, so reconnects on the same port keep working.
+func newBrowserAuthCodeFetcher(port int, onAuthPending func(authURL string)) auth.AuthorizationCodeFetcher {
 	return func(ctx context.Context, args *auth.AuthorizationArgs) (*auth.AuthorizationResult, error) {
+		ln, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", port))
+		if err != nil {
+			return nil, fmt.Errorf("本地回调端口监听失败: %w", err)
+		}
 		codeCh := make(chan *auth.AuthorizationResult, 1)
 		errCh := make(chan error, 1)
 		mux := http.NewServeMux()
@@ -137,6 +150,7 @@ func newBrowserAuthCodeFetcher(ln net.Listener, onAuthPending func(authURL strin
 		}()
 		defer func() {
 			_ = srv.Close()
+			_ = ln.Close()
 			<-serveDone
 		}()
 

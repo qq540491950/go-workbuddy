@@ -4,6 +4,27 @@
 
 ## 视觉测试与体验设计
 
+### 第一百轮迭代：Agent 能力增强（任务计划工具 + 停止序列 + OAuth 端口修复，已实施）
+
+**依据**：体检第 15 项「对齐同类 Agent 产品的能力缺口」与第 13 项 OAuth 监听器泄漏。
+
+**新增 — plan_todos 任务计划工具（对齐 Claude Code / Codex 的计划交互）**
+- 新内置工具类别 `todos`：`plan_todos` 以全量替换方式维护会话任务清单（pending/in_progress/completed），状态存入 ADK session state（跨轮次可读、重启不丢）；省略参数即只读返回当前计划，空数组清空；非法状态归一化为 pending、空白步骤剔除。
+- 前端将 `plan_todos` 的工具结果渲染为清单卡片（完成打勾、进行中转圈、进度徽章 n/N），多步任务执行过程对用户透明。
+- AgentsPage 内置工具新增「任务计划（plan_todos）」勾选。
+
+**新增 — 停止序列透传（全链路）**
+- `AgentConfig.StopSequences`（可选，逗号分隔输入）→ `GenerateContentConfig.StopSequences` → OpenAI 兼容适配器 `stop` 字段 / Anthropic 适配器 `stop_sequences` 字段，Gemini 由 ADK 官方适配器直接支持该配置。
+- 绑定再生成；AgentsPage 编辑器新增「停止序列」输入。
+- `TestStopSequencesWireFormat` 钉住两个适配器的原生字段名。
+
+**修复 — OAuth 回调监听器泄漏**
+- 此前 `newOAuthTransport` 在构建传输时就绑定回调端口并保持到进程退出：令牌缓存有效（走静默刷新）时授权流程永不执行，监听器白占端口；之后同一配置端口重连必报 EADDRINUSE。授权流程结束后监听器也不释放（srv.Close 只停 Serve，listener 未关）。
+- 修复：构建时仅探测一次端口（确定稳定的 redirect URL）即释放；授权码 fetcher 每次流程启动时惰性重绑同一端口，流程结束（成功/失败/超时/取消）必关闭 listener。
+- `TestOAuthTransportPortNotHeld`：同一固定端口连续两次构建传输 + 端口立即可再绑定断言。
+
+**测试证据**：`TestPlanTodosRoundTrip`（真实 runner 全链路：写入归一化 → 跨轮只读回读）；`TestStopSequencesWireFormat`；`TestOAuthTransportPortNotHeld`；`./scripts/verify.sh` ALL GREEN（go test + -race + tsc + build + wails3 build）。
+
 ### 第九十九轮迭代：前端体验批（失败回滚 + 视线落点 + 粘贴图 + 诚实报错，已实施）
 
 **依据**：三路只读体检确认的前端 16 项问题，本轮修复全部 1 项 P1、5 项 P2 与 9 项 P3。

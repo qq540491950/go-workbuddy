@@ -3,7 +3,7 @@ import { Events } from "@wailsio/runtime";
 import {
   Plus, Send, Square, Trash2, Pencil, MessageSquare, Bot, Users, Loader2,
   Copy, Check, Search, ArrowRight, RefreshCw, Download, Mic, MicOff, Volume2, Square as SquareStop,
-  Paperclip, X, BarChart3, Brain, ShieldAlert, Network, GitFork, Pin, PinOff, FileCode2, Archive,
+  Paperclip, X, BarChart3, Brain, ShieldAlert, Network, GitFork, Pin, PinOff, FileCode2, Archive, ListTodo,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -1306,6 +1306,48 @@ function Onboarding() {
   );
 }
 
+/** TodoItem mirrors the plan_todos tool payload. */
+type TodoItem = { content: string; status: string };
+
+/** TodoListCard renders the model's session plan (plan_todos result) as a
+ * checklist so multi-step work is legible at a glance. */
+function TodoListCard({ resp }: { resp: { [k: string]: any } | null }) {
+  const todos: TodoItem[] = Array.isArray(resp?.todos) ? resp.todos : [];
+  if (todos.length === 0) return null;
+  const done = todos.filter((t) => t.status === "completed").length;
+  return (
+    <div className="rounded-lg border px-4 py-3">
+      <div className="mb-2 flex items-center gap-2">
+        <ListTodo className="h-4 w-4 text-primary" />
+        <span className="text-sm font-medium">任务计划</span>
+        <Badge variant="outline" className="font-normal text-[11px]">
+          {done}/{todos.length} 完成
+        </Badge>
+      </div>
+      <ul className="space-y-1.5">
+        {todos.map((t, i) => (
+          <li key={i} className="flex items-start gap-2 text-sm">
+            {t.status === "completed" ? (
+              <Check className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-600" />
+            ) : t.status === "in_progress" ? (
+              <Loader2 className="mt-0.5 h-3.5 w-3.5 shrink-0 animate-spin text-primary" />
+            ) : (
+              <span className="mt-0.5 inline-block h-3.5 w-3.5 shrink-0 rounded-full border border-muted-foreground/50" />
+            )}
+            <span className={cn(
+              "break-words",
+              t.status === "completed" && "text-muted-foreground line-through",
+              t.status === "in_progress" && "font-medium",
+            )}>
+              {t.content}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 /** ConfirmCard renders a HITL tool-confirmation request with approve/reject. */
 function ConfirmCard({ m, onConfirm }: {
   m: UIMessage;
@@ -1499,6 +1541,9 @@ const MessageBubble = memo(function MessageBubble({ m, isLastAssistant, onRegene
   }
   if (m.kind === "confirm") {
     return <ConfirmCard m={m} onConfirm={onConfirm} />;
+  }
+  if (m.kind === "tool_result" && m.toolName === "plan_todos") {
+    return <TodoListCard resp={m.toolResp ?? null} />;
   }
   if (m.kind === "tool_call" || m.kind === "tool_result") {
     return (

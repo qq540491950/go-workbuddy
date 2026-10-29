@@ -2,6 +2,7 @@ package agentkit
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"hash/fnv"
 	"os"
@@ -144,6 +145,12 @@ func (k *Kit) buildLLMAgentWithSubAgents(ac config.AgentConfig, cfg config.Confi
 			if k.memory != nil {
 				tools = append(tools, k.memory)
 			}
+		case "todos":
+			t, err := TodosTool()
+			if err != nil {
+				return nil, fmt.Errorf("agent %q: %w", ac.Name, err)
+			}
+			tools = append(tools, t)
 		}
 	}
 
@@ -205,6 +212,9 @@ func (k *Kit) llmConfig(ac config.AgentConfig, m model.LLM, tools []tool.Tool, t
 	}
 	if ac.MaxTokens > 0 {
 		gcc.MaxOutputTokens = int32(ac.MaxTokens)
+	}
+	if len(ac.StopSequences) > 0 {
+		gcc.StopSequences = ac.StopSequences
 	}
 	return llmagent.Config{
 		Name:                     sanitizeAgentName(ac.Name),
@@ -723,5 +733,73 @@ func WriteFileTool(workspace string, requireConfirmation bool) (tool.Tool, error
 			return writeResult{}, err
 		}
 		return writeResult{OK: true, Bytes: len(args.Content)}, nil
+	})
+}
+
+// ---------------------------------------------------------------------------
+// Session plan (todo list) tool
+
+// todosStateKey stores the plan in the ADK session state so it survives
+// restarts and stays scoped to the conversation.
+const todosStateKey = "workbuddy.todos"
+
+type todoItem struct {
+	Content string `json:"content"`
+	Status  string `json:"status"` // pending | in_progress | completed
+}
+
+type todosArgs struct {
+	// Todos is the FULL replacement list. Omitted => read the current plan
+	// without writing; empty => clear it.
+	Todos []todoItem `json:"todos,omitempty"`
+}
+
+type todosResult struct {
+	OK    bool       `json:"ok"`
+	Todos []todoItem `json:"todos"`
+}
+
+// TodosTool gives the model a session-scoped plan (todo list) for multi-step
+// work: it rewrites the list as steps are created, started and completed, and
+// the user follows along on the tool-result card. Mirrors the plan tools of
+// the coding-agent desktops this app takes after.
+func TodosTool() (tool.Tool, error) {
+	return functiontool.New(functiontool.Config{
+		Name:        "plan_todos",
+		Description: "Maintain the session's task plan (todo list). Pass the FULL list of steps with status pending/in_progress/completed each time — mark a step in_progress before starting it and completed right after finishing it, creating new steps as work emerges. Omit 'todos' to read the current plan. Use it for any multi-step task so the user can follow progress.",
+	}, func(ctx agent.Context, args todosArgs) (todosResult, error) {
+		if ctx.State() == nil {
+			return todosResult{}, fmt.Errorf("session state unavailable")
+		}
+		if args.Todos == nil {
+			// Read-only: return the stored plan.
+			cur, err := ctx.State().Get(todosStateKey)
+			if err != nil {
+				return todosResult{OK: true}, nil // no plan yet
+			}
+			var todos []todoItem
+			b, _ := json.Marshal(cur)
+			if json.Unmarshal(b, &todos) != nil {
+				return todosResult{OK: true}, nil
+			}
+			return todosResult{OK: true, Todos: todos}, nil
+		}
+		cleaned := make([]todoItem, 0, len(args.Todos))
+		for _, td := range args.Todos {
+			td.Content = strings.TrimSpace(td.Content)
+			if td.Content == "" {
+				continue
+			}
+			switch td.Status {
+			case "pending", "in_progress", "completed":
+			default:
+				td.Status = "pending"
+			}
+			cleaned = append(cleaned, td)
+		}
+		if err := ctx.State().Set(todosStateKey, cleaned); err != nil {
+			return todosResult{}, err
+		}
+		return todosResult{OK: true, Todos: cleaned}, nil
 	})
 }

@@ -1,6 +1,8 @@
 package mcpmgr
 
 import (
+	"fmt"
+	"net"
 	"testing"
 
 	"changeme/internal/config"
@@ -33,5 +35,35 @@ func TestToolsetCachedUntilDisconnect(t *testing.T) {
 	}
 	if ts3 == ts1 {
 		t.Fatal("expected a fresh toolset after Disconnect")
+	}
+}
+
+// TestOAuthTransportPortNotHeld pins the lazy-listen contract: building an
+// OAuth transport must not keep the redirect port bound (a cached token makes
+// the consent flow unreachable, and holding the port broke reconnects on the
+// same configured redirect port with EADDRINUSE).
+func TestOAuthTransportPortNotHeld(t *testing.T) {
+	probe, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	port := probe.Addr().(*net.TCPAddr).Port
+	probe.Close()
+
+	cfg := config.MCPServerConfig{
+		ID: "srv-oauth", Name: "O", Transport: config.MCPStreamableHTTP,
+		URL: "http://127.0.0.1:1/mcp", AuthType: "oauth2",
+		OAuthClientID: "client-id", OAuthRedirectPort: port,
+	}
+	for i := 1; i <= 2; i++ {
+		if _, err := buildTransport(cfg, nil, nil); err != nil {
+			t.Fatalf("build %d: %v", i, err)
+		}
+		// The port must be free again immediately after the build.
+		again, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", port))
+		if err != nil {
+			t.Fatalf("port still held after build %d: %v", i, err)
+		}
+		again.Close()
 	}
 }

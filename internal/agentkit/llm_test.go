@@ -436,3 +436,48 @@ func TestRetryAfterDelayCap(t *testing.T) {
 		t.Fatalf("huge header = %v, want cap %v", got, maxRetryAfter)
 	}
 }
+
+// TestStopSequencesWireFormat: the configured stop sequences reach both
+// providers under their native field names (OpenAI "stop", Anthropic
+// "stop_sequences").
+func TestStopSequencesWireFormat(t *testing.T) {
+	var oaBody map[string]any
+	oaSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewDecoder(r.Body).Decode(&oaBody)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"hi"}}]}`))
+	}))
+	defer oaSrv.Close()
+	oa, _ := NewOpenAICompat(OpenAICompatConfig{BaseURL: oaSrv.URL, Model: "m"})
+	req := &model.LLMRequest{
+		Contents: []*genai.Content{genai.NewContentFromText("x", genai.RoleUser)},
+		Config:   &genai.GenerateContentConfig{StopSequences: []string{"END", "STOP"}},
+	}
+	for _, err := range oa.GenerateContent(context.Background(), req, false) {
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	stop, ok := oaBody["stop"].([]any)
+	if !ok || len(stop) != 2 || stop[0] != "END" {
+		t.Fatalf("openai stop = %v", oaBody["stop"])
+	}
+
+	var anBody map[string]any
+	anSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewDecoder(r.Body).Decode(&anBody)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"content":[{"type":"text","text":"hi"}],"stop_reason":"end_turn"}`))
+	}))
+	defer anSrv.Close()
+	an, _ := NewAnthropic(AnthropicConfig{BaseURL: anSrv.URL, APIKey: "k", Model: "m"})
+	for _, err := range an.GenerateContent(context.Background(), req, false) {
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	seqs, ok := anBody["stop_sequences"].([]any)
+	if !ok || len(seqs) != 2 || seqs[1] != "STOP" {
+		t.Fatalf("anthropic stop_sequences = %v", anBody["stop_sequences"])
+	}
+}

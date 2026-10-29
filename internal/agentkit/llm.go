@@ -117,6 +117,14 @@ func maxTokensOf(req *model.LLMRequest) int64 {
 	return int64(req.Config.MaxOutputTokens)
 }
 
+// stopSequencesOf surfaces the configured stop sequences (nil when unset).
+func stopSequencesOf(req *model.LLMRequest) []string {
+	if req.Config == nil {
+		return nil
+	}
+	return req.Config.StopSequences
+}
+
 // withUsage attaches provider usage to a final response so the ADK runner
 // stores it and the UI can surface token counts.
 func withUsage(resp *model.LLMResponse, u *oaUsage) *model.LLMResponse {
@@ -244,6 +252,7 @@ type oaRequest struct {
 	Tools       []oaTool `json:"tools,omitempty"`
 	MaxTokens   int64    `json:"max_tokens,omitempty"`
 	Temperature *float32 `json:"temperature,omitempty"`
+	Stop        []string `json:"stop,omitempty"`
 }
 
 type oaUsage struct {
@@ -363,7 +372,7 @@ func (o *openaiCompatLLM) buildMessages(req *model.LLMRequest) []oaMessage {
 func (o *openaiCompatLLM) GenerateContent(ctx context.Context, req *model.LLMRequest, stream bool) iter.Seq2[*model.LLMResponse, error] {
 	return func(yield func(*model.LLMResponse, error) bool) {
 		body := oaRequest{Model: o.cfg.Model, Messages: o.buildMessages(req), Stream: stream,
-			MaxTokens: maxTokensOf(req), Temperature: temperatureOf(req)}
+			MaxTokens: maxTokensOf(req), Temperature: temperatureOf(req), Stop: stopSequencesOf(req)}
 		if stream {
 			body.StreamOptions = &struct {
 				IncludeUsage bool `json:"include_usage"`
@@ -583,6 +592,8 @@ type anRequest struct {
 	Tools     []anTool    `json:"tools,omitempty"`
 	Stream    bool        `json:"stream"`
 	Temp      *float32    `json:"temperature,omitempty"`
+	// StopSequences maps the genai config onto Anthropic's stop_sequences.
+	StopSequences []string `json:"stop_sequences,omitempty"`
 }
 
 type anTool struct {
@@ -658,7 +669,7 @@ func (a *anthropicLLM) GenerateContent(ctx context.Context, req *model.LLMReques
 			maxTok = 8192
 		}
 		body := anRequest{Model: a.cfg.Model, Messages: a.buildMessages(req), System: systemText(req),
-			MaxTokens: maxTok, Stream: stream, Temp: temperatureOf(req)}
+			MaxTokens: maxTok, Stream: stream, Temp: temperatureOf(req), StopSequences: stopSequencesOf(req)}
 		var usage *anUsage
 		for _, fd := range configTools(req) {
 			body.Tools = append(body.Tools, anTool{

@@ -530,6 +530,22 @@ export function AgentsPage() {
                 </div>
               </div>
               <div className="grid gap-1.5">
+                <Label>停止序列（可选，逗号分隔）</Label>
+                <Input
+                  value={(editing.stopSequences ?? []).join(",")}
+                  onChange={(e) =>
+                    setEditing({
+                      ...editing,
+                      stopSequences: e.target.value
+                        .split(",")
+                        .map((x) => x.trim())
+                        .filter(Boolean),
+                    })
+                  }
+                  placeholder="模型输出这些词时立即停止生成，例如：END, <完成>"
+                />
+              </div>
+              <div className="grid gap-1.5">
                 <Label>内置工具</Label>
                 <div className="flex gap-4 rounded-lg border p-3">
                   <label className="flex items-center gap-2 text-sm">
@@ -559,6 +575,13 @@ export function AgentsPage() {
                       onCheckedChange={() => setEditing({ ...editing, builtinTools: toggle(editing.builtinTools ?? [], "memory") })}
                     />
                     长期记忆检索（可跨会话召回用户历史）
+                  </label>
+                  <label className="flex items-center gap-2 text-sm">
+                    <Checkbox
+                      checked={(editing.builtinTools ?? []).includes("todos")}
+                      onCheckedChange={() => setEditing({ ...editing, builtinTools: toggle(editing.builtinTools ?? [], "todos") })}
+                    />
+                    任务计划（plan_todos）
                   </label>
                 </div>
               </div>

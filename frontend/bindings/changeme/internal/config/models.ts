@@ -56,6 +56,12 @@ export interface AgentConfig {
      * the next one is refused.
      */
     "maxSessionTokens"?: number;
+
+    /**
+     * StopSequences halts generation when the model emits one of them
+     * (OpenAI "stop" / Anthropic "stop_sequences"). Empty = provider default.
+     */
+    "stopSequences"?: string[] | null;
 }
 
 /**
