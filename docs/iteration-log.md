@@ -4,6 +4,15 @@
 
 ## 视觉测试与体验设计
 
+### 第一百三十六轮迭代：依赖漏洞清零（已实施）
+
+govulncheck + npm audit 双扫描后修复：
+
+- **Go 工具链 1.26.6 → 1.27.3**（go.mod toolchain 指令）：清零标准库 13 项漏洞（HTTP/2 服务端系列、crypto/x509 证书校验等）。
+- **golang.org/x/net 0.58.0 → 0.62.0**（连带 x/sys、x/text）：清零代码实际调用的 5 项 HTTP/2 漏洞。govulncheck 终态：**affected by 0 vulnerabilities**。
+- **npm audit fix**（devDependencies：body-parser/source-map-js/launch-editor 等 5 项）；deepmerge 原型污染属 shadcn CLI（devDependency，不进产物），留待上游发版。
+- 新工具链产物烟雾：启动存活 + 优雅退出。
+
 ### 第一百三十五轮迭代：autoTitle 模型覆盖 e2e + 使用流程刷新（已实施）
 
 - `TestAutoTitleGeneratesTitle` 扩展：会话经 SetSessionModel 钉到覆盖模型后，标题侧调用请求体携带覆盖模型 ID（EffectiveModel 钳制贯通到命名路径的端到端证明）。
