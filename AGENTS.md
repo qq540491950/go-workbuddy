@@ -15,6 +15,7 @@ go test ./internal/...                     # 后端全量测试（提交前必�
 go test -race ./internal/...               # 并发安全回归（改并发/数据库代码后必跑）
 go vet ./internal/... .
 cd frontend && npx tsc --noEmit && npm run build   # 前端类型检查 + 构建
+cd frontend && npm test                            # vitest（lib/chatUtils、lib/mcpEnv 纯函数单测）
 wails3 generate bindings -f '-tags production' -clean=true -ts -i   # 再生成 Wails 绑定
 wails3 build                               # 生产构建（自动重跑绑定生成 + 前端构建 + Go 编译）
 wails3 package                             # 打包 macOS .app

@@ -80,8 +80,9 @@ wails3 package        # 产物: bin/go-wails-react-tpl.app（重命名为 WorkBu
 ### 自测
 
 ```bash
-go test ./internal/...
+go test ./internal/... .
 go vet ./internal/... .
+cd frontend && npm test        # vitest（前端纯函数单测）
 ```
 
 测试覆盖：
