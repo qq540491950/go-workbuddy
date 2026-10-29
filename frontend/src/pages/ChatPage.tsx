@@ -176,6 +176,13 @@ export function ChatPage() {
   // present an unexplained empty list here.
   useEffect(() => {
     setMsgFilter("");
+    if (!activeID) return;
+    setUnread((prev) => {
+      if (!prev[activeID]) return prev;
+      const next = { ...prev };
+      delete next[activeID];
+      return next;
+    });
   }, [activeID]);
 
   // Load history when switching sessions.
@@ -269,6 +276,7 @@ export function ChatPage() {
           const action = { label: "查看", onClick: open };
           if (ev.kind === "done") toast.success(`「${title}」已完成回复`, { action });
           else toast.error(`「${title}」本轮出错`, { action });
+          setUnread((prev) => ({ ...prev, [ev.sessionId]: true }));
         }
       }
       if (ev.sessionId !== activeID) return;
@@ -372,6 +380,10 @@ export function ChatPage() {
       window.removeEventListener("drop", prevent);
     };
   }, []);
+
+  // Unread flags: a background session that finished (or errored) while the
+  // user was elsewhere gets a sidebar dot until they open it.
+  const [unread, setUnread] = useState<Record<string, boolean>>({});
 
   // Per-session message queue: sending while a reply streams parks the text
   // and auto-sends it when the turn settles (Codex-style queueing).
@@ -969,6 +981,7 @@ export function ChatPage() {
                 {s.pinned && <Pin className="h-3 w-3 shrink-0 text-primary" aria-label="已置顶" />}
                 {s.archived && <Badge variant="outline" className="shrink-0 px-1 py-0 text-[10px] text-muted-foreground">归档</Badge>}
                 {runningMap[s.id] && <Loader2 className="h-3 w-3 shrink-0 animate-spin text-primary" aria-label="生成中" />}
+                {!runningMap[s.id] && unread[s.id] && <span className="h-2 w-2 shrink-0 rounded-full bg-primary" aria-label="有新回复未查看" />}
                 <span className="hidden shrink-0 items-center gap-0.5 group-hover:flex">
                   <button
                     className="rounded p-0.5 hover:bg-background"
