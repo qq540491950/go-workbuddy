@@ -4,6 +4,13 @@
 
 ## 视觉测试与体验设计
 
+### 第一百二十二轮迭代：HTML 导出全字段转义（已实施）
+
+第五轮体检 renderTodoList XSS 的同类排查：HTML 导出中仍有模型可控/用户可控字段直出——
+
+- 工具调用/结果 `<summary>` 中的 **ToolName**（模型可控）、HITL 确认行的 ToolName 与 CallID、会话标题、对象名称、分叉来源标题：全部经 `htmlEscapeString` 转义（正文 m.Text 保持 Markdown 语义渲染不变）。
+- `TestRenderTodoListEscapes` 钉住 renderTodoList 的双模式契约（HTML 转义 / Markdown 原文）。
+
 ### 第一百二十一轮迭代：五轮体检批 — 导出 XSS + 排队跨会话投递（已实施）
 
 第五轮只读体检（专审第 112 轮后新增代码）确认 7 项，全部修复：

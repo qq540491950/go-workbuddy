@@ -857,8 +857,11 @@ func (c *ChatService) ExportSessionHTML(sessionID string) (string, error) {
 		return "", err
 	}
 
+	// Config-derived strings (titles, agent names) are user-controlled and
+	// tool names are model-controlled: everything except the intentionally
+	// markdown body text is escaped before it reaches the HTML file.
 	var body strings.Builder
-	fmt.Fprintf(&body, "# %s\n\n", meta.Title)
+	fmt.Fprintf(&body, "# %s\n\n", htmlEscapeString(meta.Title))
 	kind := "Agent"
 	switch meta.TargetType {
 	case "team":
@@ -866,11 +869,11 @@ func (c *ChatService) ExportSessionHTML(sessionID string) (string, error) {
 	case "remote":
 		kind = "远程 Agent"
 	}
-	fmt.Fprintf(&body, "- 对象: %s %s\n", kind, displayNameOf(cfg, meta.TargetType, meta.TargetID))
+	fmt.Fprintf(&body, "- 对象: %s %s\n", kind, htmlEscapeString(displayNameOf(cfg, meta.TargetType, meta.TargetID)))
 	fmt.Fprintf(&body, "- 创建时间: %s\n\n", meta.CreatedAt.Format("2006-01-02 15:04"))
 	if meta.ForkedFrom != "" {
 		if src := c.resolveSessionTarget(cfg, meta.ForkedFrom); src != nil {
-			fmt.Fprintf(&body, "- 分叉自: %s\n\n", src.Title)
+			fmt.Fprintf(&body, "- 分叉自: %s\n\n", htmlEscapeString(src.Title))
 		}
 	}
 	for _, m := range msgs {
@@ -882,7 +885,7 @@ func (c *ChatService) ExportSessionHTML(sessionID string) (string, error) {
 		case "tool_call":
 			args, _ := json.Marshal(m.ToolArgs)
 			fmt.Fprintf(&body, "<details><summary>🔧 工具调用 <b>%s</b></summary>\n<pre>%s</pre>\n</details>\n\n",
-				m.ToolName, htmlEscapeString(string(args)))
+				htmlEscapeString(m.ToolName), htmlEscapeString(string(args)))
 		case "tool_result":
 			if m.ToolName == "plan_todos" {
 				// Escape first, then swap newlines for <br>: escaping after the
@@ -895,9 +898,9 @@ func (c *ChatService) ExportSessionHTML(sessionID string) (string, error) {
 			}
 			resp, _ := json.Marshal(m.ToolResp)
 			fmt.Fprintf(&body, "<details><summary>✅ 工具结果 <b>%s</b></summary>\n<pre>%s</pre>\n</details>\n\n",
-				m.ToolName, htmlEscapeString(string(resp)))
+				htmlEscapeString(m.ToolName), htmlEscapeString(string(resp)))
 		case "confirm_request":
-			fmt.Fprintf(&body, "> 🛡️ **HITL 确认** %s（`%s`）\n\n", m.ToolName, m.CallID)
+			fmt.Fprintf(&body, "> 🛡️ **HITL 确认** %s（`%s`）\n\n", htmlEscapeString(m.ToolName), htmlEscapeString(m.CallID))
 		case "confirm_result":
 			decision := "拒绝"
 			if m.ToolResp["confirmed"] == true {

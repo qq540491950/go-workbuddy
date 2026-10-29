@@ -501,3 +501,20 @@ func TestSetSessionModelUnknownSession(t *testing.T) {
 		t.Fatal("expected error for unknown session")
 	}
 }
+
+// TestRenderTodoListEscapes: todo contents echo model-controlled tool
+// arguments — the HTML export must escape them (stored-XSS vector), while the
+// Markdown export keeps the raw text.
+func TestRenderTodoListEscapes(t *testing.T) {
+	resp := map[string]any{"todos": []any{
+		map[string]any{"content": `<img src=x onerror=alert(1)>`, "status": "pending"},
+	}}
+	html := renderTodoList(resp, true)
+	if strings.Contains(html, "<img") || !strings.Contains(html, "&lt;img") {
+		t.Fatalf("HTML export not escaped: %q", html)
+	}
+	md := renderTodoList(resp, false)
+	if !strings.Contains(md, "<img") {
+		t.Fatalf("markdown export should keep raw text: %q", md)
+	}
+}
