@@ -4,6 +4,21 @@
 
 ## 视觉测试与体验设计
 
+### 第一百一十四轮迭代：双子代理代码审查修复（Standards + Spec，已实施）
+
+对 `bf24d2c...HEAD`（第 98–113 轮，16 提交 51 文件）执行双轴代码审查并修复全部发现：
+
+**Standards 轴（4 项硬性 + 重复形状）**
+- 硬违规：`autoTitle` 独立 goroutine 绕开 runTurn 的 recoverRun——补自身 recover（panic 记日志并保留兜底标题），与「panic 不崩进程」的关键机制承诺一致。
+- `TodosTool` 英文错误改中文（UI 文案约定）。
+- `config.Store.Update` 注释腐烂（新旧两句矛盾）清理；`DeleteSkill` 不再 `_ =` 吞更新错误。
+- 重复形状收拢：两个模型适配器的「参数流损坏」拼接块提取 `appendBrokenArgsNote`；runTurn 标题/预览截断复用 `truncateRunes`；前端排队点火在 done 处理与回会话分支两处重复提取 `fireQueued`。
+
+**Spec 轴（1 项缺口）**
+- `SessionStats` 成本估算未像 runTurn/autoTitle 一样经 `ModelSupported` 钳制会话模型覆盖（覆盖失效时计费落空）——补齐，三条路径（运行/统计/命名）现在共用同一钳制。
+
+审查同时确认：全部声明均有真实实现、测试用例与日志一致、无实质不符；两处轻微 scope creep（guardrail 增补 show 动词与中文宾语、TestKnowledgeSearch 60s 超时）方向一致、记录在案。
+
 ### 第一百一十三轮迭代：生产二进制启动烟雾测试（已实施）
 
 针对第 112 轮 main.go 三项改动（rotatingWriter、`ApplicationShouldTerminateAfterLastWindowClosed: false`、`Services.A2A` 接线）的端到端验证：

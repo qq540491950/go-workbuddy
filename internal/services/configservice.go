@@ -374,7 +374,7 @@ func parseSKILLMarkdown(content string) (name, desc, body string) {
 // immediately.
 func (c *ConfigService) DeleteSkill(id string) error {
 	var removed config.SkillConfig
-	_ = c.S.Store.Update(func(cfg *config.Config) {
+	err := c.S.Store.Update(func(cfg *config.Config) {
 		out := cfg.Skills[:0]
 		for _, s := range cfg.Skills {
 			if s.ID == id {
@@ -394,6 +394,9 @@ func (c *ConfigService) DeleteSkill(id string) error {
 			cfg.Agents[i].SkillIDs = ids
 		}
 	})
+	if err != nil {
+		return err
+	}
 	if removed.Name != "" {
 		c.S.Kit.RemoveMaterializedSkill(removed.Name)
 	}

@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"slices"
@@ -1320,27 +1321,28 @@ func (c *ChatService) runTurn(target *config.ChatSession, guardOn bool, msg *gen
 				}
 				cfg.Sessions[i].UpdatedAt = nowUTC()
 				if lastReply != "" {
-					t := []rune(strings.TrimSpace(lastReply))
-					if len(t) > 80 {
-						t = t[:80]
-					}
-					cfg.Sessions[i].Preview = string(t)
+					cfg.Sessions[i].Preview = truncateRunes(lastReply, 80)
 				}
 				if titleFromText != "" && cfg.Sessions[i].Title == "新对话" {
-					t := []rune(strings.TrimSpace(titleFromText))
-					if len(t) > 30 {
-						t = t[:30]
-					}
-					cfg.Sessions[i].Title = string(t)
-					autoFallback = string(t)
+					cfg.Sessions[i].Title = truncateRunes(titleFromText, 30)
+					autoFallback = cfg.Sessions[i].Title
 				}
 			}
 		})
 	}
 	// Model-generated title replaces the truncated-text fallback once the
 	// first exchange completes (best-effort, async — never blocks the turn).
+	// The goroutine carries its own recover: it runs outside runTurn's
+	// deferred recoverRun, and a panic here would take the whole process down.
 	if autoFallback != "" && cfg.Settings.AutoTitleEnabled() {
-		go c.autoTitle(sessionID, cfg, autoFallback, titleFromText, lastReply)
+		go func() {
+			defer func() {
+				if r := recover(); r != nil {
+					log.Printf("autoTitle panicked (kept fallback title): %v", r)
+				}
+			}()
+			c.autoTitle(sessionID, cfg, autoFallback, titleFromText, lastReply)
+		}()
 	}
 	return nil
 }
@@ -1581,9 +1583,11 @@ func (c *ChatService) SessionStats(sessionID string) (*SessionStats, error) {
 	priceIn, priceOut := 0.0, 0.0
 	cfgNow := c.S.Store.Get()
 	if ac := c.targetAgentConfig(cfgNow, target); ac != nil {
-		// The per-session override picks the priced model when set.
+		// The per-session override picks the priced model when set — clamped
+		// like runTurn: an override whose model was deleted falls back to the
+		// agent's configured model everywhere, pricing included.
 		effectiveModel := ac.Model
-		if target.ModelOverride != "" {
+		if target.ModelOverride != "" && agentkit.ModelSupported(cfgNow, ac.ProviderID, target.ModelOverride) {
 			effectiveModel = target.ModelOverride
 		}
 		for i := range cfgNow.Providers {

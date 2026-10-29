@@ -167,6 +167,19 @@ export function ChatPage() {
 
   const active = sessions.find((s) => s.id === activeID);
 
+  // fireQueued pops the session's queued message and auto-sends it (used both
+  // when a turn settles and when the user returns to a settled session).
+  const fireQueued = useCallback((sessionID: string) => {
+    const q = queuedRef.current[sessionID];
+    if (!q) return;
+    setQueued((prev) => {
+      const next = { ...prev };
+      delete next[sessionID];
+      return next;
+    });
+    setTimeout(() => sendRef.current(q), 80);
+  }, []);
+
   const reloadSessions = useCallback(() => {
     Chat.ListSessions()
       .then((ss) => setSessions(ss ?? []))
@@ -243,14 +256,8 @@ export function ChatPage() {
       markRunning(activeID, r);
       // A queued message stranded by a session switch (its turn finished in
       // the background) fires now: the user is back and nothing is running.
-      const pending = queuedRef.current[activeID];
-      if (!r && pending) {
-        setQueued((prev) => {
-          const next = { ...prev };
-          delete next[activeID];
-          return next;
-        });
-        setTimeout(() => sendRef.current(pending), 80);
+      if (!r && queuedRef.current[activeID]) {
+        fireQueued(activeID);
       }
     }).catch(() => {});
     return () => {
@@ -280,14 +287,8 @@ export function ChatPage() {
         reloadSessions();
         // A queued message fires as soon as the turn settles — including
         // after an error, so the user's follow-up is never stranded.
-        const q = queuedRef.current[ev.sessionId];
-        if (q && ev.sessionId === activeID) {
-          setQueued((prev) => {
-            const next = { ...prev };
-            delete next[ev.sessionId];
-            return next;
-          });
-          setTimeout(() => sendRef.current(q), 80);
+        if (queuedRef.current[ev.sessionId] && ev.sessionId === activeID) {
+          fireQueued(ev.sessionId);
         }
         if (ev.sessionId !== activeID) {
           const title = sessionsRef.current.find((x: { id: string; title: string }) => x.id === ev.sessionId)?.title ?? "后台会话";

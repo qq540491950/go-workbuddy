@@ -860,7 +860,7 @@ func TodosTool() (tool.Tool, error) {
 		Description: "Maintain the session's task plan (todo list). Pass the FULL list of steps with status pending/in_progress/completed each time — mark a step in_progress before starting it and completed right after finishing it, creating new steps as work emerges. Omit 'todos' to read the current plan. Use it for any multi-step task so the user can follow progress.",
 	}, func(ctx agent.Context, args todosArgs) (todosResult, error) {
 		if ctx.State() == nil {
-			return todosResult{}, fmt.Errorf("session state unavailable")
+			return todosResult{}, fmt.Errorf("会话状态不可用")
 		}
 		if args.Todos == nil {
 			// Read-only: return the stored plan.

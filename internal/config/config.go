@@ -509,7 +509,6 @@ func (s *Store) Settings() Settings {
 	return s.cfg.Settings
 }
 
-// Update applies fn to the config under lock and persists it.
 // Update applies fn and persists the result. The mutation is applied to a
 // deep copy and only swapped into the live config after the disk write
 // succeeds: a failed save (disk full, permissions) used to leave memory

@@ -166,6 +166,19 @@ func argsToMap(raw []byte) (map[string]any, error) {
 	return m, nil
 }
 
+// appendBrokenArgsNote appends a user-visible note for tool calls whose
+// streamed arguments never formed valid JSON (they were skipped, not run).
+func appendBrokenArgsNote(text string, skipped []string) string {
+	if len(skipped) == 0 {
+		return text
+	}
+	sep := ""
+	if text != "" {
+		sep = "\n\n"
+	}
+	return text + fmt.Sprintf("%s（工具调用 %s 的参数流损坏，已跳过本次执行，请重试。）", sep, strings.Join(skipped, ", "))
+}
+
 // finalLLMResponse assembles the single non-partial event that the ADK
 // Runner processes: complete text plus every function call.
 func finalLLMResponse(modelName, text string, parts []*genai.Part) *model.LLMResponse {
@@ -513,14 +526,7 @@ func (o *openaiCompatLLM) final(text string, calls map[int]*oaAccumCall, order [
 		}
 		parts = append(parts, &genai.Part{FunctionCall: &genai.FunctionCall{ID: c.id, Name: c.name, Args: args}})
 	}
-	if len(skipped) > 0 {
-		sep := ""
-		if text != "" {
-			sep = "\n\n"
-		}
-		text += fmt.Sprintf("%s（工具调用 %s 的参数流损坏，已跳过本次执行，请重试。）", sep, strings.Join(skipped, ", "))
-	}
-	return finalLLMResponse(o.cfg.Model, text, parts)
+	return finalLLMResponse(o.cfg.Model, appendBrokenArgsNote(text, skipped), parts)
 }
 
 type oaAccumCall struct {
@@ -861,14 +867,7 @@ func (a *anthropicLLM) final(text string, tools []*anAccumTool) *model.LLMRespon
 			ID: t.id, Name: t.name, Args: args,
 		}})
 	}
-	if len(skipped) > 0 {
-		sep := ""
-		if text != "" {
-			sep = "\n\n"
-		}
-		text += fmt.Sprintf("%s（工具调用 %s 的参数流损坏，已跳过本次执行，请重试。）", sep, strings.Join(skipped, ", "))
-	}
-	return finalLLMResponse(a.cfg.Model, text, parts)
+	return finalLLMResponse(a.cfg.Model, appendBrokenArgsNote(text, skipped), parts)
 }
 
 type anAccumTool struct {
