@@ -4,6 +4,14 @@
 
 ## 视觉测试与体验设计
 
+### 第一百一十三轮迭代：生产二进制启动烟雾测试（已实施）
+
+针对第 112 轮 main.go 三项改动（rotatingWriter、`ApplicationShouldTerminateAfterLastWindowClosed: false`、`Services.A2A` 接线）的端到端验证：
+
+- `wails3 build` 产物 `bin/go-wails-react-tpl` 直接启动 → 进程存活（6s 观察窗）、无启动错误输出（无错误时不写日志属预期）。
+- `SIGTERM` 优雅退出确认（EXITED_CLEANLY）。
+- macOS 窗口语义核对：NSWindow 关闭为 ordered-out 而非销毁（Wails v3 源码 windowShow 直接作用于保留的 nsWindow），托盘/快捷键的 Show() 可恢复用户红叉关闭的窗口——`ShouldTerminate=false` 与常驻语义自洽。
+
 ### 第一百一十二轮迭代：四轮体检批 — A2A 生命周期 + 常驻语义 + 收尾加固（已实施）
 
 **依据**：第四轮只读体检（专审本轮新增代码与 main.go/a2aservice 全文）确认的 8 项。
