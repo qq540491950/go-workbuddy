@@ -61,6 +61,11 @@ frontend/stub/               # 浏览器视觉回归：setTransport 数据桩 + 
 - **知识库索引**：`knowledge.index.db` 独立于 sessions.db；按文件 mtime 增量；变更文件重嵌入前先删除其旧行（否则缩小文件会留下过期分块）；换 Embedding 模型全量重建；Embedding 故障优雅回退关键词。
 - **配置读取**：`Store.Get()` 返回深拷贝（切片/map 均独立），可以随意修改返回值；`Store.Settings()` 用于只需要全局设置的热路径。`ExportConfig(false)` 依赖这一点——脱敏只能作用在副本上。
 - **取消登记**：每轮运行在 `runs[sessionID]` 登记 `*runHandle`，释放时只在指针仍属于自己时删除，避免旧轮次清掉新轮次的取消函数。
+- **会话元数据变更**：Rename/SetModel/Archive/Pin 统一走 `mutateSession`（未知会话返回错误，审计仅成功后落笔）；`DeleteSession` 与 `Regenerate/EditAndResend` 先 `Cancel` 在跑轮次再动历史。
+- **会话级模型覆盖**：`ChatSession.ModelOverride` 经 `agentkit.EffectiveModel` 统一钳制（覆盖 ID 不在供应商列表则回落默认），运行、统计计费、autoTitle 侧调用三处共用；设置侧的即时开关（autoRemember/AutoTitle/A2A 自启动）从「上次已保存快照」持久化，避免冲洗未保存字段。
+- **plan_todos**：状态存 ADK session state 键 `workbuddy.todos`，全量替换语义（省略参数=只读，空数组=清空）；前端从 tool_result 渲染清单卡与置顶条。
+- **autoTitle**：opt-in（`Settings.AutoTitle`），首轮后异步 30s 侧调用生成标题，仅替换自己写下的兜底标题；goroutine 自带 recover。
+- **A2A 失效联动**：SaveAgent（替换）/DeleteAgent 通过 `Services.StopPublishedAgent` 下线已发布服务器；OAuth 回调端口惰性重绑（授权流程结束必释放）。
 - **单轮超时**：Agent 未配置 `MaxTurnSeconds` 时默认 600 秒兜底；`runTurn` 的 recover 把 panic 转为 `error` + `done` 事件，界面不会卡在运行态。
 - **导出脱敏**：`ExportConfig(false)` 剥离供应商 API Key 与 MCP AuthToken；`MCPTokens` 任何导出都不携带。
 
