@@ -307,7 +307,7 @@ func (k *KnowledgeIndex) ensureIndexed(ctx context.Context, workspace string, em
 			for j := range jobsCh {
 				vecs, err := embedAll(ctx, emb, j.text)
 				if err != nil {
-					errCh <- fmt.Errorf("embed %s: %w", j.file, err)
+					errCh <- fmt.Errorf("嵌入 %s 失败: %w", j.file, err)
 					continue
 				}
 				j.vecs = vecs
@@ -396,19 +396,19 @@ func embedBatchReq(ctx context.Context, emb *EmbeddingConfig, inputs []string) (
 		return nil, err
 	}
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("embeddings HTTP %d: %s", resp.StatusCode, truncateForLog(data))
+		return nil, fmt.Errorf("Embeddings 接口返回 HTTP %d: %s", resp.StatusCode, truncateForLog(data))
 	}
 	var out embedResponse
 	if err := json.Unmarshal(data, &out); err != nil {
 		return nil, err
 	}
 	if len(out.Data) != len(inputs) {
-		return nil, fmt.Errorf("embeddings returned %d vectors for %d inputs", len(out.Data), len(inputs))
+		return nil, fmt.Errorf("Embeddings 返回 %d 个向量（输入 %d 个）", len(out.Data), len(inputs))
 	}
 	vecs := make([][]float64, len(inputs))
 	for _, d := range out.Data {
 		if d.Index < 0 || d.Index >= len(vecs) {
-			return nil, fmt.Errorf("embeddings index %d out of range", d.Index)
+			return nil, fmt.Errorf("Embeddings 向量下标 %d 越界", d.Index)
 		}
 		vecs[d.Index] = d.Embedding
 	}

@@ -122,7 +122,7 @@ func buildTransport(cfg config.MCPServerConfig, tokenStore *config.Store, onAuth
 	switch cfg.Transport {
 	case config.MCPStreamableHTTP:
 		if cfg.URL == "" {
-			return nil, fmt.Errorf("streamable-http transport requires a URL")
+			return nil, fmt.Errorf("streamable-http 传输需要填写 URL")
 		}
 		switch cfg.AuthType {
 		case "oauth2":
@@ -138,7 +138,7 @@ func buildTransport(cfg config.MCPServerConfig, tokenStore *config.Store, onAuth
 		return &mcp.StreamableClientTransport{Endpoint: cfg.URL}, nil
 	default: // stdio
 		if cfg.Command == "" {
-			return nil, fmt.Errorf("stdio transport requires a command")
+			return nil, fmt.Errorf("stdio 传输需要填写启动命令")
 		}
 		cmd := exec.Command(cfg.Command, cfg.Args...)
 		if len(cfg.Env) > 0 {
@@ -169,7 +169,7 @@ func (m *Manager) Toolset(cfg config.MCPServerConfig) (tool.Toolset, error) {
 	tracked := &trackedTransport{inner: tr}
 	ts, err := mcptoolset.New(mcptoolset.Config{Transport: tracked})
 	if err != nil {
-		return nil, fmt.Errorf("create mcp toolset %q: %w", cfg.Name, err)
+		return nil, fmt.Errorf("创建 MCP 工具集「%s」失败: %w", cfg.Name, err)
 	}
 	m.toolsets[cfg.ID] = ts
 	m.conns[cfg.ID] = tracked

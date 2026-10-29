@@ -53,7 +53,7 @@ func (c *ConfigService) GetConfig() config.Config { return c.S.Store.Get() }
 // SaveProvider inserts or updates a model provider.
 func (c *ConfigService) SaveProvider(p config.ModelProvider) error {
 	if p.Name == "" {
-		return fmt.Errorf("provider name is required")
+		return fmt.Errorf("请填写供应商名称")
 	}
 	if p.ID == "" {
 		p.ID = newID("prov_")
@@ -127,13 +127,13 @@ func (c *ConfigService) TestProvider(p config.ModelProvider, model string) (int6
 			return time.Since(start).Milliseconds(), nil
 		}
 	}
-	return 0, fmt.Errorf("no response from model")
+	return 0, fmt.Errorf("模型没有返回内容")
 }
 
 // SaveAgent inserts or updates an agent.
 func (c *ConfigService) SaveAgent(a config.AgentConfig) error {
 	if a.Name == "" {
-		return fmt.Errorf("agent name is required")
+		return fmt.Errorf("请填写 Agent 名称")
 	}
 	if a.ID == "" {
 		a.ID = newID("agent_")
@@ -206,7 +206,7 @@ func (c *ConfigService) DeleteAgent(id string) error {
 // SaveTeam inserts or updates an agent team.
 func (c *ConfigService) SaveTeam(t config.TeamConfig) error {
 	if t.Name == "" {
-		return fmt.Errorf("team name is required")
+		return fmt.Errorf("请填写团队名称")
 	}
 	if t.ID == "" {
 		t.ID = newID("team_")
@@ -247,7 +247,7 @@ func (c *ConfigService) DeleteTeam(id string) error {
 // SaveSkill inserts or updates a skill (materialized to SKILL.md).
 func (c *ConfigService) SaveSkill(s config.SkillConfig) error {
 	if s.Name == "" {
-		return fmt.Errorf("skill name is required")
+		return fmt.Errorf("请填写技能名称")
 	}
 	if s.ID == "" {
 		s.ID = newID("skill_")
@@ -409,7 +409,7 @@ func (c *ConfigService) DeleteSkill(id string) error {
 // the OLD transport (URL, token, args, env) while the UI shows the new one.
 func (c *ConfigService) SaveMCPServer(s config.MCPServerConfig) error {
 	if s.Name == "" {
-		return fmt.Errorf("server name is required")
+		return fmt.Errorf("请填写服务器名称")
 	}
 	if s.ID == "" {
 		s.ID = newID("mcp_")

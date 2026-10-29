@@ -3,7 +3,7 @@ import { Events } from "@wailsio/runtime";
 import {
   Plus, Send, Square, Trash2, Pencil, MessageSquare, Bot, Users, Loader2,
   Copy, Check, Search, ArrowRight, RefreshCw, Download, Mic, MicOff, Volume2, Square as SquareStop,
-  Paperclip, X, BarChart3, Brain, ShieldAlert, Network, GitFork, Pin, PinOff, FileCode2, Archive, ListTodo,
+  Paperclip, X, BarChart3, Brain, ShieldAlert, Network, GitFork, Pin, PinOff, FileCode2, Archive, ListTodo, ClipboardCopy,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -668,6 +668,34 @@ export function ChatPage() {
     }
   };
 
+  const copyConversation = async () => {
+    if (!activeID || messages.length === 0) return;
+    const lines = messages.map((m) => {
+      switch (m.kind) {
+        case "user":
+          return `🧑 用户：${m.text}`;
+        case "assistant":
+          return `🤖 ${m.author}：${m.text}`;
+        case "tool_call":
+          return `🔧 调用 ${m.toolName} ${JSON.stringify(m.toolArgs ?? {})}`;
+        case "tool_result":
+          return `✅ 结果 ${m.toolName} ${JSON.stringify(m.toolResp ?? {})}`;
+        case "confirm":
+          return `🛡️ 确认 ${m.toolName}（${m.confirmStatus ?? "pending"}）`;
+        case "error":
+          return `⚠️ ${m.text}`;
+        default:
+          return "";
+      }
+    }).filter(Boolean);
+    try {
+      await navigator.clipboard.writeText(lines.join("\n\n"));
+      toast.success("已复制整段对话到剪贴板");
+    } catch {
+      toast.error("复制失败（剪贴板不可用）");
+    }
+  };
+
   const createSession = async () => {
     if (!newTarget) {
       toast.error("请选择目标");
@@ -1101,6 +1129,12 @@ export function ChatPage() {
             )}
             {active && (
               <>
+                <Button
+                  variant="ghost" size="icon" title="复制整段对话到剪贴板"
+                  onClick={copyConversation}
+                >
+                  <ClipboardCopy className="h-4 w-4" />
+                </Button>
                 <Button
                   variant="ghost" size="icon" title="导出为自包含 HTML（样式化渲染）"
                   onClick={exportHTML}
@@ -1804,6 +1838,19 @@ const MessageBubble = memo(function MessageBubble({ m, isLastAssistant, onRegene
     return (
       <div className="rounded-lg border border-destructive/40 bg-destructive/10 px-4 py-2.5 text-sm text-destructive">
         {m.text}
+        {canRegenerate && (
+          <div className="mt-2">
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-7 px-3 text-xs"
+              title="裁剪本轮并重试（不重复消耗这条错误）"
+              onClick={onRegenerate}
+            >
+              <RefreshCw className="mr-1 h-3 w-3" /> 重试本轮
+            </Button>
+          </div>
+        )}
       </div>
     );
   }

@@ -12,7 +12,7 @@ import (
 func ApplyGlobalProxy(proxyURL string) error {
 	transport, ok := http.DefaultTransport.(*http.Transport)
 	if !ok {
-		return fmt.Errorf("default transport is %T, cannot configure proxy", http.DefaultTransport)
+		return fmt.Errorf("默认传输层类型异常（%T），无法配置代理", http.DefaultTransport)
 	}
 	if proxyURL == "" {
 		transport.Proxy = nil

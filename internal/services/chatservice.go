@@ -331,7 +331,7 @@ func (c *ChatService) mutateSession(id string, fn func(*config.ChatSession)) err
 			}
 		}
 		if !found {
-			notFound = fmt.Errorf("session %q not found", id)
+			notFound = fmt.Errorf("会话 %q 不存在", id)
 		}
 	})
 	if err == nil {
@@ -377,7 +377,7 @@ func (c *ChatService) DeleteSession(id string) error {
 		}
 		cfg.Sessions = out
 		if !found {
-			notFound = fmt.Errorf("session %q not found", id)
+			notFound = fmt.Errorf("会话 %q 不存在", id)
 		}
 	}); err != nil {
 		return err
@@ -578,7 +578,7 @@ func (c *ChatService) trimLastTurn(sessionID string) (string, []AttachmentIn, er
 		return "", nil, err
 	}
 	if resp.Session == nil {
-		return "", nil, fmt.Errorf("session %q not found", sessionID)
+		return "", nil, fmt.Errorf("会话 %q 不存在", sessionID)
 	}
 	text := ""
 	var atts []AttachmentIn
@@ -746,7 +746,7 @@ func (c *ChatService) ExportSession(sessionID string) (string, error) {
 		}
 	}
 	if meta == nil {
-		return "", fmt.Errorf("session %q not found", sessionID)
+		return "", fmt.Errorf("会话 %q 不存在", sessionID)
 	}
 	msgs, err := c.GetSessionMessages(sessionID)
 	if err != nil {
@@ -850,7 +850,7 @@ func (c *ChatService) ExportSessionHTML(sessionID string) (string, error) {
 		}
 	}
 	if meta == nil {
-		return "", fmt.Errorf("session %q not found", sessionID)
+		return "", fmt.Errorf("会话 %q 不存在", sessionID)
 	}
 	msgs, err := c.GetSessionMessages(sessionID)
 	if err != nil {
@@ -1025,7 +1025,7 @@ func (c *ChatService) sendTurn(sessionID, text string, attachments []AttachmentI
 	cfg := c.S.Store.Get()
 	target := c.resolveSessionTarget(cfg, sessionID)
 	if target == nil {
-		return fmt.Errorf("session %q not found", sessionID)
+		return fmt.Errorf("会话 %q 不存在", sessionID)
 	}
 
 	// Layered guardrails: sanitize user input; flag injection attempts.
@@ -1066,7 +1066,7 @@ func (c *ChatService) ConfirmToolCall(sessionID, callID string, approved bool) e
 		return err
 	}
 	if resp.Session == nil {
-		return fmt.Errorf("session %q not found", sessionID)
+		return fmt.Errorf("会话 %q 不存在", sessionID)
 	}
 	pending := false
 	for ev := range resp.Session.Events().All() {
@@ -1102,7 +1102,7 @@ func (c *ChatService) ConfirmToolCall(sessionID, callID string, approved bool) e
 	cfg := c.S.Store.Get()
 	target := c.resolveSessionTarget(cfg, sessionID)
 	if target == nil {
-		return fmt.Errorf("session %q not found", sessionID)
+		return fmt.Errorf("会话 %q 不存在", sessionID)
 	}
 	agentCfg := c.targetAgentConfig(cfg, target)
 	guardOn := agentCfg == nil || agentkit.GuardrailsEnabled(*agentCfg)
@@ -1154,7 +1154,7 @@ func (c *ChatService) runTurn(target *config.ChatSession, guardOn bool, msg *gen
 			}
 		}
 		if root == nil {
-			return fmt.Errorf("team %q not found", target.TargetID)
+			return fmt.Errorf("团队 %q 不存在", target.TargetID)
 		}
 	case "remote":
 		for _, r := range cfg.RemoteAgents {
@@ -1164,7 +1164,7 @@ func (c *ChatService) runTurn(target *config.ChatSession, guardOn bool, msg *gen
 			}
 		}
 		if root == nil {
-			return fmt.Errorf("remote agent %q not found", target.TargetID)
+			return fmt.Errorf("远程 Agent %q 不存在", target.TargetID)
 		}
 	default:
 		for _, a := range cfg.Agents {
@@ -1176,7 +1176,7 @@ func (c *ChatService) runTurn(target *config.ChatSession, guardOn bool, msg *gen
 			}
 		}
 		if root == nil {
-			return fmt.Errorf("agent %q not found", target.TargetID)
+			return fmt.Errorf("Agent %q 不存在", target.TargetID)
 		}
 	}
 	if err != nil {
@@ -1483,7 +1483,7 @@ func (c *ChatService) ForkSession(sessionID string) (config.ChatSession, error) 
 	cfg := c.S.Store.Get()
 	src := c.resolveSessionTarget(cfg, sessionID)
 	if src == nil {
-		return config.ChatSession{}, fmt.Errorf("session %q not found", sessionID)
+		return config.ChatSession{}, fmt.Errorf("会话 %q 不存在", sessionID)
 	}
 	id := newID("sess_")
 	if _, err := c.sessions.Create(context.Background(), &session.CreateRequest{
@@ -1546,7 +1546,7 @@ func (c *ChatService) RememberSession(sessionID string) (int, error) {
 		return 0, err
 	}
 	if resp.Session == nil {
-		return 0, fmt.Errorf("session %q not found", sessionID)
+		return 0, fmt.Errorf("会话 %q 不存在", sessionID)
 	}
 	if c.S.Memory == nil {
 		return 0, fmt.Errorf("记忆服务不可用")
@@ -1600,7 +1600,7 @@ func (c *ChatService) SessionStats(sessionID string) (*SessionStats, error) {
 	cfg := c.S.Store.Get()
 	target := c.resolveSessionTarget(cfg, sessionID)
 	if target == nil {
-		return nil, fmt.Errorf("session %q not found", sessionID)
+		return nil, fmt.Errorf("会话 %q 不存在", sessionID)
 	}
 	resp, err := c.sessions.Get(context.Background(), &session.GetRequest{
 		AppName: c.appName, UserID: c.userID, SessionID: sessionID,

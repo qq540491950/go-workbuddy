@@ -224,7 +224,7 @@ type openaiCompatLLM struct {
 // protocol (OpenAI, DeepSeek, Kimi, Qwen, Ollama, vLLM, ...).
 func NewOpenAICompat(cfg OpenAICompatConfig) (model.LLM, error) {
 	if cfg.Model == "" {
-		return nil, fmt.Errorf("openai-compatible: model is required")
+		return nil, fmt.Errorf("OpenAI 兼容: 缺少模型 ID")
 	}
 	if cfg.BaseURL == "" {
 		cfg.BaseURL = "https://api.openai.com/v1"
@@ -451,7 +451,7 @@ func (o *openaiCompatLLM) GenerateContent(ctx context.Context, req *model.LLMReq
 				return
 			}
 			if full.Error != nil && full.Error.Message != "" {
-				yield(nil, fmt.Errorf("openai-compatible: %s", full.Error.Message))
+				yield(nil, fmt.Errorf("模型供应商错误（OpenAI 兼容）: %s", full.Error.Message))
 				return
 			}
 			usage = full.Usage
@@ -480,7 +480,7 @@ func (o *openaiCompatLLM) GenerateContent(ctx context.Context, req *model.LLMReq
 				continue
 			}
 			if chunk.Error != nil && chunk.Error.Message != "" {
-				yield(nil, fmt.Errorf("openai-compatible: %s", chunk.Error.Message))
+				yield(nil, fmt.Errorf("模型供应商错误（OpenAI 兼容）: %s", chunk.Error.Message))
 				return
 			}
 			if len(chunk.Choices) == 0 {
@@ -553,7 +553,7 @@ func (o *openaiCompatLLM) post(ctx context.Context, body oaRequest) (*http.Respo
 	}
 	if resp.StatusCode >= 400 {
 		defer resp.Body.Close()
-		return nil, fmt.Errorf("openai-compatible %s: HTTP %d: %s", o.cfg.Model, resp.StatusCode, readErrBody(resp.Body))
+		return nil, fmt.Errorf("OpenAI 兼容 %s: HTTP %d: %s", o.cfg.Model, resp.StatusCode, readErrBody(resp.Body))
 	}
 	return resp, nil
 }
@@ -575,7 +575,7 @@ type anthropicLLM struct {
 // NewAnthropic builds a model.LLM speaking the Anthropic Messages API.
 func NewAnthropic(cfg AnthropicConfig) (model.LLM, error) {
 	if cfg.Model == "" {
-		return nil, fmt.Errorf("anthropic: model is required")
+		return nil, fmt.Errorf("Anthropic: 缺少模型 ID")
 	}
 	if cfg.BaseURL == "" {
 		cfg.BaseURL = "https://api.anthropic.com"
@@ -740,7 +740,7 @@ func (a *anthropicLLM) GenerateContent(ctx context.Context, req *model.LLMReques
 				return
 			}
 			if full.Error != nil && full.Error.Message != "" {
-				yield(nil, fmt.Errorf("anthropic: %s", full.Error.Message))
+				yield(nil, fmt.Errorf("模型供应商错误（Anthropic）: %s", full.Error.Message))
 				return
 			}
 			usage = full.Usage
@@ -801,7 +801,7 @@ func (a *anthropicLLM) GenerateContent(ctx context.Context, req *model.LLMReques
 				if ev.Error != nil {
 					msg = ev.Error.Message
 				}
-				yield(nil, fmt.Errorf("anthropic: %s", msg))
+				yield(nil, fmt.Errorf("模型供应商错误（Anthropic）: %s", msg))
 				return
 			case "message_start":
 				if ev.Message != nil && ev.Message.Usage != nil {
@@ -905,7 +905,7 @@ func (a *anthropicLLM) post(ctx context.Context, body anRequest) (*http.Response
 	}
 	if resp.StatusCode >= 400 {
 		defer resp.Body.Close()
-		return nil, fmt.Errorf("anthropic %s: HTTP %d: %s", a.cfg.Model, resp.StatusCode, readErrBody(resp.Body))
+		return nil, fmt.Errorf("Anthropic %s: HTTP %d: %s", a.cfg.Model, resp.StatusCode, readErrBody(resp.Body))
 	}
 	return resp, nil
 }

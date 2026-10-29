@@ -47,7 +47,7 @@ func httpGetJSON(ctx context.Context, url string, headers map[string]string) (*h
 	}
 	if resp.StatusCode >= 400 {
 		defer resp.Body.Close()
-		return nil, fmt.Errorf("HTTP %d: %s", resp.StatusCode, readErrBody(resp.Body))
+		return nil, fmt.Errorf("供应商返回 HTTP %d: %s", resp.StatusCode, readErrBody(resp.Body))
 	}
 	return resp, nil
 }
@@ -83,7 +83,7 @@ func listOpenAIModels(ctx context.Context, p config.ModelProvider) ([]string, er
 		return nil, err
 	}
 	if out.Error != nil && out.Error.Message != "" {
-		return nil, fmt.Errorf("%s", out.Error.Message)
+		return nil, fmt.Errorf("供应商错误: %s", out.Error.Message)
 	}
 	ids := make([]string, 0, len(out.Data))
 	for _, m := range out.Data {

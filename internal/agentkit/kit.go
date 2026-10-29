@@ -30,7 +30,7 @@ import (
 // ModelFactory builds the model.LLM for a provider/model pair.
 func NewModelFromProvider(p config.ModelProvider, modelID string) (model.LLM, error) {
 	if modelID == "" {
-		return nil, fmt.Errorf("model id is required")
+		return nil, fmt.Errorf("缺少模型 ID")
 	}
 	switch p.Protocol {
 	case config.ProtocolAnthropic:
@@ -158,7 +158,7 @@ func (k *Kit) buildLLMAgentWithSubAgents(ac config.AgentConfig, cfg config.Confi
 		}
 	}
 	if provider == nil {
-		return nil, fmt.Errorf("agent %q: model provider not found", ac.Name)
+		return nil, fmt.Errorf("Agent「%s」找不到模型供应商，请重新选择", ac.Name)
 	}
 	m, err := NewModelFromProvider(*provider, ac.Model)
 	if err != nil {
@@ -360,7 +360,7 @@ func (k *Kit) BuildTeam(tc config.TeamConfig) (agent.Agent, string, error) {
 		}
 	}
 	if provider == nil {
-		return nil, "", fmt.Errorf("team %q: model provider not found for coordinator", tc.Name)
+		return nil, "", fmt.Errorf("团队「%s」的协调员缺少模型供应商", tc.Name)
 	}
 	m, err := NewModelFromProvider(*provider, tc.Model)
 	if err != nil {
@@ -665,7 +665,7 @@ func TimeTool() (tool.Tool, error) {
 		if args.Timezone != "" {
 			loc, err := time.LoadLocation(args.Timezone)
 			if err != nil {
-				return timeResult{}, fmt.Errorf("unknown timezone %q", args.Timezone)
+				return timeResult{}, fmt.Errorf("未知时区 %q", args.Timezone)
 			}
 			tz = loc
 			name = args.Timezone
@@ -685,7 +685,7 @@ func SafeWorkspacePath(workspace, rel string) (string, error) {
 
 func safeWorkspacePath(workspace, rel string) (string, error) {
 	if workspace == "" {
-		return "", fmt.Errorf("workspace directory is not configured")
+		return "", fmt.Errorf("未配置工作区目录")
 	}
 	absRoot, err := filepath.Abs(workspace)
 	if err != nil {
@@ -696,7 +696,7 @@ func safeWorkspacePath(workspace, rel string) (string, error) {
 		return "", err
 	}
 	if !strings.HasPrefix(full, absRoot+string(filepath.Separator)) && full != absRoot {
-		return "", fmt.Errorf("path escapes the workspace")
+		return "", fmt.Errorf("路径越出工作区范围")
 	}
 	// The lexical check above cannot see symlinks: a link inside the
 	// workspace pointing at ~/.ssh passes it. Resolve both sides and compare
@@ -709,7 +709,7 @@ func safeWorkspacePath(workspace, rel string) (string, error) {
 	realFull, err := filepath.EvalSymlinks(full)
 	if err == nil {
 		if !isWithin(realRoot, realFull) {
-			return "", fmt.Errorf("path escapes the workspace")
+			return "", fmt.Errorf("路径越出工作区范围")
 		}
 		return realFull, nil
 	}
@@ -721,7 +721,7 @@ func safeWorkspacePath(workspace, rel string) (string, error) {
 		realAncestor, aerr := filepath.EvalSymlinks(ancestor)
 		if aerr == nil {
 			if !isWithin(realRoot, realAncestor) {
-				return "", fmt.Errorf("path escapes the workspace")
+				return "", fmt.Errorf("路径越出工作区范围")
 			}
 			return full, nil
 		}
