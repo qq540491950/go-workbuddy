@@ -4,6 +4,11 @@
 
 ## 视觉测试与体验设计
 
+### 第一百三十五轮迭代：autoTitle 模型覆盖 e2e + 使用流程刷新（已实施）
+
+- `TestAutoTitleGeneratesTitle` 扩展：会话经 SetSessionModel 钉到覆盖模型后，标题侧调用请求体携带覆盖模型 ID（EffectiveModel 钳制贯通到命名路径的端到端证明）。
+- README「使用流程」第 6 步刷新：会话级模型切换、排队输入、⌘F 搜索、通知跳转与未读点。
+
 ### 第一百三十四轮迭代：产线烟雾复测（已实施）
 
 第 126–133 轮（前端表单/导出转义/未读标记等）之后的全量回归：`wails3 build` 生产构建成功，二进制启动存活、SIGTERM 优雅退出。README/AGENTS 补充 `npm test`（vitest）说明。

@@ -42,7 +42,7 @@ func TestAutoTitleGeneratesTitle(t *testing.T) {
 	if err := store.Update(func(cfg *config.Config) {
 		cfg.Providers = append(cfg.Providers, config.ModelProvider{
 			ID: "prov_at", Name: "Fake", Protocol: config.ProtocolOpenAI,
-			BaseURL: srv.URL, Models: []config.ModelInfo{{ID: "fake-mini"}},
+			BaseURL: srv.URL, Models: []config.ModelInfo{{ID: "fake-mini"}, {ID: "fake-large"}},
 		})
 		cfg.Agents = append(cfg.Agents, config.AgentConfig{
 			ID: "agent_at", Name: "助手", ProviderID: "prov_at", Model: "fake-mini",
@@ -65,6 +65,11 @@ func TestAutoTitleGeneratesTitle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// Pin the session to the overridden model: the title side call must use
+	// the same effective model as the conversation (EffectiveModel clamp).
+	if err := chat.SetSessionModel(sess.ID, "fake-large"); err != nil {
+		t.Fatal(err)
+	}
 	if err := chat.Send(sess.ID, "帮我规划写周报的完整流程", nil); err != nil {
 		t.Fatal(err)
 	}
@@ -82,6 +87,9 @@ func TestAutoTitleGeneratesTitle(t *testing.T) {
 			found := false
 			for _, b := range bodies {
 				if strings.Contains(b, "中文标题") {
+					if !strings.Contains(b, `"model":"fake-large"`) {
+						t.Fatalf("title side call ignored the session model override: %s", b)
+					}
 					found = true
 				}
 			}
