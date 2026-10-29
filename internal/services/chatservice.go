@@ -16,6 +16,7 @@ import (
 
 	"github.com/wailsapp/wails/v3/pkg/application"
 	"google.golang.org/adk/v2/agent"
+	adkmodel "google.golang.org/adk/v2/model"
 	"google.golang.org/adk/v2/runner"
 	"google.golang.org/adk/v2/session"
 	"google.golang.org/adk/v2/session/compaction"
@@ -1297,6 +1298,7 @@ func (c *ChatService) runTurn(target *config.ChatSession, guardOn bool, msg *gen
 	}
 
 	// Sidebar preview + auto-title from the first user message.
+	autoFallback := ""
 	if lastReply != "" || titleFromText != "" {
 		c.S.Store.Update(func(cfg *config.Config) {
 			for i := range cfg.Sessions {
@@ -1317,12 +1319,107 @@ func (c *ChatService) runTurn(target *config.ChatSession, guardOn bool, msg *gen
 						t = t[:30]
 					}
 					cfg.Sessions[i].Title = string(t)
+					autoFallback = string(t)
 				}
 			}
 		})
 	}
+	// Model-generated title replaces the truncated-text fallback once the
+	// first exchange completes (best-effort, async — never blocks the turn).
+	if autoFallback != "" && cfg.Settings.AutoTitleEnabled() {
+		go c.autoTitle(sessionID, cfg, autoFallback, titleFromText, lastReply)
+	}
 	return nil
 }
+
+// autoTitle asks the session's model for a short conversation title and
+// replaces the truncated-text fallback. Failures keep the fallback silently.
+func (c *ChatService) autoTitle(sessionID string, cfg config.Config, fallback, userText, reply string) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	target := c.resolveSessionTarget(cfg, sessionID)
+	if target == nil {
+		return
+	}
+	ac := c.targetAgentConfig(cfg, target)
+	if ac == nil {
+		return
+	}
+	var provider *config.ModelProvider
+	for i := range cfg.Providers {
+		if cfg.Providers[i].ID == ac.ProviderID {
+			provider = &cfg.Providers[i]
+			break
+		}
+	}
+	if provider == nil {
+		return
+	}
+	m, err := agentkit.NewModelFromProvider(*provider, ac.Model)
+	if err != nil {
+		return
+	}
+	modelID := ac.Model
+	if target.ModelOverride != "" {
+		modelID = target.ModelOverride
+	}
+	// Guardrail the quoted user content just like a normal turn.
+	prompt := "根据下面的对话开头，起一个不超过 12 个字的中文标题。只输出标题本身，不要引号、句号或任何解释。\n\n用户: " +
+		agentkit.ApplyOutputGuardrail(truncateRunes(userText, 200)) +
+		"\n助手: " + agentkit.ApplyOutputGuardrail(truncateRunes(reply, 200))
+	req := &adkmodel.LLMRequest{
+		Model: modelID,
+		Contents: []*genai.Content{
+			genai.NewContentFromText(prompt, genai.RoleUser),
+		},
+		Config: &genai.GenerateContentConfig{MaxOutputTokens: 40, Temperature: ptrFloat32(0.3)},
+	}
+	var title strings.Builder
+	for resp, err := range m.GenerateContent(ctx, req, false) {
+		if err != nil || ctx.Err() != nil {
+			return
+		}
+		if resp != nil && resp.Content != nil {
+			for _, p := range resp.Content.Parts {
+				if p != nil && p.Text != "" {
+					title.WriteString(p.Text)
+				}
+			}
+		}
+	}
+	clean := strings.TrimSpace(strings.Trim(title.String(), " \"'「」『』。.!!？?\n\t"))
+	clean = truncateRunes(clean, 30)
+	if clean == "" || strings.HasPrefix(clean, "{") {
+		return // empty or non-text payload: keep the fallback
+	}
+	err = c.S.Store.Update(func(cfg2 *config.Config) {
+		for i := range cfg2.Sessions {
+			// Only replace OUR fallback: a manual rename in between wins.
+			if cfg2.Sessions[i].ID == sessionID && cfg2.Sessions[i].Title == fallback {
+				cfg2.Sessions[i].Title = clean
+			}
+		}
+	})
+	if err != nil {
+		return
+	}
+	// Nudge the sidebar via the dedicated metadata event (a synthetic done
+	// would clobber the live usage/context indicators).
+	if app := application.Get(); app != nil {
+		app.Event.Emit("sessions:updated", sessionID)
+	}
+}
+
+// truncateRunes caps a string at maxRunes without splitting a UTF-8 rune.
+func truncateRunes(s string, maxRunes int) string {
+	r := []rune(strings.TrimSpace(s))
+	if len(r) <= maxRunes {
+		return string(r)
+	}
+	return string(r[:maxRunes])
+}
+
+func ptrFloat32(f float32) *float32 { return &f }
 
 // ForkSession duplicates a session's full ADK event history into a new chat
 // (branching): the user can regenerate/edit/confirm differently in the fork

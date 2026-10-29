@@ -202,6 +202,10 @@ type Settings struct {
 	// AutoRemember ingests every completed turn into long-term memory
 	// automatically (best-effort; failures are silent).
 	AutoRemember bool `json:"autoRemember,omitempty"`
+	// AutoTitle generates a short conversation title with the model after the
+	// first exchange. Opt-in (nil/false = off): the side model call would
+	// otherwise surprise every scripted model integration.
+	AutoTitle *bool `json:"autoTitle,omitempty"`
 	// HTTPProxy is a global outbound proxy URL (e.g. http://127.0.0.1:7890)
 	// applied to model/embedding/MCP requests at startup. Empty = direct.
 	HTTPProxy string `json:"httpProxy,omitempty"`
@@ -210,6 +214,11 @@ type Settings struct {
 	// intra-turn tail retention at the given prompt token count. 0 = off.
 	CompactionInterval       int `json:"compactionInterval,omitempty"`
 	CompactionTokenThreshold int `json:"compactionTokenThreshold,omitempty"`
+}
+
+// AutoTitleEnabled reports whether model-generated titles are wanted.
+func (s *Settings) AutoTitleEnabled() bool {
+	return s.AutoTitle != nil && *s.AutoTitle
 }
 
 // normalize fills zero values (older config files) with defaults.

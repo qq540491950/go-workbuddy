@@ -183,6 +183,21 @@ export function SettingsPage() {
             </div>
             <div className="flex items-center justify-between rounded-lg border p-3">
               <div>
+                <div className="text-sm font-medium">智能会话命名</div>
+                <div className="text-xs text-muted-foreground">首轮对话后由模型生成简短标题（关闭则截取首条消息前 30 字）</div>
+              </div>
+              <Switch
+                checked={settings.autoTitle == null ? false : settings.autoTitle}
+                onCheckedChange={(v) => {
+                  // Persist only this flag from the last-saved snapshot, like
+                  // autoRemember — never flush half-typed fields.
+                  update({ autoTitle: v });
+                  Config.SaveSettings({ ...(savedRef.current ?? settings), autoTitle: v }).catch((e) => toast.error(`保存失败: ${errText(e)}`));
+                }}
+              />
+            </div>
+            <div className="flex items-center justify-between rounded-lg border p-3">
+              <div>
                 <div className="text-sm font-medium">工具调用审计日志</div>
                 <div className="text-xs text-muted-foreground">将每次工具调用/结果以 JSONL 追加到应用日志目录（tools-audit.jsonl）</div>
               </div>

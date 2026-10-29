@@ -258,6 +258,13 @@ export function ChatPage() {
     };
   }, [activeID]);
 
+  // The backend nudges this event when it changes session metadata out of
+  // band (async model-generated titles), so the sidebar picks it up.
+  useEffect(() => {
+    const off = Events.On("sessions:updated", () => reloadSessions());
+    return off;
+  }, [reloadSessions]);
+
   // Stream events.
   useEffect(() => {
     const off = Events.On("chat:stream", (e: any) => {

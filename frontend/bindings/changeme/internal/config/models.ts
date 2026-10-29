@@ -343,6 +343,13 @@ export interface Settings {
     "autoRemember"?: boolean;
 
     /**
+     * AutoTitle generates a short conversation title with the model after the
+     * first exchange. Opt-in (nil/false = off): the side model call would
+     * otherwise surprise every scripted model integration.
+     */
+    "autoTitle"?: boolean | null;
+
+    /**
      * HTTPProxy is a global outbound proxy URL (e.g. http://127.0.0.1:7890)
      * applied to model/embedding/MCP requests at startup. Empty = direct.
      */
