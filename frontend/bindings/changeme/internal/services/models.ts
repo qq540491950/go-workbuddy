@@ -138,6 +138,13 @@ export interface ChatStreamEvent {
     "usage"?: UsageInfo | null;
 
     /**
+     * Attachments ride on user events so a just-sent message (and a
+     * regenerated one) renders its images without waiting for a history
+     * reload.
+     */
+    "attachments"?: AttachmentOut[] | null;
+
+    /**
      * SessionUsage is the cumulative usage of the session, set on done events.
      */
     "sessionUsage"?: UsageInfo | null;

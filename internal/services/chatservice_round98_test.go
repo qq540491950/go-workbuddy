@@ -61,7 +61,7 @@ func TestRegeneratePreservesAttachments(t *testing.T) {
 		turn++
 		_, _ = w.Write([]byte(sseText("第"+string(rune('0'+turn))+"次回答") + sseDone))
 	})
-	hookEvents(t)
+	events := hookEvents(t)
 
 	sess, err := chat.NewSession("agent", "agent_r", "")
 	if err != nil {
@@ -74,6 +74,17 @@ func TestRegeneratePreservesAttachments(t *testing.T) {
 	}
 	if len(*bodies) != 1 || !strings.Contains((*bodies)[0], base64.StdEncoding.EncodeToString(png)) {
 		t.Fatalf("first send missing image payload")
+	}
+	// The user stream event must carry the attachment so the optimistic UI
+	// renders the image without waiting for a history reload.
+	var sawAtt bool
+	for _, ev := range *events {
+		if ev.Kind == "user" && len(ev.Attachments) == 1 && strings.Contains(ev.Attachments[0].DataURL, base64.StdEncoding.EncodeToString(png)) {
+			sawAtt = true
+		}
+	}
+	if !sawAtt {
+		t.Fatal("user stream event missing attachment")
 	}
 
 	if err := chat.Regenerate(sess.ID); err != nil {

@@ -11,13 +11,13 @@
 | 模块 | 说明 |
 | --- | --- |
 | 模型配置 | 支持 OpenAI 兼容协议（OpenAI / DeepSeek / Kimi / Qwen / Ollama / vLLM…）、Anthropic（Claude）、Google Gemini 三种协议；可配 Base URL、API Key、模型列表（多模态/上下文窗口/价格元数据，可从 /models 拉取）、默认供应商，并一键测试连通性 |
-| Agents | 自定义名称、描述、系统提示词、Temperature / MaxTokens，挂载 Skills、MCP 工具与内置工具（时间查询、工作区文件读写、知识库检索、长期记忆）；安全护栏（密钥脱敏/注入检测）；运行护栏（单轮超时/工具调用上限）；写入文件 HITL 人工确认；单个导出/导入分享 |
+| Agents | 自定义名称、描述、系统提示词、Temperature / MaxTokens / 停止序列，挂载 Skills、MCP 工具与内置工具（时间查询、工作区文件读写、知识库检索、长期记忆、任务计划 plan_todos）；安全护栏（密钥脱敏/注入检测）；运行护栏（单轮超时/工具调用上限）；写入文件 HITL 人工确认；单个导出/导入分享 |
 | 远程 Agent | A2A 协议（官方 a2a-go）：连接远程 Agent 直接对话（Agent Card 自动发现 + 连通性检查），也可作为团队成员参与协作；本应用亦可作为 A2A 服务端对外发布本地 Agent |
 | Agent 团队 | 多 Agent 协作：自动协调员模式（系统合成协调员分派任务）或指定负责人模式；基于 ADK 的 agent 转移机制（transfer）实现委派；支持远程 A2A 成员 |
 | Skills | 可复用技能指令包，保存为标准 SKILL.md（YAML frontmatter + Markdown），由 ADK Skill Toolset 以渐进式披露方式供模型按需加载；支持从工作区 skills/ 目录批量导入 |
 | MCP 服务 | 通过 stdio（本地命令）或 Streamable HTTP（远程）连接 MCP 服务器，发现并列出工具，挂载到 Agent；远程服务器支持 Bearer / API Key / OAuth 2.1（授权码 + PKCE，令牌持久化静默刷新）认证 |
 | 知识库 | 工作区 knowledge/ 目录检索：可配置 Embedding 供应商升级为「向量语义 + 关键词」混合检索（本地增量向量索引，SQLite） |
-| 对话 | 流式输出（SSE）、工具调用/结果实时展示、团队对话中显示各成员输出、随时停止、工具执行人工确认（HITL）、会话置顶/分叉/并行运行、后台完成提示、上下文窗口占用指示与高水位提醒、Token 用量与成本（含按日明细）、Markdown 导出、会话历史持久化（ADK Database Session Service + 纯 Go SQLite 驱动） |
+| 对话 | 流式输出（SSE）、工具调用/结果实时展示、团队对话中显示各成员输出、随时停止、工具执行人工确认（HITL）、会话置顶/分叉/并行运行、后台完成提示、上下文窗口占用指示与高水位提醒、Token 用量与成本（含按日明细）、任务计划清单卡与置顶进度条、图片粘贴/拖放/重生成保留附件、Markdown 导出、会话历史持久化（ADK Database Session Service + 纯 Go SQLite 驱动） |
 | 桌面集成 | 系统托盘（显示/隐藏/退出）、全局快捷键（⌘⇧Space 唤起）、深浅主题 / 强调色 / 字号、语音输入与朗读 |
 | 设置与迁移 | 工作区目录、外观、语义检索 Embedding 配置、A2A 服务启停、配置备份导出/导入（版本化、可脱敏）、Agent 分享 |
 

@@ -76,6 +76,10 @@ type ChatStreamEvent struct {
 	Hint string `json:"hint,omitempty"`
 	// Usage is set on the final assistant message event of a turn.
 	Usage *UsageInfo `json:"usage,omitempty"`
+	// Attachments ride on user events so a just-sent message (and a
+	// regenerated one) renders its images without waiting for a history
+	// reload.
+	Attachments []AttachmentOut `json:"attachments,omitempty"`
 	// SessionUsage is the cumulative usage of the session, set on done events.
 	SessionUsage *UsageInfo `json:"sessionUsage,omitempty"`
 }
@@ -142,6 +146,25 @@ func buildUserContent(text string, atts []AttachmentIn) (*genai.Content, error) 
 		})
 	}
 	return content, nil
+}
+
+// attachmentsOut converts the user message's inline images into the render
+// form used by chat history and stream events.
+func attachmentsOut(content *genai.Content) []AttachmentOut {
+	if content == nil {
+		return nil
+	}
+	var out []AttachmentOut
+	for _, p := range content.Parts {
+		if p != nil && p.InlineData != nil && len(p.InlineData.Data) > 0 {
+			out = append(out, AttachmentOut{
+				Name:    "attachment-" + strconv.Itoa(len(out)+1),
+				MIME:    p.InlineData.MIMEType,
+				DataURL: "data:" + p.InlineData.MIMEType + ";base64," + base64.StdEncoding.EncodeToString(p.InlineData.Data),
+			})
+		}
+	}
+	return out
 }
 
 // ChatService manages chat sessions and streaming runs over ADK.
@@ -1122,7 +1145,7 @@ func (c *ChatService) runTurn(target *config.ChatSession, guardOn bool, msg *gen
 		return nil
 	}
 	if titleFromText != "" {
-		emit(ChatStreamEvent{Kind: "user", Text: titleFromText})
+		emit(ChatStreamEvent{Kind: "user", Text: titleFromText, Attachments: attachmentsOut(msg)})
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())

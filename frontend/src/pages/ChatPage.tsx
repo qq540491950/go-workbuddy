@@ -269,7 +269,7 @@ export function ChatPage() {
       setMessages((prev) => {
         switch (ev.kind) {
           case "user":
-            return [...prev, { id: nextId(), kind: "user", author: "user", text: ev.text, timestamp: new Date().toISOString() }];
+            return [...prev, { id: nextId(), kind: "user", author: "user", text: ev.text, timestamp: new Date().toISOString(), attachments: ev.attachments ?? null }];
           case "delta": {
             const last = prev[prev.length - 1];
             if (last && last.streaming && last.author === ev.author) {
@@ -727,6 +727,18 @@ export function ChatPage() {
   // Precompute once per message change instead of scanning the tail for every
   // rendered row (that was O(n^2) per token).
   const editFlags = useMemo(() => computeEditFlags(messages), [messages]);
+  // Latest session plan (plan_todos result): pinned above the composer so
+  // multi-step progress stays visible after later messages scroll by.
+  const activePlan = useMemo(() => {
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const m = messages[i];
+      const todos = m.toolResp?.todos;
+      if (m.kind === "tool_result" && m.toolName === "plan_todos" && Array.isArray(todos) && todos.length > 0) {
+        return todos as TodoItem[];
+      }
+    }
+    return null;
+  }, [messages]);
   const visibleMessages = useMemo(() => messages.slice(-RENDER_LIMIT), [messages]);
   const slashSuggestions = useMemo(() => {
     if (!input.startsWith("/")) return [];
@@ -988,6 +1000,11 @@ export function ChatPage() {
         </ScrollArea>
 
         <div className="border-t p-3">
+          {activePlan && (
+            <div className="mx-auto mb-2 max-w-3xl">
+              <PlanStrip todos={activePlan} />
+            </div>
+          )}
           <div className="mx-auto max-w-3xl">
             {editing && (
               <div className="mb-2 flex items-center justify-between rounded-md border border-primary/40 bg-primary/5 px-3 py-1.5 text-xs text-muted-foreground">
@@ -1344,6 +1361,25 @@ function TodoListCard({ resp }: { resp: { [k: string]: any } | null }) {
           </li>
         ))}
       </ul>
+    </div>
+  );
+}
+
+/** PlanStrip is the compact pinned view of the model's session plan. */
+function PlanStrip({ todos }: { todos: TodoItem[] }) {
+  const done = todos.filter((t) => t.status === "completed").length;
+  const current = todos.find((t) => t.status === "in_progress");
+  return (
+    <div className="rounded-lg border bg-muted/30 px-3 py-2 text-xs">
+      <div className="flex items-center gap-2">
+        <ListTodo className="h-3.5 w-3.5 shrink-0 text-primary" />
+        <span className="shrink-0 font-medium">任务计划</span>
+        <span className="shrink-0 text-muted-foreground">{done}/{todos.length} 完成</span>
+        {current && <span className="min-w-0 flex-1 truncate text-muted-foreground">· 当前：{current.content}</span>}
+        <div className="ml-auto h-1 w-16 shrink-0 overflow-hidden rounded-full bg-muted">
+          <div className="h-full rounded-full bg-primary transition-all" style={{ width: `${(done / todos.length) * 100}%` }} />
+        </div>
+      </div>
     </div>
   );
 }
