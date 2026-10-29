@@ -386,7 +386,14 @@ func (a *AppService) ExportConfig(includeSecrets bool) (string, error) {
 	if includeSecrets {
 		perm = 0o600 // contains API keys
 	}
-	path := filepath.Join(dir, fmt.Sprintf("workbuddy-config-%s.json", nowUTC().Format("20060102-150405")))
+	// Distinct names: a masked (shareable) backup must never be mistaken for
+	// the secrets-bearing one, and same-second exports must not overwrite
+	// each other.
+	suffix := "redacted"
+	if includeSecrets {
+		suffix = "secrets"
+	}
+	path := filepath.Join(dir, fmt.Sprintf("workbuddy-config-%s-%s.json", nowUTC().Format("20060102-150405"), suffix))
 	if err := os.WriteFile(path, data, perm); err != nil {
 		return "", err
 	}

@@ -123,12 +123,16 @@ export function AgentsPage() {
       toast.error("请填写 Agent 名称");
       return;
     }
+    // Hand-typed numbers bypass the input min/max; clamp so providers never
+    // receive out-of-range values (OpenAI rejects temperature > 2).
+    const temperature = Math.min(2, Math.max(0, editing.temperature || 0));
+    const maxTokens = editing.maxTokens > 0 ? Math.floor(editing.maxTokens) : 0;
     if (!editing.providerId || !editing.model) {
       toast.error("请选择供应商与模型");
       return;
     }
     try {
-      await Config.SaveAgent(editing);
+      await Config.SaveAgent({ ...editing, temperature, maxTokens });
       toast.success("已保存");
       setEditing(null);
       reload();
@@ -155,7 +159,11 @@ export function AgentsPage() {
       return;
     }
     try {
-      await Config.SaveRemoteAgent(remoteEditing);
+      await Config.SaveRemoteAgent({
+        ...remoteEditing,
+        name: remoteEditing.name.trim(),
+        cardUrl: remoteEditing.cardUrl.trim(),
+      });
       toast.success("远程 Agent 已保存");
       setRemoteEditing(null);
       setRemoteCheck(null);
@@ -166,14 +174,18 @@ export function AgentsPage() {
   };
 
   const checkRemote = async () => {
-    if (!remoteEditing?.cardUrl.trim()) {
+    const url = remoteEditing?.cardUrl.trim();
+    if (!url) {
       toast.error("请先填写 Card URL");
       return;
     }
     setChecking(true);
     setRemoteCheck(null);
     try {
-      setRemoteCheck(await Config.CheckRemoteAgent(remoteEditing.cardUrl.trim()));
+      const result = await Config.CheckRemoteAgent(url);
+      // Stale-response guard: the user may have edited the URL while the
+      // check was in flight — the old result must not describe the new URL.
+      if (remoteEditing?.cardUrl.trim() === url) setRemoteCheck(result);
     } catch (e) {
       toast.error(`连接失败: ${errText(e)}`);
     } finally {

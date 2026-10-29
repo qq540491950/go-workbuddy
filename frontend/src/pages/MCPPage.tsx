@@ -56,6 +56,14 @@ export function MCPPage() {
         const map: Record<string, ServerStatus> = {};
         for (const s of ss ?? []) map[s.id] = s;
         setStatuses(map);
+        // Lazy connects (a chat turn building the toolset) also raise
+        // mcp:auth-pending without a page-side connect() to clear the badge —
+        // clear it once that server reached a terminal state.
+        setAuthPendingServer((pending) => {
+          if (!pending) return null;
+          const st = Object.values(map).find((x) => x.name === pending);
+          return st && (st.state === "connected" || st.state === "error") ? null : pending;
+        });
       })
       .catch((e) => toast.error(`加载状态失败: ${errText(e)}`));
   }, []);
@@ -83,7 +91,15 @@ export function MCPPage() {
       ...editing,
       args: argsText.split("\n").map((x) => x.trim()).filter(Boolean),
       env: Object.fromEntries(
-        envText.split("\n").map((l) => l.split("=", 2)).filter((p) => p.length === 2 && p[0].trim()) as [string, string][],
+        envText
+          .split("\n")
+          .map((l) => {
+            // split("=", 2) truncates values containing '=' (base64 padding,
+            // connection strings) — split at the FIRST '=' only.
+            const i = l.indexOf("=");
+            return i > 0 ? [l.slice(0, i), l.slice(i + 1)] : null;
+          })
+          .filter((p): p is [string, string] => !!p && p[0].trim().length > 0),
       ),
     };
     try {
@@ -115,8 +131,13 @@ export function MCPPage() {
   };
 
   const disconnect = async (s: MCPServerConfig) => {
-    await MCP.Disconnect(s.id);
-    reload();
+    try {
+      await MCP.Disconnect(s.id);
+    } catch (e) {
+      toast.error(`断开失败: ${errText(e)}`);
+    } finally {
+      reload();
+    }
   };
 
   const remove = async (s: MCPServerConfig) => {

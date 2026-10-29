@@ -71,11 +71,19 @@ const SLASH_COMMANDS = [
   { cmd: "/new", desc: "新建对话" },
 ];
 
-/** fmtTime renders an ISO timestamp as local HH:MM for hover display. */
+/** fmtTime renders an ISO timestamp for hover display: HH:MM for today,
+ * MM-DD HH:MM otherwise (long-lived sessions span days). */
 function fmtTime(iso?: string): string {
   if (!iso) return "";
   const d = new Date(iso);
-  return isNaN(d.getTime()) ? "" : d.toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" });
+  if (isNaN(d.getTime())) return "";
+  const time = d.toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" });
+  const today = new Date();
+  if (d.getFullYear() === today.getFullYear() && d.getMonth() === today.getMonth() && d.getDate() === today.getDate()) {
+    return time;
+  }
+  const day = `${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  return `${day} ${time}`;
 }
 
 /** speechSupported reports whether speech recognition is available. */

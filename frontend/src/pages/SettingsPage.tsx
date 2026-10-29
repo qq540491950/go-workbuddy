@@ -192,7 +192,10 @@ export function SettingsPage() {
                   // Persist only this flag from the last-saved snapshot, like
                   // autoRemember — never flush half-typed fields.
                   update({ autoTitle: v });
-                  Config.SaveSettings({ ...(savedRef.current ?? settings), autoTitle: v }).catch((e) => toast.error(`保存失败: ${errText(e)}`));
+                  const next = { ...(savedRef.current ?? settings), autoTitle: v };
+                  Config.SaveSettings(next)
+                    .then(() => { savedRef.current = next; })
+                    .catch((e) => toast.error(`保存失败: ${errText(e)}`));
                 }}
               />
             </div>
@@ -420,7 +423,10 @@ export function SettingsPage() {
                   // flush any half-typed proxy/workspace field the user left
                   // unsaved elsewhere on the page.
                   update({ autoRemember: v });
-                  Config.SaveSettings({ ...(savedRef.current ?? settings), autoRemember: v }).catch((e) => toast.error(`保存失败: ${errText(e)}`));
+                  const nextMem = { ...(savedRef.current ?? settings), autoRemember: v };
+                  Config.SaveSettings(nextMem)
+                    .then(() => { savedRef.current = nextMem; })
+                    .catch((e) => toast.error(`保存失败: ${errText(e)}`));
                 }}
               />
             </div>
