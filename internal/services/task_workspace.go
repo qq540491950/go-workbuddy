@@ -190,10 +190,12 @@ func workspaceConflict(cfg config.Config, workspace, excludeSessionID string) er
 
 func samePath(a, b string) bool {
 	a, b = filepath.Clean(a), filepath.Clean(b)
-	if runtime.GOOS == "windows" {
-		return strings.EqualFold(a, b)
+	if a == b || runtime.GOOS == "windows" && strings.EqualFold(a, b) {
+		return true
 	}
-	return a == b
+	aInfo, aErr := os.Stat(a)
+	bInfo, bErr := os.Stat(b)
+	return aErr == nil && bErr == nil && os.SameFile(aInfo, bInfo)
 }
 
 func cleanupCreatedDir(path string) {

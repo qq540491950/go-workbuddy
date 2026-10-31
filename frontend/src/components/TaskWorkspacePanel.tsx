@@ -10,6 +10,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { ArtifactPreview } from "@/components/ToolCallCard";
 import {
   Artifact, errText, WorkspaceChangeStatus,
+  WorkspaceFileKind,
   type TaskWorkspaceSnapshot, type WorkspaceFileInfo,
 } from "@/lib/api";
 import { cn } from "@/lib/utils";
@@ -51,7 +52,7 @@ function FileRow({ file, onPreview }: {
   file: WorkspaceFileInfo;
   onPreview: (path: string) => void;
 }) {
-  const icon = file.kind === "image" || file.kind === "pdf"
+  const icon = file.kind === WorkspaceFileKind.FileKindImage || file.kind === WorkspaceFileKind.FileKindPDF
     ? <FileImage className="h-4 w-4" />
     : <FileText className="h-4 w-4" />;
   return (
@@ -220,7 +221,7 @@ export function TaskWorkspacePanel({ sessionID, workspace, open, running, refres
               role="tab"
               id={`task-tab-${value}`}
               aria-selected={tab === value}
-              aria-controls={`task-panel-${value}`}
+              aria-controls={tab === value ? `task-panel-${value}` : undefined}
               tabIndex={tab === value ? 0 : -1}
               className={cn(
                 "border-b-2 px-1 py-2 text-xs transition-colors",
@@ -266,7 +267,7 @@ export function TaskWorkspacePanel({ sessionID, workspace, open, running, refres
           {tab === "changes" && activeSnapshot && (activeSnapshot.added + activeSnapshot.modified + activeSnapshot.deleted > 0) && (
             <div className="flex flex-wrap gap-1.5 border-b px-3 py-2" role="group" aria-label="变更筛选">
               {([
-                ["all", "全部", changes.length],
+                ["all", "全部", activeSnapshot.added + activeSnapshot.modified + activeSnapshot.deleted],
                 [WorkspaceChangeStatus.ChangeAdded, "新增", activeSnapshot.added],
                 [WorkspaceChangeStatus.ChangeModified, "修改", activeSnapshot.modified],
                 [WorkspaceChangeStatus.ChangeDeleted, "删除", activeSnapshot.deleted],

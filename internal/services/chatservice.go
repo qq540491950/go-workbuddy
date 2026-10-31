@@ -228,10 +228,10 @@ func (c *ChatService) NewSession(targetType, targetID, title string) (config.Cha
 // NewSessionWithWorkspace creates a task session. An empty workspaceDir asks
 // the backend to create a unique directory under the global workspace.
 func (c *ChatService) NewSessionWithWorkspace(targetType, targetID, title, workspaceDir string) (config.ChatSession, error) {
-	return c.newSession(targetType, targetID, title, workspaceDir, true)
+	return c.newSession(targetType, targetID, title, workspaceDir)
 }
 
-func (c *ChatService) newSession(targetType, targetID, title, workspaceDir string, taskWorkspace bool) (config.ChatSession, error) {
+func (c *ChatService) newSession(targetType, targetID, title, workspaceDir string) (config.ChatSession, error) {
 	if targetType != "agent" && targetType != "team" && targetType != "remote" {
 		return config.ChatSession{}, fmt.Errorf("invalid target type %q", targetType)
 	}
@@ -240,35 +240,33 @@ func (c *ChatService) newSession(targetType, targetID, title, workspaceDir strin
 	}
 	id := newID("sess_")
 	createdDir := ""
-	if taskWorkspace {
-		c.workspaceMu.Lock()
-		defer c.workspaceMu.Unlock()
-		if strings.TrimSpace(workspaceDir) == "" {
-			global := strings.TrimSpace(c.S.Store.Get().Settings.WorkspaceDir)
-			if global == "" {
-				return config.ChatSession{}, fmt.Errorf("工作区目录未配置")
-			}
-			workspaceDir = filepath.Join(global, "tasks", id)
-			if err := os.MkdirAll(workspaceDir, 0o755); err != nil {
-				return config.ChatSession{}, fmt.Errorf("创建任务工作区失败: %w", err)
-			}
-			createdDir = workspaceDir
+	c.workspaceMu.Lock()
+	defer c.workspaceMu.Unlock()
+	if strings.TrimSpace(workspaceDir) == "" {
+		global := strings.TrimSpace(c.S.Store.Get().Settings.WorkspaceDir)
+		if global == "" {
+			return config.ChatSession{}, fmt.Errorf("工作区目录未配置")
 		}
-		var err error
-		workspaceDir, err = validateTaskWorkspace(workspaceDir)
-		if err != nil {
-			cleanupCreatedDir(createdDir)
-			return config.ChatSession{}, err
+		workspaceDir = filepath.Join(global, "tasks", id)
+		if err := os.MkdirAll(workspaceDir, 0o755); err != nil {
+			return config.ChatSession{}, fmt.Errorf("创建任务工作区失败: %w", err)
 		}
-		if err := workspaceConflict(c.S.Store.Get(), workspaceDir, ""); err != nil {
-			cleanupCreatedDir(createdDir)
-			return config.ChatSession{}, err
-		}
-		if _, err := ensureTaskBaseline(c.S.Store, id, workspaceDir); err != nil {
-			cleanupCreatedDir(createdDir)
-			removeTaskBaseline(c.S.Store, id)
-			return config.ChatSession{}, err
-		}
+		createdDir = workspaceDir
+	}
+	var err error
+	workspaceDir, err = validateTaskWorkspace(workspaceDir)
+	if err != nil {
+		cleanupCreatedDir(createdDir)
+		return config.ChatSession{}, err
+	}
+	if err := workspaceConflict(c.S.Store.Get(), workspaceDir, ""); err != nil {
+		cleanupCreatedDir(createdDir)
+		return config.ChatSession{}, err
+	}
+	if _, err := ensureTaskBaseline(c.S.Store, id, workspaceDir); err != nil {
+		cleanupCreatedDir(createdDir)
+		removeTaskBaseline(c.S.Store, id)
+		return config.ChatSession{}, err
 	}
 	cs := config.ChatSession{
 		ID:           id,
@@ -281,9 +279,7 @@ func (c *ChatService) newSession(targetType, targetID, title, workspaceDir strin
 	}
 	cleanup := func() {
 		cleanupCreatedDir(createdDir)
-		if taskWorkspace {
-			removeTaskBaseline(c.S.Store, id)
-		}
+		removeTaskBaseline(c.S.Store, id)
 	}
 	if _, err := c.sessions.Create(context.Background(), &session.CreateRequest{
 		AppName:   c.appName,
@@ -293,7 +289,7 @@ func (c *ChatService) newSession(targetType, targetID, title, workspaceDir strin
 		cleanup()
 		return config.ChatSession{}, err
 	}
-	err := c.S.Store.Update(func(cfg *config.Config) {
+	err = c.S.Store.Update(func(cfg *config.Config) {
 		cfg.Sessions = append([]config.ChatSession{cs}, cfg.Sessions...)
 	})
 	if err == nil {
@@ -377,15 +373,45 @@ func (c *ChatService) SetSessionModel(sessionID, modelID string) error {
 // ArchiveSession toggles the archived flag of a session (archived sessions
 // are hidden from the default sidebar list but never deleted).
 func (c *ChatService) ArchiveSession(id string, archived bool) error {
-	err := c.mutateSession(id, func(s *config.ChatSession) { s.Archived = archived })
-	if err == nil {
-		phase := "session_archived"
-		if !archived {
-			phase = "session_unarchived"
+	if archived {
+		err := c.mutateSession(id, func(s *config.ChatSession) { s.Archived = true })
+		if err == nil {
+			c.audit(id, "session_archived", "system", "session", mustJSON(map[string]bool{"archived": true}), "")
 		}
-		c.audit(id, phase, "system", "session", mustJSON(map[string]bool{"archived": archived}), "")
+		return err
 	}
-	return err
+
+	c.workspaceMu.Lock()
+	defer c.workspaceMu.Unlock()
+	var conflict, notFound error
+	err := c.S.Store.Update(func(cfg *config.Config) {
+		for i := range cfg.Sessions {
+			if cfg.Sessions[i].ID != id {
+				continue
+			}
+			if ws := strings.TrimSpace(cfg.Sessions[i].WorkspaceDir); ws != "" {
+				if err := workspaceConflict(*cfg, ws, id); err != nil {
+					conflict = err
+					return
+				}
+			}
+			cfg.Sessions[i].Archived = false
+			cfg.Sessions[i].UpdatedAt = nowUTC()
+			return
+		}
+		notFound = fmt.Errorf("会话 %q 不存在", id)
+	})
+	if err != nil {
+		return err
+	}
+	if conflict != nil {
+		return conflict
+	}
+	if notFound != nil {
+		return notFound
+	}
+	c.audit(id, "session_unarchived", "system", "session", mustJSON(map[string]bool{"archived": false}), "")
+	return nil
 }
 
 // PinSession toggles the pinned flag of a session.

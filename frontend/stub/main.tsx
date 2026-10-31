@@ -105,10 +105,15 @@ const histories: Record<string, any[]> = {
 let pendingAnswer = 0;
 type TaskSnapshotMode = "success" | "empty" | "error" | "truncated" | "slow";
 // Browser walks can request empty/error/truncated/slow states with ?taskMode=.
-const requestedTaskSnapshotMode = new URLSearchParams(window.location.search).get("taskMode");
+const stubParams = new URLSearchParams(window.location.search);
+const requestedTaskSnapshotMode = stubParams.get("taskMode");
 let taskSnapshotMode: TaskSnapshotMode = (["success", "empty", "error", "truncated", "slow"] as const).includes(
   requestedTaskSnapshotMode as TaskSnapshotMode,
 ) ? requestedTaskSnapshotMode as TaskSnapshotMode : "success";
+const workspaceMockMode = stubParams.get("workspaceMode") === "conflict"
+  ? "conflict"
+  : stubParams.get("workspaceMode") === "error" ? "error" : "success";
+const dialogMode = stubParams.get("dialogMode") === "cancel" ? "cancel" : "select";
 
 const handlers: Record<string, (args: any[]) => any> = {
   // GetConfig
@@ -133,6 +138,8 @@ const handlers: Record<string, (args: any[]) => any> = {
   },
   // NewSessionWithWorkspace(targetType, targetID, title, workspaceDir)
   "2938112124": (args) => {
+    if (workspaceMockMode === "conflict") throw new Error("工作区已被任务「需要确认的写入」使用，请选择其他目录");
+    if (workspaceMockMode === "error") throw new Error("工作区不可写");
     const id = `sess_stub_${seedConfig.sessions.length + 1}`;
     const sess = {
       id,
@@ -149,6 +156,8 @@ const handlers: Record<string, (args: any[]) => any> = {
   },
   // SetSessionWorkspace(sessionID, workspaceDir)
   "3910017842": (args) => {
+    if (workspaceMockMode === "conflict") throw new Error("工作区已被任务「需要确认的写入」使用，请选择其他目录");
+    if (workspaceMockMode === "error") throw new Error("工作区不可写");
     const sess = seedConfig.sessions.find((s) => s.id === args[0]);
     if (sess) sess.workspaceDir = args[1];
     return null;
@@ -266,6 +275,9 @@ const handlers: Record<string, (args: any[]) => any> = {
 (window as any).__seedConfig = seedConfig;
 setTransport({
   call: async (_objectID, _method, _windowName, descriptor) => {
+    if (_objectID === 5 && _method === 4) {
+      return dialogMode === "cancel" ? "" : "/tmp/workbuddy-picked";
+    }
     (window as any).__lastCalls.push(descriptor);
     // The descriptor {call-id, methodID, args} arrives as the args slot.
     const opt = (descriptor && typeof descriptor === "object"

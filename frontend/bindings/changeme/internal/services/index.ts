@@ -17,7 +17,8 @@ export {
 };
 
 export {
-    WorkspaceChangeStatus
+    WorkspaceChangeStatus,
+    WorkspaceFileKind
 } from "./models.js";
 
 export type {

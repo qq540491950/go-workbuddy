@@ -275,9 +275,26 @@ export enum WorkspaceChangeStatus {
 export interface WorkspaceFileInfo {
     "name": string;
     "path": string;
-    "kind": string;
+    "kind": WorkspaceFileKind;
     "size": number;
     "modTime": string;
     "previewable": boolean;
     "status"?: WorkspaceChangeStatus;
 }
+
+/**
+ * WorkspaceFileKind is the preview category of a task file.
+ */
+export enum WorkspaceFileKind {
+    /**
+     * The Go zero value for the underlying type of the enum.
+     */
+    $zero = "",
+
+    FileKindImage = "image",
+    FileKindPDF = "pdf",
+    FileKindMarkdown = "markdown",
+    FileKindText = "text",
+    FileKindBinary = "binary",
+    FileKindUnknown = "unknown",
+};

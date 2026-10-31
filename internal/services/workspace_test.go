@@ -1,6 +1,7 @@
 package services
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -15,12 +16,33 @@ import (
 	"changeme/internal/agentkit"
 	"changeme/internal/config"
 	"changeme/internal/mcpmgr"
+
+	"google.golang.org/adk/v2/session"
 )
 
 // newLegacySession keeps pre-task-workspace tests on their original global
 // fallback without exposing a test-only constructor through Wails.
 func (c *ChatService) newLegacySession(targetType, targetID, title string) (config.ChatSession, error) {
-	return c.newSession(targetType, targetID, title, "", false)
+	if title == "" {
+		title = "新对话"
+	}
+	id := newID("sess_")
+	cs := config.ChatSession{
+		ID: id, Title: title, TargetType: targetType, TargetID: targetID,
+		CreatedAt: nowUTC(), UpdatedAt: nowUTC(),
+	}
+	if _, err := c.sessions.Create(context.Background(), &session.CreateRequest{
+		AppName: c.appName, UserID: c.userID, SessionID: id,
+	}); err != nil {
+		return config.ChatSession{}, err
+	}
+	err := c.S.Store.Update(func(cfg *config.Config) {
+		cfg.Sessions = append([]config.ChatSession{cs}, cfg.Sessions...)
+	})
+	if err == nil {
+		c.audit(cs.ID, "session_created", "system", targetType, mustJSON(map[string]string{"targetId": targetID, "title": cs.Title}), "")
+	}
+	return cs, err
 }
 
 func newWorkspaceTestChat(t *testing.T, handler http.HandlerFunc) (*ChatService, *config.Store, string) {
@@ -403,6 +425,52 @@ func TestArchiveSessionKeepsWorkspaceAndSnapshots(t *testing.T) {
 	}
 }
 
+func TestUnarchiveRejectsWorkspaceNowUsedByActiveTask(t *testing.T) {
+	chat, _, _ := newWorkspaceTestChat(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte(sseText("ok") + sseDone))
+	})
+	first, err := chat.NewSessionWithWorkspace("agent", "agent_ws", "first", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := chat.ArchiveSession(first.ID, true); err != nil {
+		t.Fatal(err)
+	}
+	second, err := chat.NewSessionWithWorkspace("agent", "agent_ws", "second", first.WorkspaceDir)
+	if err != nil {
+		t.Fatalf("archived workspace was not reusable: %v", err)
+	}
+	if err := chat.ArchiveSession(first.ID, false); err == nil || !strings.Contains(err.Error(), "已被") {
+		t.Fatalf("expected unarchive conflict, got %v", err)
+	}
+	for _, sess := range chat.S.Store.Get().Sessions {
+		if sess.ID == first.ID && !sess.Archived {
+			t.Fatal("conflicting session was unarchived")
+		}
+	}
+	if err := chat.ArchiveSession(second.ID, true); err != nil {
+		t.Fatal(err)
+	}
+	if err := chat.ArchiveSession(first.ID, false); err != nil {
+		t.Fatalf("unarchive should succeed after the active task released the directory: %v", err)
+	}
+}
+
+func TestSamePathUsesFilesystemIdentity(t *testing.T) {
+	dir := t.TempDir()
+	caseVariant := strings.ToUpper(dir)
+	if caseVariant == dir {
+		caseVariant = strings.ToLower(dir)
+	}
+	if _, err := os.Stat(caseVariant); err != nil {
+		t.Skip("filesystem is case-sensitive; alternate-case path does not exist")
+	}
+	if !samePath(dir, caseVariant) {
+		t.Fatalf("same directory with different case was not recognized: %q vs %q", dir, caseVariant)
+	}
+}
+
 func TestConcurrentTaskSnapshotsStayIsolated(t *testing.T) {
 	chat, _, _ := newWorkspaceTestChat(t, func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/event-stream")
@@ -447,6 +515,83 @@ func TestConcurrentTaskSnapshotsStayIsolated(t *testing.T) {
 	close(errs)
 	for err := range errs {
 		t.Error(err)
+	}
+}
+
+func TestParallelTaskWritesAndSnapshotsAreIsolated(t *testing.T) {
+	chat, _, _ := newWorkspaceTestChat(t, func(w http.ResponseWriter, r *http.Request) {
+		body := readAll(r)
+		time.Sleep(10 * time.Millisecond)
+		w.Header().Set("Content-Type", "text/event-stream")
+		if strings.Contains(body, `\"ok\":true`) {
+			_, _ = w.Write([]byte(sseText("written") + sseDone))
+			return
+		}
+		label := "A"
+		if strings.Contains(body, "write-b") {
+			label = "B"
+		}
+		_, _ = w.Write([]byte(sseToolCall("call_"+label, "write_workspace_file",
+			fmt.Sprintf(`"{\"path\":\"same.txt\",\"content\":\"%s\"}"`, label)) + sseDone))
+	})
+	a, err := chat.NewSessionWithWorkspace("agent", "agent_ws", "A", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := chat.NewSessionWithWorkspace("agent", "agent_ws", "B", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	art := NewArtifactService(chat.S)
+	errs := make(chan error, 110)
+	var sends sync.WaitGroup
+	var snapshots sync.WaitGroup
+	sends.Add(2)
+	go func() {
+		defer sends.Done()
+		if err := chat.Send(a.ID, "write-a", nil); err != nil {
+			errs <- err
+		}
+	}()
+	go func() {
+		defer sends.Done()
+		if err := chat.Send(b.ID, "write-b", nil); err != nil {
+			errs <- err
+		}
+	}()
+	for i := 0; i < 50; i++ {
+		for _, sess := range []config.ChatSession{a, b} {
+			snapshots.Add(1)
+			go func(sess config.ChatSession) {
+				defer snapshots.Done()
+				snap, err := art.TaskWorkspaceSnapshot(sess.ID)
+				if err != nil {
+					errs <- err
+					return
+				}
+				if snap.Workspace != sess.WorkspaceDir {
+					errs <- fmt.Errorf("snapshot %s used %q, want %q", sess.ID, snap.Workspace, sess.WorkspaceDir)
+				}
+			}(sess)
+		}
+	}
+	sends.Wait()
+	snapshots.Wait()
+	close(errs)
+	for err := range errs {
+		t.Error(err)
+	}
+	for _, tc := range []struct {
+		sess config.ChatSession
+		want string
+	}{{a, "A"}, {b, "B"}} {
+		file, err := art.OpenForSession(tc.sess.ID, "same.txt")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if file.Text != tc.want {
+			t.Fatalf("%s read %q, want %q", tc.sess.ID, file.Text, tc.want)
+		}
 	}
 }
 

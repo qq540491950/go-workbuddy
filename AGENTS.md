@@ -43,6 +43,7 @@ internal/mcpmgr/             # MCP 服务器生命周期；auth.go = Bearer/API-
 internal/memory/             # 长期记忆（ADK memory.Service，SQLite）
 internal/services/           # Wails 服务（前端可调用 RPC）
   chatservice.go             #   会话/对话核心：runTurn 共享引擎、HITL 确认、分叉、并行
+  task_workspace.go          #   任务目录校验、会话级改绑锁与工作区 RPC
   workspace_snapshot.go      #   任务快照基线、产物与文件级变更
   artifactservice.go         #   会话级文件列表/预览与安全扫描
   a2aservice.go              #   A2A 服务端（对外发布本地 Agent）

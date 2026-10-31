@@ -73,6 +73,26 @@ func TestOpenMarkdownArtifact(t *testing.T) {
 	}
 }
 
+func TestOpenExtensionlessArtifactDetectsText(t *testing.T) {
+	svc, ws := newArtifactFixture(t)
+	if err := os.WriteFile(filepath.Join(ws, "Makefile"), []byte("all:\n\t@echo ok\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	art, err := svc.Open("Makefile")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if art.Kind != "text" || !strings.Contains(art.Text, "echo ok") {
+		t.Fatalf("extensionless text artifact = %+v", art)
+	}
+	if err := os.WriteFile(filepath.Join(ws, "blob"), []byte{0x00, 0xFF}, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.Open("blob"); err == nil {
+		t.Fatal("expected extensionless binary rejection")
+	}
+}
+
 // TestOpenTruncatesLargeText pins the preview contract for oversized text
 // files: the tail is cut at a rune boundary with the truncated flag set, and
 // the payload stays bounded (the read itself stops at the cap).

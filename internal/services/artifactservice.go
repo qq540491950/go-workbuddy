@@ -50,11 +50,23 @@ const (
 	ChangeDeleted  WorkspaceChangeStatus = "deleted"
 )
 
+// WorkspaceFileKind is the preview category of a task file.
+type WorkspaceFileKind string
+
+const (
+	FileKindImage    WorkspaceFileKind = "image"
+	FileKindPDF      WorkspaceFileKind = "pdf"
+	FileKindMarkdown WorkspaceFileKind = "markdown"
+	FileKindText     WorkspaceFileKind = "text"
+	FileKindBinary   WorkspaceFileKind = "binary"
+	FileKindUnknown  WorkspaceFileKind = "unknown"
+)
+
 // WorkspaceFileInfo is one file in a task workspace snapshot.
 type WorkspaceFileInfo struct {
 	Name        string                `json:"name"`
 	Path        string                `json:"path"`
-	Kind        string                `json:"kind"`
+	Kind        WorkspaceFileKind     `json:"kind"`
 	Size        int64                 `json:"size"`
 	ModTime     time.Time             `json:"modTime"`
 	Previewable bool                  `json:"previewable"`
@@ -85,55 +97,81 @@ func NewArtifactService(s *Services) *ArtifactService { return &ArtifactService{
 
 type artifactFormat struct {
 	MIME        string
-	Kind        string
+	Kind        WorkspaceFileKind
 	Previewable bool
 }
 
 var artifactFormats = map[string]artifactFormat{
-	".png":      {"image/png", "image", true},
-	".jpg":      {"image/jpeg", "image", true},
-	".jpeg":     {"image/jpeg", "image", true},
-	".gif":      {"image/gif", "image", true},
-	".webp":     {"image/webp", "image", true},
-	".svg":      {"image/svg+xml", "image", true},
-	".bmp":      {"image/bmp", "image", true},
-	".ico":      {"image/x-icon", "image", true},
-	".pdf":      {"application/pdf", "pdf", true},
-	".md":       {"text/markdown", "markdown", true},
-	".markdown": {"text/markdown", "markdown", true},
-	".txt":      {"text/plain", "text", true},
-	".log":      {"text/plain", "text", true},
-	".csv":      {"text/csv", "text", true},
-	".json":     {"application/json", "text", true},
-	".yaml":     {"text/yaml", "text", true},
-	".yml":      {"text/yaml", "text", true},
-	".xml":      {"application/xml", "text", true},
-	".html":     {"text/html", "text", true},
-	".htm":      {"text/html", "text", true},
-	".go":       {"text/x-go", "text", true},
-	".ts":       {"text/typescript", "text", true},
-	".tsx":      {"text/typescript", "text", true},
-	".js":       {"text/javascript", "text", true},
-	".jsx":      {"text/javascript", "text", true},
-	".py":       {"text/x-python", "text", true},
-	".rs":       {"text/x-rust", "text", true},
-	".java":     {"text/x-java", "text", true},
-	".c":        {"text/x-c", "text", true},
-	".h":        {"text/x-c", "text", true},
-	".cpp":      {"text/x-c++", "text", true},
-	".sh":       {"text/x-shellscript", "text", true},
-	".sql":      {"text/x-sql", "text", true},
-	".toml":     {"text/plain", "text", true},
-	".ini":      {"text/plain", "text", true},
-	".css":      {"text/css", "text", true},
-	".wasm":     {"application/wasm", "binary", false},
+	".png":      {"image/png", FileKindImage, true},
+	".jpg":      {"image/jpeg", FileKindImage, true},
+	".jpeg":     {"image/jpeg", FileKindImage, true},
+	".gif":      {"image/gif", FileKindImage, true},
+	".webp":     {"image/webp", FileKindImage, true},
+	".svg":      {"image/svg+xml", FileKindImage, true},
+	".bmp":      {"image/bmp", FileKindImage, true},
+	".ico":      {"image/x-icon", FileKindImage, true},
+	".pdf":      {"application/pdf", FileKindPDF, true},
+	".md":       {"text/markdown", FileKindMarkdown, true},
+	".markdown": {"text/markdown", FileKindMarkdown, true},
+	".txt":      {"text/plain", FileKindText, true},
+	".log":      {"text/plain", FileKindText, true},
+	".csv":      {"text/csv", FileKindText, true},
+	".json":     {"application/json", FileKindText, true},
+	".yaml":     {"text/yaml", FileKindText, true},
+	".yml":      {"text/yaml", FileKindText, true},
+	".xml":      {"application/xml", FileKindText, true},
+	".html":     {"text/html", FileKindText, true},
+	".htm":      {"text/html", FileKindText, true},
+	".go":       {"text/x-go", FileKindText, true},
+	".ts":       {"text/typescript", FileKindText, true},
+	".tsx":      {"text/typescript", FileKindText, true},
+	".js":       {"text/javascript", FileKindText, true},
+	".jsx":      {"text/javascript", FileKindText, true},
+	".py":       {"text/x-python", FileKindText, true},
+	".rs":       {"text/x-rust", FileKindText, true},
+	".java":     {"text/x-java", FileKindText, true},
+	".c":        {"text/x-c", FileKindText, true},
+	".h":        {"text/x-c", FileKindText, true},
+	".cpp":      {"text/x-c++", FileKindText, true},
+	".sh":       {"text/x-shellscript", FileKindText, true},
+	".sql":      {"text/x-sql", FileKindText, true},
+	".toml":     {"text/plain", FileKindText, true},
+	".ini":      {"text/plain", FileKindText, true},
+	".css":      {"text/css", FileKindText, true},
+	".wasm":     {"application/wasm", FileKindBinary, false},
+	".exe":      {"application/octet-stream", FileKindBinary, false},
+	".dll":      {"application/octet-stream", FileKindBinary, false},
+	".so":       {"application/octet-stream", FileKindBinary, false},
+	".dylib":    {"application/octet-stream", FileKindBinary, false},
+	".bin":      {"application/octet-stream", FileKindBinary, false},
+	".dat":      {"application/octet-stream", FileKindBinary, false},
+	".zip":      {"application/zip", FileKindBinary, false},
+	".gz":       {"application/gzip", FileKindBinary, false},
+	".tar":      {"application/x-tar", FileKindBinary, false},
+	".7z":       {"application/x-7z-compressed", FileKindBinary, false},
+	".rar":      {"application/vnd.rar", FileKindBinary, false},
+	".doc":      {"application/msword", FileKindBinary, false},
+	".docx":     {"application/vnd.openxmlformats-officedocument.wordprocessingml.document", FileKindBinary, false},
+	".xls":      {"application/vnd.ms-excel", FileKindBinary, false},
+	".xlsx":     {"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", FileKindBinary, false},
+	".ppt":      {"application/vnd.ms-powerpoint", FileKindBinary, false},
+	".pptx":     {"application/vnd.openxmlformats-officedocument.presentationml.presentation", FileKindBinary, false},
+	".mp3":      {"audio/mpeg", FileKindBinary, false},
+	".wav":      {"audio/wav", FileKindBinary, false},
+	".mp4":      {"video/mp4", FileKindBinary, false},
+	".mov":      {"video/quicktime", FileKindBinary, false},
+	".avi":      {"video/x-msvideo", FileKindBinary, false},
+	".ttf":      {"font/ttf", FileKindBinary, false},
+	".otf":      {"font/otf", FileKindBinary, false},
+	".woff":     {"font/woff", FileKindBinary, false},
+	".woff2":    {"font/woff2", FileKindBinary, false},
 }
 
 func artifactFormatForExt(ext string) artifactFormat {
 	if format, ok := artifactFormats[ext]; ok {
 		return format
 	}
-	return artifactFormat{MIME: "application/octet-stream", Kind: "binary"}
+	return artifactFormat{MIME: "application/octet-stream", Kind: FileKindUnknown, Previewable: true}
 }
 
 // workspace resolves the configured workspace directory.
@@ -189,8 +227,9 @@ func (a *ArtifactService) openIn(ws, relPath string) (*Artifact, error) {
 		MIME: format.MIME,
 		Size: st.Size(),
 	}
+	art.Kind = string(format.Kind)
 	switch kind := format.Kind; kind {
-	case "image", "pdf":
+	case FileKindImage, FileKindPDF:
 		if st.Size() > maxBinaryArtifact {
 			return nil, fmt.Errorf("文件超过预览上限（%d MB）", maxBinaryArtifact>>20)
 		}
@@ -198,11 +237,10 @@ func (a *ArtifactService) openIn(ws, relPath string) (*Artifact, error) {
 		if err != nil {
 			return nil, err
 		}
-		art.Kind = kind
+		art.Kind = string(kind)
 		art.DataURL = "data:" + format.MIME + ";base64," + base64.StdEncoding.EncodeToString(data)
 		return art, nil
 	default:
-		art.Kind = kind
 		text, truncated, err := agentkit.ReadBoundedFile(abs, maxTextArtifact)
 		if err != nil {
 			return nil, err
@@ -210,6 +248,9 @@ func (a *ArtifactService) openIn(ws, relPath string) (*Artifact, error) {
 		art.Truncated = truncated
 		if !utf8.ValidString(text) {
 			return nil, fmt.Errorf("仅支持预览文本文件（%s 是二进制文件）", art.Name)
+		}
+		if kind == FileKindUnknown {
+			art.Kind = string(FileKindText)
 		}
 		art.Text = text
 		return art, nil
@@ -330,7 +371,7 @@ func (a *ArtifactService) List() ([]ArtifactInfo, error) {
 		if !f.Previewable {
 			continue
 		}
-		out = append(out, ArtifactInfo{Name: f.Name, Path: f.Path, Kind: f.Kind, Size: f.Size})
+		out = append(out, ArtifactInfo{Name: f.Name, Path: f.Path, Kind: string(f.Kind), Size: f.Size})
 	}
 	if len(out) > snapshotListLimit {
 		out = out[:snapshotListLimit]
