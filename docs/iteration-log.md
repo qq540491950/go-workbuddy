@@ -4,6 +4,24 @@
 
 ## 视觉测试与体验设计
 
+### 第一百四十三轮迭代：代码审查修复批次（已实施）
+
+依据：对本仓库后端核心包与前端聊天主链路的全面代码审查（Windows 实测复现 5 个测试失败 + OAuth 授权截断），产出规格 issue #1 与票据 #2–#9，本批次逐票实施。
+
+实现要点：
+
+- **票 #2（Windows OAuth）**：浏览器启动命令提取为纯函数；Windows 由 `cmd /c start` 改为 rundll32 FileProtocolHandler——cmd 会把授权 URL 中第一个 `&` 当命令分隔符，授权流程必然失败。
+- **票 #3（全局代理）**：空配置由禁用代理改为委托 `ProxyFromEnvironment`；已配置代理时 127.0.0.1 / localhost / ::1 直连（本地 Ollama / 本地 MCP / A2A 回环流量不再进代理）。
+- **票 #4（测试可移植性）**：测试内 gorm / 会话库 / 知识索引 / 旋转日志句柄统一 Cleanup 关闭；POSIX 权限断言在 Windows 跳过。`go test ./internal/... .` 在 Windows 由 5 失败转全绿。
+- **票 #5（会话一致性）**：运行句柄携带完成信号，Regenerate / EditAndResend / DeleteSession「取消并等待（10s 兜底）」；顺带修复存量 bug——ADK 会话 Delete 只删 sessions 行，DeleteSession 现显式清理事件孤儿行（可被全文搜索永久命中）。
+- **票 #6（检索一致性）**：knowledge 目录整体删除后索引清空；嵌入部分失败保留成功文件并聚合报错点名失败文件；记忆 LIKE 通配符转义对齐会话搜索。
+- **票 #7（IO 有界化）**：ReadBoundedFile / WriteBoundedFile——读取到 64KB 即停、截断回退完整 UTF-8 字符；写文件工具 6MB 上限拒绝；产物预览文本分支同走有界读取。
+- **票 #8（导入体验）**：ImportAgent 返回 {agent, warnings}，悬空技能 / MCP 引用导入时剥离并 toast 警告；技能导入去重键统一为 MaterializedSkillName（中文名不再互相覆盖 SKILL.md）；Wails 绑定再生成。
+- **票 #9（进程回收）**：Manager.CloseAll 幂等全量断开，接入应用关闭钩子，stdio MCP 子进程不孤儿化。
+- **审查修复（双轴 code-review）**：动历史入口等待该会话**全部**活动句柄（不止当前）；关闭钩子顺序改为先停 A2A 再断 MCP；Disconnect 清空陈旧错误；导入悬空引用清洗去重；补 EditAndResend 慢 SSE、逐句柄等待、导入后可构建、`_` 字面匹配、陈旧错误清理五组测试。
+
+测试证据：`go test ./internal/... .` Windows 全绿；`go test -race` 因本机缺失 C 工具链以 `-count=3` 重复运行替代；`npx tsc --noEmit`、vitest 11 用例、`npm run build` 全部通过；范围外（大文件拆分、A2A 鉴权等）见 issue #1 的 Out of Scope。
+
 ### 第一百四十轮迭代：保活验证（05:47 ALL GREEN）
 
 ### 第一百四十二轮迭代：收官验证（06:54 ALL GREEN）
