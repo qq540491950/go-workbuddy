@@ -4,6 +4,18 @@
 
 ## 视觉测试与体验设计
 
+### 第一百四十八轮迭代：MCP stdio 命令尾随空白导致连接失败修复（已实施）
+
+依据：用户反馈 MCP 页添加 npx 型 stdio 服务（`npx -y tavily-mcp`）点连接即报 `failed to list MCP tools: failed to init MCP session: exec: "npx ": executable file not found in %PATH%`，而同机其他 Agent 客户端配置同一服务正常。错误引号内的尾随空格暴露根因：命令输入框的值原样入库（前端仅对「参数」逐行 trim，command、后端 `SaveMCPServer` 与 `buildTransport` 全链路无规范化），`exec.Command("npx ")` 的 `LookPath("npx ")` 永远匹配不到 `npx.cmd`——与 PATH 无关，其他客户端的 JSON 配置不引入尾随空白故不受影响。
+
+实现要点：
+
+- **运行时兜底**：`buildTransport` stdio 分支对 Command `TrimSpace`、Args 逐项 trim 并丢弃空白项；streamable-http 的 URL 同步 trim——已入库的脏配置（如现存 `"npx "`）无需重新保存即可恢复连接。
+- **保存侧止血**：`SaveMCPServer` 落库前规范化 Name / Command / URL / Args，UI 保存与配置导入两条路径统一；规范化在 changed 判定之前执行，脏配置改存后能正确触发旧连接失效。
+- **空 Args 保持 nil**：`Store.Get()` 深拷贝会把空切片还原为 nil，若规范化产出空非 nil 切片，JSON 比较（`[]` vs `null`）每次都判 changed，未变更保存也会误断缓存连接——规范化后空集回落 nil，与新测试共同钉住该语义。前端无需改动。
+
+测试证据：新增 `TestBuildTransportTrimsStdioCommand`（修复前红，报错 `exec: "cmd ": executable file not found in %PATH%` 与用户症状同形；修复后命令解析成功且 Args 保持 `["-y","tavily-mcp"]`）与 `TestSaveMCPServerNormalizesWhitespace`（落库值全部去空白）；回归中抓出空 Args 误判 changed 问题并以 nil 语义修复，`TestSaveMCPServerInvalidatesStaleConnection` 保持通过；`go test ./internal/...` 与 `go vet ./internal/... .` 全绿。
+
 ### 第一百四十七轮迭代：聊天页垂直溢出修复——输入框被顶出窗口（已实施）
 
 依据：用户反馈直聊会话「UI 有很大的问题」并附 maximized 截图：长回复底部发送按钮被窗口边缘裁切；实机复现（814px 高窗口）更严重——两轮长对话后整个 composer 被推出窗口外完全不可见，消息区也无法滚动，历史消息低于折叠线的部分永远读不到。桩页几何测量定位根因：shadcn `ScrollArea` Root 自基线起缺失默认的 `overflow-hidden`，在 `h-screen` 列布局中作为 `flex-1` 子项时自动最小尺寸（`min-height: auto`）等于内容高度，flexbox 无法把它收缩到可用空间以内——实测消息区 Root 高 921px（视口仅 720px）、`scrollHeight == clientHeight`（自身不滚），整列被内容撑高后由 App 根的 `overflow-hidden` 裁掉底部。

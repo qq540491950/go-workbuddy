@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"strings"
 	"sync"
 	"time"
 
@@ -121,26 +122,36 @@ func (m *Manager) buildTransportFor(cfg config.MCPServerConfig) (mcp.Transport, 
 func buildTransport(cfg config.MCPServerConfig, tokenStore *config.Store, onAuthPending func(authURL string)) (mcp.Transport, error) {
 	switch cfg.Transport {
 	case config.MCPStreamableHTTP:
-		if cfg.URL == "" {
+		endpoint := strings.TrimSpace(cfg.URL)
+		if endpoint == "" {
 			return nil, fmt.Errorf("streamable-http 传输需要填写 URL")
 		}
 		switch cfg.AuthType {
 		case "oauth2":
 			return newOAuthTransport(cfg, tokenStore, onAuthPending)
 		case "bearer", "api-key":
-			return &mcp.StreamableClientTransport{Endpoint: cfg.URL, HTTPClient: authHTTPClient(cfg)}, nil
+			return &mcp.StreamableClientTransport{Endpoint: endpoint, HTTPClient: authHTTPClient(cfg)}, nil
 		}
 		if len(cfg.Headers) > 0 {
 			// Custom headers were configurable but historically unused; apply
 			// them now via the transport's HTTP client.
-			return &mcp.StreamableClientTransport{Endpoint: cfg.URL, HTTPClient: headersOnlyClient(cfg)}, nil
+			return &mcp.StreamableClientTransport{Endpoint: endpoint, HTTPClient: headersOnlyClient(cfg)}, nil
 		}
-		return &mcp.StreamableClientTransport{Endpoint: cfg.URL}, nil
+		return &mcp.StreamableClientTransport{Endpoint: endpoint}, nil
 	default: // stdio
-		if cfg.Command == "" {
+		// UI paste and hand-edited configs routinely carry trailing spaces
+		// ("npx "); LookPath can never match those, so trim before exec.
+		command := strings.TrimSpace(cfg.Command)
+		if command == "" {
 			return nil, fmt.Errorf("stdio 传输需要填写启动命令")
 		}
-		cmd := exec.Command(cfg.Command, cfg.Args...)
+		args := make([]string, 0, len(cfg.Args))
+		for _, a := range cfg.Args {
+			if a = strings.TrimSpace(a); a != "" {
+				args = append(args, a)
+			}
+		}
+		cmd := exec.Command(command, args...)
 		if len(cfg.Env) > 0 {
 			env := os.Environ()
 			for k, v := range cfg.Env {

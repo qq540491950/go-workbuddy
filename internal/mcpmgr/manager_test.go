@@ -3,10 +3,56 @@ package mcpmgr
 import (
 	"fmt"
 	"net"
+	"path/filepath"
+	"runtime"
+	"strings"
 	"testing"
 
 	"changeme/internal/config"
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
+
+// TestBuildTransportTrimsStdioCommand: pasted or imported configs can carry
+// stray whitespace ("npx "); exec must see the trimmed command and args, or
+// LookPath fails with "executable file not found in %PATH%".
+func TestBuildTransportTrimsStdioCommand(t *testing.T) {
+	base := "sh"
+	if runtime.GOOS == "windows" {
+		base = "cmd"
+	}
+	cfg := config.MCPServerConfig{
+		ID:        "srv1",
+		Name:      "S",
+		Transport: config.MCPStdio,
+		Command:   base + " ",
+		Args:      []string{" -y ", "tavily-mcp", " "},
+	}
+	tr, err := buildTransport(cfg, nil, nil)
+	if err != nil {
+		t.Fatalf("buildTransport: %v", err)
+	}
+	cmdTr, ok := tr.(*mcp.CommandTransport)
+	if !ok {
+		t.Fatalf("expected *mcp.CommandTransport, got %T", tr)
+	}
+	cmd := cmdTr.Command
+	if cmd.Err != nil {
+		t.Fatalf("command %q must resolve after trim, got: %v", cfg.Command, cmd.Err)
+	}
+	got := strings.TrimSuffix(filepath.Base(cmd.Path), filepath.Ext(cmd.Path))
+	if got != base {
+		t.Fatalf("resolved command = %q, want base %q", cmd.Path, base)
+	}
+	wantArgs := []string{base, "-y", "tavily-mcp"}
+	if len(cmd.Args) != len(wantArgs) {
+		t.Fatalf("args = %q, want %q", cmd.Args, wantArgs)
+	}
+	for i := range wantArgs {
+		if cmd.Args[i] != wantArgs[i] {
+			t.Fatalf("args = %q, want %q", cmd.Args, wantArgs)
+		}
+	}
+}
 
 // TestToolsetCachedUntilDisconnect pins the manager contract: toolsets are
 // keyed by server ID and reused across calls; Disconnect drops the cache so

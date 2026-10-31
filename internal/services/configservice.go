@@ -412,6 +412,21 @@ func (c *ConfigService) DeleteSkill(id string) error {
 // toolsets by ID forever, so without this the next turn would keep talking to
 // the OLD transport (URL, token, args, env) while the UI shows the new one.
 func (c *ConfigService) SaveMCPServer(s config.MCPServerConfig) error {
+	// Normalize before validation and the changed-check: pasted whitespace
+	// ("npx ") would persist verbatim and break stdio exec at connect time.
+	s.Name = strings.TrimSpace(s.Name)
+	s.Command = strings.TrimSpace(s.Command)
+	s.URL = strings.TrimSpace(s.URL)
+	// Stay nil when empty: Store.Get's deep copy maps empty slices to nil, so
+	// an empty-non-nil Args would make every unchanged save look "changed"
+	// and needlessly drop the cached MCP connection.
+	var args []string
+	for _, a := range s.Args {
+		if a = strings.TrimSpace(a); a != "" {
+			args = append(args, a)
+		}
+	}
+	s.Args = args
 	if s.Name == "" {
 		return fmt.Errorf("请填写服务器名称")
 	}
