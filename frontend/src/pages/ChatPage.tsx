@@ -1399,7 +1399,7 @@ export function ChatPage() {
           </div>
         </ScrollArea>
 
-        <div className="border-t p-3">
+        <div className="shrink-0 border-t p-3">
           {activePlan && (
             <div className="mx-auto mb-2 max-w-3xl">
               <PlanStrip todos={activePlan} />
@@ -1539,7 +1539,9 @@ export function ChatPage() {
                 // Typing stays available while a reply streams (matching the
                 // desktops this app mirrors); send() guards the running state.
                 disabled={!active && providerCount === 0}
-                className={cn(listening && "border-primary/60 ring-1 ring-primary/40")}
+                // Cap the growing textarea so a long paste shrinks the message
+                // list instead of squeezing the composer out of the viewport.
+                className={cn("max-h-48 overflow-y-auto", listening && "border-primary/60 ring-1 ring-primary/40")}
               />
               <input
                 ref={fileRef}

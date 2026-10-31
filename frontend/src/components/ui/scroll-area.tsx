@@ -14,7 +14,11 @@ function ScrollArea({
   return (
     <ScrollAreaPrimitive.Root
       data-slot="scroll-area"
-      className={cn("relative", className)}
+      // overflow-hidden is load-bearing: as a flex-1 child of a fixed-height
+      // column it resets the automatic min-size so flexbox can shrink the
+      // area below its content height; otherwise long chats push the composer
+      // out of the window and the area itself can never scroll.
+      className={cn("relative overflow-hidden", className)}
       {...props}
     >
       <ScrollAreaPrimitive.Viewport

@@ -4,6 +4,18 @@
 
 ## 视觉测试与体验设计
 
+### 第一百四十七轮迭代：聊天页垂直溢出修复——输入框被顶出窗口（已实施）
+
+依据：用户反馈直聊会话「UI 有很大的问题」并附 maximized 截图：长回复底部发送按钮被窗口边缘裁切；实机复现（814px 高窗口）更严重——两轮长对话后整个 composer 被推出窗口外完全不可见，消息区也无法滚动，历史消息低于折叠线的部分永远读不到。桩页几何测量定位根因：shadcn `ScrollArea` Root 自基线起缺失默认的 `overflow-hidden`，在 `h-screen` 列布局中作为 `flex-1` 子项时自动最小尺寸（`min-height: auto`）等于内容高度，flexbox 无法把它收缩到可用空间以内——实测消息区 Root 高 921px（视口仅 720px）、`scrollHeight == clientHeight`（自身不滚），整列被内容撑高后由 App 根的 `overflow-hidden` 裁掉底部。
+
+实现要点：
+
+- **`scroll-area.tsx` Root 恢复 `overflow-hidden`**（shadcn 默认值）：非 visible 的 overflow 使 flex 子项自动最小尺寸归零，`flex-1` 重新生效——消息区收缩到剩余空间、radix Viewport 正确接管内部滚动；会话列表与任务结果区的 ScrollArea 同步受益。
+- **composer 防挤占**：输入区容器加 `shrink-0`，textarea 加 `max-h-48 overflow-y-auto`——长文本粘贴时输入框封顶 12rem 并内部滚动，消息区让位而不是把 composer 顶出窗口。
+- **视觉桩补直聊场景**：stub 种子新增空目标直聊会话（长 Markdown 回复，与用户实况一致），作为本轮回归的走查夹具。
+
+测试证据：桩页（720px 视口）修复前后对比——修复前消息区 Root `overflow: visible`、高 921px、composer 顶部 748px（窗口外）；修复后 Root `overflow: hidden`、高 578px、composer 底部 708px（窗口内），Viewport `scrollHeight 921 > clientHeight 578` 可滚且能滚回顶部看到日期分隔与首条消息；2100 字符粘贴 textarea 稳定在 192px 并内部滚动。新增 `scroll-area.test.tsx` SSR 断言 Root 必须携带 `overflow-hidden`（防止再次回归）；`vitest` 12 用例、`tsc --noEmit`、生产构建全部通过。
+
 ### 第一百四十六轮迭代：直聊会话与 @ 助手路由，滚动条与设置页修复（已实施）
 
 依据：用户反馈对齐 Codex / Claude Code / WorkBuddy 的对话模型——对话不应要求先创建 Agent，助手应通过 `@` 按需唤起；同时指出设置页布局失衡与全站滚动条观感问题。代码审查确认三处根因：新对话对话框在无 Agent 时死锁（必须先建 Agent）；全站无 `::-webkit-scrollbar` 样式，WebView2 深色主题渲染 15px 亮色原生滚动条且与聊天区 radix ScrollArea 风格割裂；设置页为唯一未居中的 `max-w-xl` 窄列（实测 1217px 视口中右侧空置 640px）。另发现既有缺陷：非 ASCII Agent 名经 `sanitizeAgentName` 变为 `agent_<hash>`，聊天气泡与流事件直接显示该哈希。
