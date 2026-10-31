@@ -52,7 +52,7 @@ func newConfirmTestChat(t *testing.T, handler http.HandlerFunc) (*ChatService, *
 	if err != nil {
 		t.Fatal(err)
 	}
-	db, sessions, err := newTestSessionService(filepath.Join(dir, "sessions.db"))
+	db, sessions, err := newTestSessionService(t, filepath.Join(dir, "sessions.db"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -271,7 +271,7 @@ func TestChatToolConfirmationRestartResume(t *testing.T) {
 	}
 
 	// "Restart": rebuild the service over the same sessions DB and config.
-	db2, sessions2, err := newTestSessionService(filepath.Join(dir, "sessions.db"))
+	db2, sessions2, err := newTestSessionService(t, filepath.Join(dir, "sessions.db"))
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -59,7 +59,7 @@ func TestStorageStatsAndVacuum(t *testing.T) {
 	dir := t.TempDir()
 	dbPath := filepath.Join(dir, "sessions.db")
 	kPath := filepath.Join(dir, "knowledge.index.db")
-	db, _, err := newTestSessionService(dbPath)
+	db, _, err := newTestSessionService(t, dbPath)
 	if err != nil {
 		t.Fatal(err)
 	}

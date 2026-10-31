@@ -125,7 +125,12 @@ func TestChatSemanticKnowledgeE2E(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	db, sessions, err := newTestSessionService(filepath.Join(dir, "sessions.db"))
+	t.Cleanup(func() {
+		if sqlDB, err := idx.DB.DB(); err == nil {
+			_ = sqlDB.Close()
+		}
+	})
+	db, sessions, err := newTestSessionService(t, filepath.Join(dir, "sessions.db"))
 	if err != nil {
 		t.Fatal(err)
 	}

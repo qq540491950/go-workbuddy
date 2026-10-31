@@ -52,7 +52,7 @@ func newChatFixture(t *testing.T, reply *atomic.Value) (*ChatService, config.Cha
 	}); err != nil {
 		t.Fatal(err)
 	}
-	db, sessions, err := newTestSessionService(filepath.Join(dir, "sessions.db"))
+	db, sessions, err := newTestSessionService(t, filepath.Join(dir, "sessions.db"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -241,7 +241,7 @@ func TestSendWithImageAttachment(t *testing.T) {
 		})
 		cfg.Agents = append(cfg.Agents, config.AgentConfig{ID: "a1", Name: "看图", ProviderID: "prov_1", Model: "vision"})
 	})
-	db, sessions, err := newTestSessionService(filepath.Join(dir, "s.db"))
+	db, sessions, err := newTestSessionService(t, filepath.Join(dir, "s.db"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -364,7 +364,7 @@ func TestRememberSessionIngestsMemory(t *testing.T) {
 	}
 
 	// Memory service starts empty.
-	db, sessions, err := newTestSessionService(filepath.Join(t.TempDir(), "s.db"))
+	db, sessions, err := newTestSessionService(t, filepath.Join(t.TempDir(), "s.db"))
 	if err != nil {
 		t.Fatal(err)
 	}

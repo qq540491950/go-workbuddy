@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 )
@@ -170,6 +171,9 @@ func TestModelInfoUnmarshalRejectsBadObject(t *testing.T) {
 // TestOpenCorruptConfigBackupIsPrivate: the .bak of a corrupt config holds the
 // original bytes (possibly API keys), so it must not be world-readable.
 func TestOpenCorruptConfigBackupIsPrivate(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows 无 POSIX 权限位语义（Chmod 0600 不生效）；文件仍受用户目录 ACL 保护")
+	}
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.json")
 	if err := os.WriteFile(path, []byte("{not json"), 0o644); err != nil {

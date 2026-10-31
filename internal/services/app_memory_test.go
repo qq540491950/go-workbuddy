@@ -42,7 +42,7 @@ func testMemoryStatsAndClear(t *testing.T, autoRemember bool) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	db, sessions, err := newTestSessionService(filepath.Join(dir, "sessions.db"))
+	db, sessions, err := newTestSessionService(t, filepath.Join(dir, "sessions.db"))
 	if err != nil {
 		t.Fatal(err)
 	}

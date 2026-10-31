@@ -51,7 +51,7 @@ func TestChatRemoteAgentE2E(t *testing.T) {
 	}
 
 	// Host it over A2A (card discovery + JSON-RPC invoke).
-	_, serverSessions, err := newTestSessionService(filepath.Join(t.TempDir(), "server.db"))
+	_, serverSessions, err := newTestSessionService(t, filepath.Join(t.TempDir(), "server.db"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -96,7 +96,7 @@ func TestChatRemoteAgentE2E(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	db, sessions, err := newTestSessionService(filepath.Join(dir, "sessions.db"))
+	db, sessions, err := newTestSessionService(t, filepath.Join(dir, "sessions.db"))
 	if err != nil {
 		t.Fatal(err)
 	}

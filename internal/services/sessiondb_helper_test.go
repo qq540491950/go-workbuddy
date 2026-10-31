@@ -2,6 +2,7 @@ package services
 
 import (
 	"os"
+	"testing"
 
 	"github.com/glebarez/sqlite"
 	"google.golang.org/adk/v2/session"
@@ -11,7 +12,8 @@ import (
 
 // openSessionServiceImpl mirrors main.go's newSessionService (which lives in
 // package main and cannot be imported) so the self-heal path is testable.
-func openSessionServiceImpl(path string) (*gorm.DB, session.Service, error) {
+func openSessionServiceImpl(t *testing.T, path string) (*gorm.DB, session.Service, error) {
+	t.Helper()
 	open := func() (*gorm.DB, session.Service, error) {
 		db, err := gorm.Open(sqlite.Open(path))
 		if err != nil {
@@ -39,5 +41,10 @@ func openSessionServiceImpl(path string) (*gorm.DB, session.Service, error) {
 			return nil, nil, err
 		}
 	}
+	t.Cleanup(func() {
+		if sqlDB, err := db.DB(); err == nil {
+			_ = sqlDB.Close()
+		}
+	})
 	return db, svc, nil
 }

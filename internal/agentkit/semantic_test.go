@@ -20,6 +20,22 @@ import (
 // deterministic bag-of-words hashing vectors: shared vocabulary => high
 // cosine similarity, which is enough to exercise ranking, caching and
 // rebuild paths without a real model.
+// openTestKnowledgeIndex opens a temp-backed index and registers DB close so
+// the test's TempDir cleanup does not fail on Windows (open handles block
+// RemoveAll).
+func openTestKnowledgeIndex(t *testing.T) (*KnowledgeIndex, error) {
+	t.Helper()
+	idx, err := OpenKnowledgeIndex(filepath.Join(t.TempDir(), "k.db"))
+	if err == nil {
+		t.Cleanup(func() {
+			if sqlDB, err := idx.DB.DB(); err == nil {
+				_ = sqlDB.Close()
+			}
+		})
+	}
+	return idx, err
+}
+
 func fakeEmbeddings() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/embeddings" {
@@ -104,7 +120,7 @@ func TestSemanticSearchRanksAndCaches(t *testing.T) {
 		"k8s.md":     "# 集群\n\nkubernetes pod 调度策略与资源配额管理是集群稳定性的关键。",
 		"cooking.md": "# 烹饪\n\n红烧肉的做法需要先焯水，再加入冰糖炒出糖色。",
 	})
-	idx, err := OpenKnowledgeIndex(filepath.Join(t.TempDir(), "k.db"))
+	idx, err := openTestKnowledgeIndex(t)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -178,7 +194,7 @@ func TestSemanticShrinkingFileDropsStaleChunks(t *testing.T) {
 
 	long := "# 长文\n\n" + strings.Repeat("这是第一段很长的说明文字，用于产生多个分块。\n\n", 40)
 	ws := seedKnowledge(t, map[string]string{"doc.md": long})
-	idx, err := OpenKnowledgeIndex(filepath.Join(t.TempDir(), "k.db"))
+	idx, err := openTestKnowledgeIndex(t)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -214,7 +230,7 @@ func TestSemanticModelChangeRebuilds(t *testing.T) {
 	srv := httptest.NewServer(fakeEmbeddings())
 	defer srv.Close()
 	ws := seedKnowledge(t, map[string]string{"a.md": "向量检索测试内容 vector search"})
-	idx, err := OpenKnowledgeIndex(filepath.Join(t.TempDir(), "k.db"))
+	idx, err := openTestKnowledgeIndex(t)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -243,7 +259,7 @@ func TestSemanticFallbacks(t *testing.T) {
 	ws := seedKnowledge(t, map[string]string{"a.md": "部署手册 deploy guide\n\n部署 deploy 步骤说明。"})
 
 	// No embedding configured: pure keyword behaviour, no marker.
-	idx, err := OpenKnowledgeIndex(filepath.Join(t.TempDir(), "k.db"))
+	idx, err := openTestKnowledgeIndex(t)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -337,7 +353,7 @@ func TestKnowledgeIndexStats(t *testing.T) {
 		"a.md": "alpha 文件内容 one two",
 		"b.md": "beta 文件内容 three",
 	})
-	idx, err := OpenKnowledgeIndex(filepath.Join(t.TempDir(), "k.db"))
+	idx, err := openTestKnowledgeIndex(t)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -360,7 +376,7 @@ func TestKnowledgeIndexReset(t *testing.T) {
 	srv := httptest.NewServer(fakeEmbeddings())
 	defer srv.Close()
 	ws := seedKnowledge(t, map[string]string{"a.md": "内容 content here"})
-	idx, err := OpenKnowledgeIndex(filepath.Join(t.TempDir(), "k.db"))
+	idx, err := openTestKnowledgeIndex(t)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -404,7 +420,7 @@ func TestKitTestKnowledgeSearch(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	idx, err := OpenKnowledgeIndex(filepath.Join(t.TempDir(), "k.db"))
+	idx, err := openTestKnowledgeIndex(t)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -436,7 +452,7 @@ func TestSemanticNestedDirectories(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(nested, "deep.md"), []byte("嵌套目录里的部署手册 deploy"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	idx, err := OpenKnowledgeIndex(filepath.Join(t.TempDir(), "k.db"))
+	idx, err := openTestKnowledgeIndex(t)
 	if err != nil {
 		t.Fatal(err)
 	}

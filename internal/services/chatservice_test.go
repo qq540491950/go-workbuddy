@@ -58,7 +58,7 @@ func TestChatEndToEndToolLoop(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	db, sessions, err := newTestSessionService(filepath.Join(dir, "sessions.db"))
+	db, sessions, err := newTestSessionService(t, filepath.Join(dir, "sessions.db"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -128,9 +128,10 @@ func readAll(r *http.Request) string {
 	return string(buf)
 }
 
-func newTestSessionService(path string) (*gorm.DB, session.Service, error) {
+func newTestSessionService(t *testing.T, path string) (*gorm.DB, session.Service, error) {
 	// Match main.go: WAL + busy_timeout + a single pooled connection so
 	// parallel sessions never trip SQLITE_BUSY snapshot conflicts.
+	t.Helper()
 	db, err := gorm.Open(sqlite.Open(path + "?_pragma=busy_timeout(5000)&_pragma=journal_mode(WAL)"))
 	if err != nil {
 		return nil, nil, err
@@ -145,5 +146,12 @@ func newTestSessionService(path string) (*gorm.DB, session.Service, error) {
 	if err := database.AutoMigrate(svc); err != nil {
 		return nil, nil, err
 	}
+	// Close on cleanup: an open pool keeps the SQLite file locked and the
+	// test's TempDir RemoveAll fails on Windows.
+	t.Cleanup(func() {
+		if sqlDB, err := db.DB(); err == nil {
+			_ = sqlDB.Close()
+		}
+	})
 	return db, svc, nil
 }

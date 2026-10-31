@@ -44,7 +44,7 @@ func TestA2AServiceLoopback(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	db, sessions, err := newTestSessionService(filepath.Join(dir, "sessions.db"))
+	db, sessions, err := newTestSessionService(t, filepath.Join(dir, "sessions.db"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -87,7 +87,7 @@ func TestA2AServiceLoopback(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	_, clientSessions, err := newTestSessionService(filepath.Join(clientDir, "sessions.db"))
+	_, clientSessions, err := newTestSessionService(t, filepath.Join(clientDir, "sessions.db"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -158,7 +158,7 @@ func TestConfigMutationStopsPublishedAgent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, sessions, err := newTestSessionService(filepath.Join(dir, "sessions.db"))
+	_, sessions, err := newTestSessionService(t, filepath.Join(dir, "sessions.db"))
 	if err != nil {
 		t.Fatal(err)
 	}

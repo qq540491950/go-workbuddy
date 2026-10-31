@@ -35,7 +35,7 @@ func newTodosTestChat(t *testing.T, handler http.HandlerFunc) (*ChatService, *co
 	}); err != nil {
 		t.Fatal(err)
 	}
-	db, sessions, err := newTestSessionService(dir + "/sessions.db")
+	db, sessions, err := newTestSessionService(t, dir + "/sessions.db")
 	if err != nil {
 		t.Fatal(err)
 	}

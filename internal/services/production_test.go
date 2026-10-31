@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 
 	"google.golang.org/adk/v2/session"
@@ -20,7 +21,7 @@ func TestSendTurnKeepsSessionUsableAfterFailure(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	db, sessions, err := newTestSessionService(dir + "/s.db")
+	db, sessions, err := newTestSessionService(t, dir+"/s.db")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -60,7 +61,7 @@ func TestCorruptSessionDBSelfHeals(t *testing.T) {
 	if err := os.WriteFile(path, []byte("this is not a sqlite database at all, just noise bytes"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	db, svc, err := openSessionServiceImpl(path)
+	db, svc, err := openSessionServiceImpl(t, path)
 	if err != nil {
 		t.Fatalf("self-heal failed: %v", err)
 	}
@@ -76,6 +77,9 @@ func TestCorruptSessionDBSelfHeals(t *testing.T) {
 
 // config.json must be 0600 since it holds API keys.
 func TestConfigFilePermissionRestricted(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows 无 POSIX 权限位语义（Chmod 0600 不生效）；文件仍受用户目录 ACL 保护")
+	}
 	store, err := config.Open(t.TempDir())
 	if err != nil {
 		t.Fatal(err)

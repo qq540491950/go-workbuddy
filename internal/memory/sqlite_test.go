@@ -26,6 +26,11 @@ func newFixture(t *testing.T) (*SQLiteService, session.Session) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() {
+		if sqlDB, err := db.DB(); err == nil {
+			_ = sqlDB.Close()
+		}
+	})
 	svc, err := NewSQLiteService(db)
 	if err != nil {
 		t.Fatal(err)
@@ -142,6 +147,11 @@ func TestSearchMemoryRecencyWindow(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() {
+		if sqlDB, err := db.DB(); err == nil {
+			_ = sqlDB.Close()
+		}
+	})
 	svc, err := NewSQLiteService(db)
 	if err != nil {
 		t.Fatal(err)
