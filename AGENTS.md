@@ -43,9 +43,12 @@ internal/mcpmgr/             # MCP 服务器生命周期；auth.go = Bearer/API-
 internal/memory/             # 长期记忆（ADK memory.Service，SQLite）
 internal/services/           # Wails 服务（前端可调用 RPC）
   chatservice.go             #   会话/对话核心：runTurn 共享引擎、HITL 确认、分叉、并行
+  workspace_snapshot.go      #   任务快照基线、产物与文件级变更
+  artifactservice.go         #   会话级文件列表/预览与安全扫描
   a2aservice.go              #   A2A 服务端（对外发布本地 Agent）
   app.go                     #   AppInfo、配置备份导出/导入、Agent 分享
 frontend/src/pages/          # Chat / Agents / Teams / Skills / MCP / Models / Settings
+frontend/src/components/TaskWorkspacePanel.tsx # 右侧任务结果区
 frontend/bindings/           # wails3 生成的 TS 绑定（勿手改，会被 -clean 覆盖）
 frontend/stub/               # 浏览器视觉回归：setTransport 数据桩 + window.__emit 事件注入
 ```
@@ -64,6 +67,8 @@ frontend/stub/               # 浏览器视觉回归：setTransport 数据桩 + 
 - **取消登记**：每轮运行在 `runs[sessionID]` 登记 `*runHandle`，释放时只在指针仍属于自己时删除，避免旧轮次清掉新轮次的取消函数。
 - **会话元数据变更**：Rename/SetModel/Archive/Pin 统一走 `mutateSession`（未知会话返回错误，审计仅成功后落笔）；`DeleteSession` 与 `Regenerate/EditAndResend` 先 `Cancel` 在跑轮次再动历史。
 - **会话级模型覆盖**：`ChatSession.ModelOverride` 经 `agentkit.EffectiveModel` 统一钳制（覆盖 ID 不在供应商列表则回落默认），运行、统计计费、autoTitle 侧调用三处共用；设置侧的即时开关（autoRemember/AutoTitle/A2A 自启动）从「上次已保存快照」持久化，避免冲洗未保存字段。
+- **任务级工作区**：新任务经 `NewSessionWithWorkspace` 自动创建 `<全局工作区>/tasks/<sessionID>` 或绑定用户目录；首轮事件后锁定，活动任务不能重复占用同一显式目录。`ChatSession.EffectiveWorkspace` 是文件工具、`{{workspace}}` 与预览的唯一解析入口；旧会话空值回落全局工作区。知识库/Skills/导出仍使用全局工作区。
+- **任务产物快照**：基线存于应用数据目录的 `task-snapshots/<sessionID>.json`（版本化、原子写，不进 sessions.db）。结果区按文件存在性/大小/mtime 计算新增、修改、删除；扫描跳过隐藏/版本库/依赖目录与符号链接，5000 文件/200 条展示上限。删除会话清基线但保留任务文件；分叉共享工作区但建立独立基线。
 - **plan_todos**：状态存 ADK session state 键 `workbuddy.todos`，全量替换语义（省略参数=只读，空数组=清空）；前端从 tool_result 渲染清单卡与置顶条。
 - **autoTitle**：opt-in（`Settings.AutoTitle`），首轮后异步 30s 侧调用生成标题，仅替换自己写下的兜底标题；goroutine 自带 recover。
 - **A2A 失效联动**：SaveAgent（替换）/DeleteAgent 通过 `Services.StopPublishedAgent` 下线已发布服务器；OAuth 回调端口惰性重绑（授权流程结束必释放）。
@@ -82,3 +87,4 @@ frontend/stub/               # 浏览器视觉回归：setTransport 数据桩 + 
 - 长会话渲染上限 200 条（完整历史持久化，可导出查看）
 - MCP OAuth 令牌缓存在 config.json（0600）；脱敏导出不带令牌
 - 团队负责人必须为本地 Agent（远程 A2A 成员仅作为可转移的子代理）
+- 任务结果区不支持行级 diff、Office 在线预览或网页运行预览

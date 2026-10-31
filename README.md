@@ -17,9 +17,9 @@
 | Skills | 可复用技能指令包，保存为标准 SKILL.md（YAML frontmatter + Markdown），由 ADK Skill Toolset 以渐进式披露方式供模型按需加载；支持从工作区 skills/ 目录批量导入 |
 | MCP 服务 | 通过 stdio（本地命令）或 Streamable HTTP（远程）连接 MCP 服务器，发现并列出工具，挂载到 Agent；远程服务器支持 Bearer / API Key / OAuth 2.1（授权码 + PKCE，令牌持久化静默刷新）认证 |
 | 知识库 | 工作区 knowledge/ 目录检索：可配置 Embedding 供应商升级为「向量语义 + 关键词」混合检索（本地增量向量索引，SQLite） |
-| 对话 | 流式输出（SSE）、工具调用/结果实时展示、团队对话中显示各成员输出、随时停止、工具执行人工确认（HITL）、会话置顶/分叉/并行运行、后台完成提示、上下文窗口占用指示与高水位提醒、Token 用量与成本（含按日明细）、任务计划清单卡与置顶进度条、会话级模型选择、生成期间排队发送、会话内消息过滤（⌘F）、图片粘贴/拖放/重生成保留附件、Markdown 导出、会话历史持久化（ADK Database Session Service + 纯 Go SQLite 驱动） |
+| 对话 | 流式输出（SSE）、任务级工作区（自动独立目录或首轮前选择文件夹）、右侧结果区（产物/全部文件/新增修改删除变更/预览）、工具调用/结果实时展示、团队对话中显示各成员输出、随时停止、工具执行人工确认（HITL）、会话置顶/分叉/并行运行、后台完成提示、上下文窗口占用指示与高水位提醒、Token 用量与成本（含按日明细）、任务计划清单卡与置顶进度条、会话级模型选择、生成期间排队发送、会话内消息过滤（⌘F）、图片粘贴/拖放/重生成保留附件、Markdown 导出、会话历史持久化（ADK Database Session Service + 纯 Go SQLite 驱动） |
 | 桌面集成 | 系统托盘（显示/隐藏/退出）、全局快捷键（⌘⇧Space 唤起）、深浅主题 / 强调色 / 字号、语音输入与朗读 |
-| 设置与迁移 | 工作区目录、外观、语义检索 Embedding 配置、智能会话命名（可选）、A2A 服务启停、配置备份导出/导入（版本化、可脱敏）、Agent 分享 |
+| 设置与迁移 | 默认/全局工作区目录、外观、语义检索 Embedding 配置、智能会话命名（可选）、A2A 服务启停、配置备份导出/导入（版本化、可脱敏）、Agent 分享 |
 
 ## 架构
 
@@ -100,7 +100,7 @@ cd frontend && npm test        # vitest（前端纯函数单测）
 3. **远程 Agent（可选）** → Agents 页「远程 Agent（A2A 协议）」填对方服务地址，「检查连接」自动发现 Agent Card。
 4. **Skills / MCP 服务** → 维护可复用技能（可从工作区 skills/ 批量导入）与外部工具（stdio 或 Streamable HTTP，远程服务器支持 Bearer / API Key / OAuth 2.1 认证）。
 5. **Agent 团队**（可选）→ 选成员组队（可含远程成员），开启自动协调员或指定负责人。
-6. **对话** → 新对话选择 Agent / 团队 / 远程 Agent，开始对话；支持斜杠命令（`/export` `/stats` `/todos` `/new`…）、消息时间戳、工具耗时、HITL 确认卡片、上下文占用指示；会话级模型切换（头部下拉）、生成期间可继续输入并排队、⌘F 会话内搜索；多个会话可并行运行，后台完成会提示（点击「查看」直达），侧栏显示未读点。
+6. **对话** → 新对话选择 Agent / 团队 / 远程 Agent 和任务工作目录（默认自动创建独立目录），开始对话；右侧结果区可查看产物、全部文件与新增/修改/删除变更，并直接预览图片、PDF、Markdown 和文本；支持斜杠命令（`/export` `/stats` `/todos` `/new`…）、消息时间戳、工具耗时、HITL 确认卡片、上下文占用指示；会话级模型切换（头部下拉）、生成期间可继续输入并排队、⌘F 会话内搜索；多个会话可并行运行，后台完成会提示（点击「查看」直达），侧栏显示未读点。
 7. **设置** → 外观/工作区/语义检索（Embedding）/A2A 服务发布/备份迁移/诊断日志。
 
 
@@ -154,6 +154,7 @@ wails3 build && wails3 package   # 产物 bin/WorkBuddy Agent.app
 - `config.json`（含 API Key）权限 0600；API Key 不出本机（仅直连所配置的供应商）
 - 模型输出经 react-markdown 渲染，默认不执行原始 HTML；链接新窗口打开
 - 产物预览严格限制在工作区目录内（目录穿越防护、大小上限）
+- 每个任务有独立工作区；首轮开始后目录锁定，删除会话不会删除任务文件
 
 ### 运维与诊断
 - 日志：`~/Library/Application Support/workbuddy-agent/logs/app.log`（5MB 自动轮转）
@@ -166,6 +167,7 @@ wails3 build && wails3 package   # 产物 bin/WorkBuddy Agent.app
 - MCP OAuth 令牌缓存在本机 config.json（0600），不随任何导出携带；丢失后重新授权即可
 - 团队负责人必须为本地 Agent（远程 A2A 成员仅作为可转移的子代理参与）
 - HTTP 代理设置在启动时注入，修改后需重启应用生效
+- 结果区提供文件级变更与现有格式预览，不提供行级 diff、Office 在线预览或网页运行预览
 
 ## 数据存储
 
@@ -174,6 +176,8 @@ wails3 build && wails3 package   # 产物 bin/WorkBuddy Agent.app
 | 配置（供应商/Agent/团队/Skills/MCP/会话元数据） | `~/Library/Application Support/workbuddy-agent/config.json` |
 | Skills 物化目录 | `~/Library/Application Support/workbuddy-agent/skills/` |
 | ADK 会话历史（SQLite） | `~/Library/Application Support/workbuddy-agent/sessions.db` |
+| 任务快照基线（按会话 ID，原子 JSON） | `~/Library/Application Support/workbuddy-agent/task-snapshots/` |
+| 自动创建的任务工作区 | `<全局工作区>/tasks/<sessionID>/` |
 
 ## 目录结构
 
@@ -194,12 +198,15 @@ internal/
   memory/                  # 长期记忆（ADK memory.Service，SQLite）
   services/                # Wails 服务（前端可调用 RPC）
     chatservice.go         #   会话/对话核心：runTurn 共享引擎、HITL 确认、分叉、并行、护栏
+    workspace_snapshot.go  #   任务快照基线、产物与文件级变更
+    artifactservice.go     #   会话级文件列表/预览与安全扫描
     a2aservice.go          #   A2A 服务端（对外发布本地 Agent）
     app.go                 #   AppInfo、配置备份导出/导入、Agent 分享、日志诊断
 frontend/
   src/pages/               # 对话 / Agents(含远程) / 团队 / Skills / MCP / 模型 / 设置
   src/components/ui/       # shadcn/ui 组件
   src/components/ToolCallCard.tsx  # 工具卡片 + 产物预览 + 路径提取
+  src/components/TaskWorkspacePanel.tsx # 右侧结果区：产物/全部文件/变更
   stub/                    # 浏览器视觉回归桩（setTransport IPC 数据桩，npm run stub）
   bindings/                # wails3 生成的 TS 绑定（构建时自动再生成，勿手改）
 build/                     # 各平台打包资源（Info.plist / 图标 / Taskfile）
