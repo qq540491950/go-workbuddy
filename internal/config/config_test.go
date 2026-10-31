@@ -57,6 +57,56 @@ func TestStoreRoundTrip(t *testing.T) {
 	}
 }
 
+// TestSidebarSettingsNormalizeAndPersist: older config.json files without the
+// sidebar fields load with defaults; both fields persist; unknown grouping
+// values fall back to "time" on the next load.
+func TestSidebarSettingsNormalizeAndPersist(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.json")
+	raw := `{"settings":{"themeMode":"dark"},"providers":null,"agents":null,"teams":null,"skills":null,"mcpServers":null,"sessions":null}`
+	if err := os.WriteFile(path, []byte(raw), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	s, err := Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := s.Get().Settings.SidebarGrouping; got != "time" {
+		t.Fatalf("default sidebarGrouping = %q, want time", got)
+	}
+	if s.Get().Settings.SidebarCollapsed {
+		t.Fatal("default sidebarCollapsed = true, want false")
+	}
+
+	if err := s.Update(func(cfg *Config) {
+		cfg.Settings.SidebarGrouping = "project"
+		cfg.Settings.SidebarCollapsed = true
+	}); err != nil {
+		t.Fatal(err)
+	}
+	s2, err := Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := s2.Get().Settings.SidebarGrouping; got != "project" {
+		t.Fatalf("sidebarGrouping not persisted: %q", got)
+	}
+	if !s2.Get().Settings.SidebarCollapsed {
+		t.Fatal("sidebarCollapsed not persisted")
+	}
+
+	if err := s2.Update(func(cfg *Config) { cfg.Settings.SidebarGrouping = "bogus" }); err != nil {
+		t.Fatal(err)
+	}
+	s3, err := Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := s3.Get().Settings.SidebarGrouping; got != "time" {
+		t.Fatalf("invalid sidebarGrouping = %q, want time fallback", got)
+	}
+}
+
 func TestStoreGetReturnsIndependentCopy(t *testing.T) {
 	dir := t.TempDir()
 	s, err := Open(dir)

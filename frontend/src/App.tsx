@@ -1,47 +1,44 @@
 import { lazy, Suspense, useEffect, useState } from "react";
-import { MessageSquare, Bot, Users, Sparkles, Blocks, Boxes, Settings as SettingsIcon, Sun, Moon, CircleHelp } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Toaster } from "@/components/ui/sonner";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
-import { cn } from "@/lib/utils";
 import { applyTheme, cachedTheme, onSystemThemeChange, type ThemePrefs } from "@/lib/theme";
 import { App as AppService, Config } from "@/lib/api";
 
-// Pages load on demand: Chat is the landing view and stays eager, everything
-// else is a settings-style screen that should not sit in the startup bundle.
+// Chat is the landing view and stays eager; the settings hub (which hosts the
+// management screens) loads on demand so it never sits in the startup bundle.
 import { ChatPage } from "@/pages/ChatPage";
-const AgentsPage = lazy(() => import("@/pages/AgentsPage").then((m) => ({ default: m.AgentsPage })));
-const TeamsPage = lazy(() => import("@/pages/TeamsPage").then((m) => ({ default: m.TeamsPage })));
-const SkillsPage = lazy(() => import("@/pages/SkillsPage").then((m) => ({ default: m.SkillsPage })));
-const MCPPage = lazy(() => import("@/pages/MCPPage").then((m) => ({ default: m.MCPPage })));
-const ModelsPage = lazy(() => import("@/pages/ModelsPage").then((m) => ({ default: m.ModelsPage })));
 const SettingsPage = lazy(() => import("@/pages/SettingsPage").then((m) => ({ default: m.SettingsPage })));
-
-const navItems = [
-  { key: "chat", label: "对话", icon: MessageSquare },
-  { key: "agents", label: "Agents", icon: Bot },
-  { key: "teams", label: "Agent 团队", icon: Users },
-  { key: "skills", label: "Skills", icon: Sparkles },
-  { key: "mcp", label: "MCP 服务", icon: Blocks },
-  { key: "models", label: "模型配置", icon: Boxes },
-  { key: "settings", label: "设置", icon: SettingsIcon },
-] as const;
-
-type NavKey = (typeof navItems)[number]["key"];
+import type { SettingsTab } from "@/pages/SettingsPage";
 
 export default function App() {
-  const [page, setPage] = useState<NavKey>("chat");
+  const [view, setView] = useState<"chat" | "settings">("chat");
+  const [settingsTab, setSettingsTab] = useState<SettingsTab | undefined>(undefined);
+  const openSettings = (tab?: SettingsTab) => {
+    setSettingsTab(tab);
+    setView("settings");
+  };
 
-  // Global shortcuts (documented in the help panel on every page): ⌘N jumps
-  // to the chat page and opens the new-chat dialog; ⌘K focuses the composer.
-  // ChatPage consumes them via window events so they survive page switches.
+  // Global shortcuts (documented in the help panel on every page): ⌘N starts
+  // a chat; ⌘K focuses the composer; ⌘F toggles in-session search; ⌘, opens
+  // settings. ChatPage consumes the chat shortcuts via window events so they
+  // survive view switches.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const mod = e.metaKey || e.ctrlKey;
       const key = e.key.toLowerCase();
-      if (!mod || (key !== "n" && key !== "k" && key !== "f")) return;
+      if (!mod || (key !== "n" && key !== "k" && key !== "f" && key !== "," && key !== "b")) return;
       e.preventDefault();
-      setPage("chat");
+      if (key === "b") {
+        setView("chat");
+        window.dispatchEvent(new CustomEvent("wb-toggle-sidebar"));
+        return;
+      }
+      if (key === ",") {
+        openSettings();
+        return;
+      }
+      setView("chat");
       // Deferred: when switching from another page, ChatPage mounts on the
       // next render — a synchronous dispatch would fire before its listener
       // exists and the action would be lost.
@@ -97,57 +94,26 @@ export default function App() {
 
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-background text-foreground">
-      <aside className="flex w-52 shrink-0 flex-col border-r bg-sidebar py-4 text-sidebar-foreground">
-        <div className="mb-6 flex items-center gap-2 px-4">
-          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-            <Sparkles className="h-4 w-4" />
-          </div>
-          <div>
-            <div className="text-sm font-semibold leading-none">WorkBuddy</div>
-            <div className="mt-1 text-[11px] text-muted-foreground">ADK Agent 桌面端</div>
-          </div>
-        </div>
-        <nav className="flex flex-1 flex-col gap-1 px-2">
-          {navItems.map(({ key, label, icon: Icon }) => (
-            <button
-              key={key}
-              onClick={() => setPage(key)}
-              className={cn(
-                "flex items-center gap-2.5 rounded-md px-3 py-2 text-sm transition-colors",
-                page === key
-                  ? "bg-sidebar-accent font-medium text-sidebar-accent-foreground"
-                  : "text-muted-foreground hover:bg-sidebar-accent/50 hover:text-sidebar-accent-foreground",
-              )}
-            >
-              <Icon className="h-4 w-4" />
-              {label}
-            </button>
-          ))}
-        </nav>
-        <div className="px-4 text-[11px] text-muted-foreground">
-          <div className="mb-2 flex items-center justify-between">
-            <span>ADK Go v2 · Wails v3</span>
-            <span className="flex items-center gap-1">
-              <button
-                title="快捷键与命令"
-                onClick={() => setHelpOpen(true)}
-                className="rounded p-1 hover:bg-sidebar-accent/60"
-              >
-                <CircleHelp className="h-3.5 w-3.5" />
-              </button>
-              <button
-                title="切换深色/浅色主题"
-                onClick={toggleTheme}
-                className="rounded p-1 hover:bg-sidebar-accent/60"
-              >
-                {isDark ? <Sun className="h-3.5 w-3.5" /> : <Moon className="h-3.5 w-3.5" />}
-              </button>
-            </span>
-          </div>
-          {version && <div>v{version}</div>}
-        </div>
+      <main className="min-w-0 flex-1 overflow-hidden">
+        {/* key={view} resets the boundary on navigation: one crashed view must
+            not keep the other behind the error screen. */}
+        <ErrorBoundary key={view}>
+          <Suspense fallback={<div className="p-6 text-sm text-muted-foreground">加载中…</div>}>
+            {view === "chat" ? (
+              <ChatPage
+                isDark={isDark}
+                onToggleTheme={toggleTheme}
+                onOpenHelp={() => setHelpOpen(true)}
+                onOpenSettings={openSettings}
+              />
+            ) : (
+              <SettingsPage initialTab={settingsTab} onClose={() => setView("chat")} version={version} />
+            )}
+          </Suspense>
+        </ErrorBoundary>
+      </main>
 
-        <Dialog open={helpOpen} onOpenChange={setHelpOpen}>
+      <Dialog open={helpOpen} onOpenChange={setHelpOpen}>
           <DialogContent className="sm:max-w-md">
             <DialogHeader>
               <DialogTitle className="text-base">快捷键与命令</DialogTitle>
@@ -159,6 +125,8 @@ export default function App() {
                 ["⌘/Ctrl + N", "新对话（全局）"],
                 ["⌘/Ctrl + K", "聚焦输入框（全局）"],
                 ["⌘/Ctrl + F", "会话内搜索（全局）"],
+                ["⌘/Ctrl + ,", "打开设置（全局）"],
+                ["⌘/Ctrl + B", "折叠 / 展开对话列表"],
                 ["/export", "导出会话 Markdown"],
                 ["/exporthtml", "导出会话 HTML"],
                 ["/stats", "会话统计"],
@@ -173,23 +141,6 @@ export default function App() {
             </div>
           </DialogContent>
         </Dialog>
-      </aside>
-
-      <main className="min-w-0 flex-1 overflow-hidden">
-        {/* key={page} resets the boundary on navigation: one crashed page must
-            not keep every other page behind the error screen. */}
-        <ErrorBoundary key={page}>
-          <Suspense fallback={<div className="p-6 text-sm text-muted-foreground">加载中…</div>}>
-            {page === "chat" && <ChatPage />}
-            {page === "agents" && <AgentsPage />}
-            {page === "teams" && <TeamsPage />}
-            {page === "skills" && <SkillsPage />}
-            {page === "mcp" && <MCPPage />}
-            {page === "models" && <ModelsPage />}
-            {page === "settings" && <SettingsPage />}
-          </Suspense>
-        </ErrorBoundary>
-      </main>
 
       <Toaster position="top-center" richColors />
     </div>

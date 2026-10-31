@@ -369,6 +369,17 @@ export interface Settings {
      */
     "compactionInterval"?: number;
     "compactionTokenThreshold"?: number;
+
+    /**
+     * SidebarCollapsed keeps the conversation list collapsed across restarts.
+     */
+    "sidebarCollapsed"?: boolean;
+
+    /**
+     * SidebarGrouping selects the conversation-list grouping: "time" (default)
+     * or "project" (sessions grouped by their workspace root directory).
+     */
+    "sidebarGrouping"?: string;
 }
 
 /**

@@ -215,6 +215,11 @@ type Settings struct {
 	// intra-turn tail retention at the given prompt token count. 0 = off.
 	CompactionInterval       int `json:"compactionInterval,omitempty"`
 	CompactionTokenThreshold int `json:"compactionTokenThreshold,omitempty"`
+	// SidebarCollapsed keeps the conversation list collapsed across restarts.
+	SidebarCollapsed bool `json:"sidebarCollapsed,omitempty"`
+	// SidebarGrouping selects the conversation-list grouping: "time" (default)
+	// or "project" (sessions grouped by their workspace root directory).
+	SidebarGrouping string `json:"sidebarGrouping,omitempty"`
 }
 
 // AutoTitleEnabled reports whether model-generated titles are wanted.
@@ -232,6 +237,9 @@ func (s *Settings) normalize() {
 	}
 	if s.FontScale == "" {
 		s.FontScale = "md"
+	}
+	if s.SidebarGrouping != "project" {
+		s.SidebarGrouping = "time"
 	}
 }
 

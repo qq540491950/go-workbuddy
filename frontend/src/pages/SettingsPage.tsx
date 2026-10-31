@@ -1,5 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { ArrowLeft } from "lucide-react";
 import { toast } from "sonner";
+import { AgentsPage } from "@/pages/AgentsPage";
+import { TeamsPage } from "@/pages/TeamsPage";
+import { SkillsPage } from "@/pages/SkillsPage";
+import { MCPPage } from "@/pages/MCPPage";
+import { ModelsPage } from "@/pages/ModelsPage";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -16,7 +22,22 @@ import { cn } from "@/lib/utils";
 import { ACCENTS, FONT_SCALES, applyTheme, cacheTheme, type ThemePrefs } from "@/lib/theme";
 import { Chat, App, A2A, Config, type AgentConfig, type A2AStatus, type KnowledgeFile, type KnowledgeIndexStats, type ModelProvider, type Settings, type StorageInfo, type MemoryInfo, errText, Protocol } from "@/lib/api";
 
-export function SettingsPage() {
+const SETTINGS_TABS = [
+  { key: "general", label: "通用" },
+  { key: "models", label: "模型供应商" },
+  { key: "agents", label: "Agents" },
+  { key: "teams", label: "Agent 团队" },
+  { key: "skills", label: "Skills" },
+  { key: "mcp", label: "MCP 服务" },
+  { key: "knowledge", label: "知识库" },
+  { key: "data", label: "数据与存储" },
+  { key: "about", label: "关于" },
+] as const;
+
+export type SettingsTab = (typeof SETTINGS_TABS)[number]["key"];
+
+export function SettingsPage({ initialTab, onClose, version }: { initialTab?: SettingsTab; onClose?: () => void; version?: string } = {}) {
+  const [tab, setTab] = useState<SettingsTab>(initialTab ?? "general");
   const [settings, setSettings] = useState<Settings | null>(null);
   const [providers, setProviders] = useState<ModelProvider[]>([]);
   const [agents, setAgents] = useState<AgentConfig[]>([]);
@@ -37,6 +58,24 @@ export function SettingsPage() {
   const [kbPreviewPath, setKbPreviewPath] = useState<string | null>(null);
   const [kbNewName, setKbNewName] = useState("");
   const [kbNewContent, setKbNewContent] = useState("");
+
+  // Deep links (empty state, @ popup, model selector) reopen the hub on a
+  // specific tab; keep the active tab in sync when the prop changes.
+  useEffect(() => {
+    if (initialTab) setTab(initialTab);
+  }, [initialTab]);
+  // Esc leaves the hub, but open dialogs (log viewer, artifact preview)
+  // get the first chance to consume it.
+  useEffect(() => {
+    if (!onClose) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      if (document.querySelector("[role='dialog'][data-state='open']")) return;
+      onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
 
   // Last-saved settings snapshot: flag toggles that persist immediately must
   // not flush half-typed fields from elsewhere on the page.
@@ -106,13 +145,44 @@ export function SettingsPage() {
   }
 
   return (
-    <div className="h-full overflow-y-auto p-6">
-      <div className="mx-auto mb-4 max-w-5xl">
-        <h1 className="text-lg font-semibold">设置</h1>
-        <p className="text-sm text-muted-foreground">应用全局配置</p>
-      </div>
+    <div className="flex h-full">
+      <aside className="flex w-48 shrink-0 flex-col border-r bg-sidebar py-4 text-sidebar-foreground">
+        <div className="mb-2 flex items-center justify-between px-4">
+          <span className="text-sm font-semibold">设置</span>
+          {onClose && (
+            <button title="返回对话（Esc）" onClick={onClose} className="rounded p-1 hover:bg-sidebar-accent/60">
+              <ArrowLeft className="h-4 w-4" />
+            </button>
+          )}
+        </div>
+        <nav className="flex flex-1 flex-col gap-1 overflow-y-auto px-2">
+          {SETTINGS_TABS.map(({ key, label }) => (
+            <button
+              key={key}
+              onClick={() => setTab(key)}
+              className={cn(
+                "flex items-center rounded-md px-3 py-2 text-sm transition-colors",
+                tab === key
+                  ? "bg-sidebar-accent font-medium text-sidebar-accent-foreground"
+                  : "text-muted-foreground hover:bg-sidebar-accent/50 hover:text-sidebar-accent-foreground",
+              )}
+            >
+              {label}
+            </button>
+          ))}
+        </nav>
+      </aside>
 
+      <div className="min-w-0 flex-1 overflow-hidden">
+        {tab === "agents" && <AgentsPage />}
+        {tab === "teams" && <TeamsPage />}
+        {tab === "skills" && <SkillsPage />}
+        {tab === "mcp" && <MCPPage />}
+        {tab === "models" && <ModelsPage />}
+        {(tab === "general" || tab === "knowledge" || tab === "data" || tab === "about") && (
+        <div className="h-full overflow-y-auto p-6">
       <div className="mx-auto grid max-w-5xl items-start gap-4 lg:grid-cols-2">
+        {tab === "general" && (
         <Card>
           <CardHeader>
             <CardTitle className="text-base">外观</CardTitle>
@@ -211,7 +281,8 @@ export function SettingsPage() {
             </div>
           </CardContent>
         </Card>
-
+        )}
+        {tab === "general" && (
         <Card>
           <CardHeader>
             <CardTitle className="text-base">工作区</CardTitle>
@@ -230,7 +301,8 @@ export function SettingsPage() {
             </div>
           </CardContent>
         </Card>
-
+        )}
+        {tab === "general" && (
         <Card>
           <CardHeader>
             <CardTitle className="text-base">网络</CardTitle>
@@ -247,7 +319,8 @@ export function SettingsPage() {
             </p>
           </CardContent>
         </Card>
-
+        )}
+        {tab === "knowledge" && (
         <Card>
           <CardHeader>
             <CardTitle className="text-base">知识库语义检索</CardTitle>
@@ -372,7 +445,8 @@ export function SettingsPage() {
             </div>
           </CardContent>
         </Card>
-
+        )}
+        {tab === "general" && (
         <Card>
           <CardHeader>
             <CardTitle className="text-base">长会话上下文压缩</CardTitle>
@@ -405,7 +479,8 @@ export function SettingsPage() {
             </p>
           </CardContent>
         </Card>
-
+        )}
+        {tab === "general" && (
         <Card>
           <CardHeader>
             <CardTitle className="text-base">长期记忆</CardTitle>
@@ -456,7 +531,8 @@ export function SettingsPage() {
             </div>
           </CardContent>
         </Card>
-
+        )}
+        {tab === "data" && (
         <Card>
           <CardHeader>
             <CardTitle className="text-base">诊断</CardTitle>
@@ -536,7 +612,8 @@ export function SettingsPage() {
             </div>
           </CardContent>
         </Card>
-
+        )}
+        {tab === "data" && (
         <Card>
           <CardHeader>
             <CardTitle className="text-base">备份与迁移</CardTitle>
@@ -598,7 +675,8 @@ export function SettingsPage() {
             </p>
           </CardContent>
         </Card>
-
+        )}
+        {tab === "general" && (
         <Card>
           <CardHeader>
             <CardTitle className="text-base">A2A 服务（对外提供远程 Agent）</CardTitle>
@@ -700,25 +778,32 @@ export function SettingsPage() {
             </p>
           </CardContent>
         </Card>
-
+        )}
+        {tab === "about" && (
         <Card>
           <CardHeader>
             <CardTitle className="text-base">关于</CardTitle>
           </CardHeader>
           <CardContent className="text-sm text-muted-foreground">
-            <div>WorkBuddy Agent · 基于 Google ADK Go v2 构建</div>
+            <div>WorkBuddy Agent{version ? ` · v${version}` : ""} · 基于 Google ADK Go v2 构建</div>
             <div className="mt-1">
               Agent 运行时：ADK Runner / LLMAgent / AgentTool；会话存储：SQLite（ADK Database Session Service）；
               工具：ADK FunctionTool、MCP Toolset（go-sdk）、Skill Toolset（agentskills.io 规范）。
             </div>
           </CardContent>
         </Card>
+        )}
 
-        <div className="sticky bottom-0 -mx-6 -mb-6 mt-2 flex justify-end border-t bg-background/90 px-6 py-3 backdrop-blur lg:col-span-2">
+        {(tab === "general" || tab === "knowledge") && (
+        <div className="sticky bottom-0 mt-2 flex justify-end border-t bg-background/90 px-3 py-3 backdrop-blur lg:col-span-2">
           <Button onClick={save} disabled={saving}>保存设置</Button>
         </div>
+        )}
         {kbPreviewPath && (
           <ArtifactPreview path={kbPreviewPath} onClose={() => setKbPreviewPath(null)} />
+        )}
+      </div>
+    </div>
         )}
       </div>
     </div>

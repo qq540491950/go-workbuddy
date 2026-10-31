@@ -1,5 +1,5 @@
 // Pure helpers shared by the chat page and its unit tests (vitest).
-import type { AttachmentOut, UsageInfo } from "@/lib/api";
+import type { AttachmentOut, ChatSession, UsageInfo } from "@/lib/api";
 
 export type UIMessage = {
   id: string;
@@ -135,4 +135,113 @@ export function dayLabel(iso: string | undefined): string {
   const d = new Date(iso);
   if (isNaN(d.getTime())) return "";
   return d.toLocaleDateString("zh-CN", { month: "long", day: "numeric", weekday: "long" });
+}
+
+export type SessionGroupKey = "pinned" | "today" | "yesterday" | "week" | "earlier" | "archived";
+
+export interface SessionGroup {
+  key: SessionGroupKey;
+  label: string;
+  sessions: ChatSession[];
+}
+
+export interface ProjectGroup {
+  /** key is the project's workspace root (or "default" / "archived"). */
+  key: string;
+  label: string;
+  /** Full workspace root for tooltips; undefined for the default project. */
+  path?: string;
+  sessions: ChatSession[];
+}
+
+const SESSION_GROUP_LABELS: Record<SessionGroupKey, string> = {
+  pinned: "置顶",
+  today: "今天",
+  yesterday: "昨天",
+  week: "7 天内",
+  earlier: "更早",
+  archived: "已归档",
+};
+
+const SESSION_GROUP_ORDER: SessionGroupKey[] = ["pinned", "today", "yesterday", "week", "earlier", "archived"];
+
+const byRecency = (a: ChatSession, b: ChatSession): number =>
+  (b.updatedAt ?? "").localeCompare(a.updatedAt ?? "");
+
+/** groupSessionsByTime buckets sidebar sessions: pinned first (age-agnostic),
+ * then by local calendar day of updatedAt, archived always last. Sessions with
+ * missing or invalid timestamps land in "earlier"; empty buckets are omitted. */
+export function groupSessionsByTime(sessions: ChatSession[], now: Date): SessionGroup[] {
+  const startOf = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+  const today = startOf(now);
+  const buckets = new Map<SessionGroupKey, ChatSession[]>();
+  for (const s of sessions) {
+    let key: SessionGroupKey = "earlier";
+    if (s.archived) {
+      key = "archived";
+    } else if (s.pinned) {
+      key = "pinned";
+    } else {
+      const t = s.updatedAt ? new Date(s.updatedAt).getTime() : NaN;
+      if (!isNaN(t)) {
+        const days = Math.round((today - startOf(new Date(t))) / 86400000);
+        if (days <= 0) key = "today";
+        else if (days === 1) key = "yesterday";
+        else if (days < 7) key = "week";
+      }
+    }
+    const list = buckets.get(key);
+    if (list) list.push(s);
+    else buckets.set(key, [s]);
+  }
+  return SESSION_GROUP_ORDER
+    .filter((key) => buckets.has(key))
+    .map((key) => ({ key, label: SESSION_GROUP_LABELS[key], sessions: (buckets.get(key) ?? []).sort(byRecency) }));
+}
+
+/** groupSessionsByProject buckets sessions by their workspace ROOT directory:
+ * sessions on an explicit workspace outside the global one form their own
+ * project (labeled by folder name); auto-created task dirs under the global
+ * workspace — and sessions without a workspace — belong to the default
+ * project. Archived sessions trail in their own group; groups sort by their
+ * newest member. Per-session task directories are NEVER project keys (every
+ * session gets its own, which would fragment the list). */
+export function groupSessionsByProject(sessions: ChatSession[], globalWorkspace: string): ProjectGroup[] {
+  const norm = (p: string) => p.replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
+  const root = norm(globalWorkspace);
+  const underGlobal = (dir: string) => {
+    const d = norm(dir);
+    return root !== "" && (d === root || d.startsWith(root + "/"));
+  };
+  const baseName = (dir: string) => {
+    const parts = norm(dir).split("/").filter(Boolean);
+    return parts[parts.length - 1] ?? dir;
+  };
+
+  const groups = new Map<string, ProjectGroup>();
+  const push = (key: string, label: string, path: string | undefined, s: ChatSession) => {
+    const g = groups.get(key);
+    if (g) g.sessions.push(s);
+    else groups.set(key, { key, label, path, sessions: [s] });
+  };
+  for (const s of sessions) {
+    if (s.archived) {
+      push("archived", SESSION_GROUP_LABELS.archived, undefined, s);
+      continue;
+    }
+    const dir = s.workspaceDir || "";
+    if (!dir || underGlobal(dir)) {
+      push("default", "默认项目", undefined, s);
+    } else {
+      // Dedupe case-insensitively (Windows paths) but keep the first-seen
+      // original spelling as the display key/path.
+      const existing = [...groups.values()].find((g) => norm(g.key) === norm(dir));
+      if (existing) existing.sessions.push(s);
+      else push(dir, baseName(dir), dir, s);
+    }
+  }
+  const newest = (g: ProjectGroup) => g.sessions.reduce((max, s) => (s.updatedAt ?? "") > max ? s.updatedAt ?? "" : max, "");
+  return [...groups.values()]
+    .sort((a, b) => (a.key === "archived" ? 1 : b.key === "archived" ? -1 : newest(b).localeCompare(newest(a))))
+    .map((g) => ({ ...g, sessions: g.sessions.sort(byRecency) }));
 }

@@ -78,10 +78,30 @@ const seedConfig = {
     { id: "sess_confirm", title: "需要确认的写入", targetType: "agent", targetId: "agent_1", createdAt: "2026-09-18T01:00:00Z", updatedAt: "2026-09-18T01:05:00Z", modelOverride: "gpt-5-mini", workspaceDir: "/tmp/workbuddy-workspace/tasks/sess_confirm" },
     { id: "sess_plain", title: "普通对话", targetType: "team", targetId: "team_1", createdAt: "2026-09-17T09:00:00Z", updatedAt: "2026-09-17T09:10:00Z" },
     { id: "sess_direct", title: "我如何选择模型呢？", targetType: "", targetId: "", createdAt: "2026-11-01T00:45:00Z", updatedAt: "2026-11-01T00:48:00Z" },
+    // Sidebar-grouping fixtures: dates relative to load time so the time
+    // buckets (置顶/今天/昨天/7天内/更早) always have members to show.
+    { id: "sess_pinned", title: "置顶：本周迭代计划", targetType: "", targetId: "", createdAt: "2026-10-20T09:00:00Z", updatedAt: "2026-10-20T10:00:00Z", pinned: true },
+    { id: "sess_yesterday", title: "整理会议纪要", targetType: "", targetId: "", createdAt: iso(-1, 15), updatedAt: iso(-1, 16) },
+    { id: "sess_week", title: "分析导出数据", targetType: "agent", targetId: "agent_1", createdAt: iso(-3, 10), updatedAt: iso(-3, 11) },
+    { id: "sess_earlier", title: "重构登录流程", targetType: "", targetId: "", createdAt: iso(-15, 9), updatedAt: iso(-15, 10) },
+    { id: "sess_archived", title: "旧版方案讨论", targetType: "", targetId: "", createdAt: iso(-30, 9), updatedAt: iso(-30, 10), archived: true },
+    { id: "sess_project", title: "跨目录：独立项目任务", targetType: "agent", targetId: "agent_1", createdAt: iso(0, 8), updatedAt: iso(0, 9), workspaceDir: "/tmp/proj-alpha" },
   ],
 };
 
+// iso(dayOffset, hour) builds a local-time ISO stamp relative to today.
+function iso(dayOffset: number, hour: number): string {
+  const d = new Date();
+  d.setDate(d.getDate() + dayOffset);
+  d.setHours(hour, 0, 0, 0);
+  return d.toISOString();
+}
+
 const histories: Record<string, any[]> = {
+  sess_project: [
+    { id: "p1", kind: "user", author: "user", text: "帮我检查这个独立项目的构建产物", timestamp: iso(0, 8) },
+    { id: "p2", kind: "assistant", author: "写手助手", text: "这是独立工作区的演示会话（项目分组）。", timestamp: iso(0, 9) },
+  ],
   sess_confirm: [
     { id: "m1", kind: "user", author: "user", text: "把周报写到 notes/weekly.md", timestamp: "2026-09-18T01:01:00Z" },
     { id: "m1-plan", kind: "tool_result", author: "写手助手", text: "", toolName: "plan_todos", toolResp: { ok: true, todos: [

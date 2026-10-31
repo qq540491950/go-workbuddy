@@ -6,6 +6,10 @@ import {
   Paperclip, X, BarChart3, Brain, ShieldAlert, Network, GitFork, Pin, PinOff, FileCode2, Archive, ListTodo, ClipboardCopy,
   FolderOpen,
   PanelRightOpen,
+  ChevronRight, ChevronDown,
+  Settings as SettingsIcon, CircleHelp, Sun, Moon,
+  Boxes,
+  PanelLeftClose, PanelLeftOpen, Clock,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -20,10 +24,11 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
-import { computeEditFlags, computeRunningTools, computeToolDurations, dayLabel, fmtTime, isDayChange, mdToSpeech, type UIMessage } from "@/lib/chatUtils";
+import { computeEditFlags, computeRunningTools, computeToolDurations, dayLabel, fmtTime, groupSessionsByProject, groupSessionsByTime, isDayChange, mdToSpeech, type UIMessage } from "@/lib/chatUtils";
 import { MessageMarkdown, CopyButton } from "@/components/MessageMarkdown";
 import { ToolCallCard } from "@/components/ToolCallCard";
 import { TaskWorkspacePanel } from "@/components/TaskWorkspacePanel";
+import type { SettingsTab } from "@/pages/SettingsPage";
 import {
   Chat, Config, errText,
   type AgentConfig, type AttachmentIn, type ChatSession, type TeamConfig,
@@ -60,7 +65,12 @@ function speak(text: string) {
   window.speechSynthesis.speak(u);
 }
 
-export function ChatPage() {
+export function ChatPage({ isDark, onToggleTheme, onOpenHelp, onOpenSettings }: {
+  isDark: boolean;
+  onToggleTheme: () => void;
+  onOpenHelp: () => void;
+  onOpenSettings: (tab?: SettingsTab) => void;
+}) {
   const [sessions, setSessions] = useState<ChatSession[]>([]);
   const [activeID, setActiveID] = useState("");
   const [messages, setMessages] = useState<UIMessage[]>([]);
@@ -99,6 +109,9 @@ export function ChatPage() {
   const [statsOpen, setStatsOpen] = useState(false);
   const [stats, setStats] = useState<SessionStats | null>(null);
   const [autoSpeak, setAutoSpeak] = useState(false);
+  const [globalWorkspace, setGlobalWorkspace] = useState("");
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [sidebarGrouping, setSidebarGrouping] = useState<"time" | "project">("time");
   const [resolvedWorkspace, setResolvedWorkspace] = useState("");
   const [workspaceError, setWorkspaceError] = useState("");
   const [workspacePanelOpen, setWorkspacePanelOpen] = useState(false);
@@ -188,6 +201,9 @@ export function ChatPage() {
         setProviderCount((c.providers ?? []).length);
         setProviderList(c.providers ?? []);
         setAutoSpeak(!!c.settings?.autoSpeak);
+        setGlobalWorkspace(c.settings?.workspaceDir ?? "");
+        setSidebarCollapsed(!!c.settings?.sidebarCollapsed);
+        setSidebarGrouping(c.settings?.sidebarGrouping === "project" ? "project" : "time");
       })
       .catch((e) => toast.error(`加载配置失败: ${errText(e)}`));
   }, [reloadSessions]);
@@ -824,7 +840,6 @@ export function ChatPage() {
   }, [search]);
 
   const [showArchived, setShowArchived] = useState(false);
-  const archivedCount = useMemo(() => sessions.filter((x) => x.archived).length, [sessions]);
 
   const filteredSessions = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -833,13 +848,43 @@ export function ChatPage() {
       if (s.title.toLowerCase().includes(q)) return true;
       return contentMatches ? contentMatches.has(s.id) : false;
     };
-    const withQuery = sessions.filter((s) => !s.archived && matches(s));
-    if (showArchived) {
-      // Archived entries obey the same query filter as the main list.
-      return [...withQuery, ...sessions.filter((s) => s.archived && matches(s))];
-    }
-    return withQuery;
-  }, [sessions, search, contentMatches, showArchived]);
+    // Archived sessions pass the same query filter; grouping buckets them
+    // into the trailing "已归档" group whose visibility showArchived controls.
+    return sessions.filter((s) => matches(s));
+  }, [sessions, search, contentMatches]);
+
+  const persistSidebarPrefs = (patch: { sidebarCollapsed?: boolean; sidebarGrouping?: "time" | "project" }) => {
+    if (patch.sidebarCollapsed !== undefined) setSidebarCollapsed(patch.sidebarCollapsed);
+    if (patch.sidebarGrouping !== undefined) setSidebarGrouping(patch.sidebarGrouping);
+    Config.GetConfig()
+      .then((c) => {
+        if (patch.sidebarCollapsed !== undefined) c.settings.sidebarCollapsed = patch.sidebarCollapsed;
+        if (patch.sidebarGrouping !== undefined) c.settings.sidebarGrouping = patch.sidebarGrouping;
+        return Config.SaveSettings(c.settings);
+      })
+      .catch(() => { /* offline: keep the UI state, retry on next toggle */ });
+  };
+  const toggleSidebar = useCallback(() => {
+    const next = !sidebarCollapsed;
+    setSidebarCollapsed(next);
+    persistSidebarPrefs({ sidebarCollapsed: next });
+  }, [sidebarCollapsed]);
+  // ⌘B is a shell-level shortcut like ⌘N: App dispatches the custom event so
+  // it keeps working across view switches.
+  useEffect(() => {
+    const onToggle = () => toggleSidebar();
+    window.addEventListener("wb-toggle-sidebar", onToggle);
+    return () => window.removeEventListener("wb-toggle-sidebar", onToggle);
+  }, [toggleSidebar]);
+
+  // `now` is captured per render: time buckets age with the wall clock across
+  // long-lived windows without needing a timer.
+  const visibleGroups = useMemo(
+    () => (sidebarGrouping === "project"
+      ? groupSessionsByProject(filteredSessions, globalWorkspace)
+      : groupSessionsByTime(filteredSessions, new Date())),
+    [filteredSessions, sidebarGrouping, globalWorkspace],
+  );
 
   // Provider + model of the active target (agent → its model; team →
   // coordinator when auto, lead agent otherwise) for cost estimation and
@@ -1053,8 +1098,19 @@ export function ChatPage() {
   return (
     <div className="flex h-full">
       {/* Sessions */}
+      {!sidebarCollapsed && (
       <div className="flex w-60 shrink-0 flex-col border-r">
         <div className="grid gap-2 p-3">
+          <div className="flex items-center justify-between">
+            <span className="text-sm font-semibold">对话</span>
+            <button
+              title="折叠对话列表（⌘B）"
+              onClick={toggleSidebar}
+              className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
+            >
+              <PanelLeftClose className="h-4 w-4" />
+            </button>
+          </div>
           <Button className="w-full" size="sm" onClick={createDirectSession}>
             <Plus className="mr-1 h-4 w-4" /> 新对话
           </Button>
@@ -1067,18 +1123,51 @@ export function ChatPage() {
               onChange={(e) => setSearch(e.target.value)}
             />
           </div>
+          <div className="flex items-center justify-end gap-1">
+            <button
+              title="按时间分组"
+              onClick={() => persistSidebarPrefs({ sidebarGrouping: "time" })}
+              className={cn(
+                "flex items-center gap-1 rounded-md px-2 py-1 text-[11px] transition-colors",
+                sidebarGrouping === "time" ? "bg-accent text-accent-foreground" : "text-muted-foreground hover:bg-accent/50 hover:text-foreground",
+              )}
+            >
+              <Clock className="h-3 w-3" /> 时间
+            </button>
+            <button
+              title="按项目分组（工作区目录）"
+              onClick={() => persistSidebarPrefs({ sidebarGrouping: "project" })}
+              className={cn(
+                "flex items-center gap-1 rounded-md px-2 py-1 text-[11px] transition-colors",
+                sidebarGrouping === "project" ? "bg-accent text-accent-foreground" : "text-muted-foreground hover:bg-accent/50 hover:text-foreground",
+              )}
+            >
+              <FolderOpen className="h-3 w-3" /> 项目
+            </button>
+          </div>
         </div>
         <ScrollArea className="flex-1 px-2">
           <div className="grid gap-1 pb-3">
-            {archivedCount > 0 && (
-              <button
-                className="mb-1 w-full rounded-md px-2 py-1 text-left text-xs text-muted-foreground hover:bg-accent/50"
-                onClick={() => setShowArchived((v) => !v)}
-              >
-                {showArchived ? "隐藏" : "显示"}已归档会话（{archivedCount}）
-              </button>
-            )}
-            {filteredSessions.map((s) => (
+            {visibleGroups.map((group) => (
+              <div key={group.key}>
+                {group.key === "archived" && !showArchived ? (
+                  <button
+                    className="mt-1 flex w-full items-center gap-1 rounded-md px-2 py-1 text-left text-xs text-muted-foreground hover:bg-accent/50 hover:text-foreground"
+                    onClick={() => setShowArchived(true)}
+                  >
+                    <ChevronRight className="h-3 w-3" /> 已归档会话（{group.sessions.length}）
+                  </button>
+                ) : (
+                  <>
+                    <div className="flex items-center justify-between px-2 pb-0.5 pt-2 text-[11px] font-medium text-muted-foreground">
+                      <span title={"path" in group ? group.path : undefined}>{group.label}</span>
+                      {group.key === "archived" && (
+                        <button title="收起已归档" onClick={() => setShowArchived(false)} className="rounded p-0.5 hover:text-foreground">
+                          <ChevronDown className="h-3 w-3" />
+                        </button>
+                      )}
+                    </div>
+                    {group.sessions.map((s) => (
               <div
                 key={s.id}
                 role="button"
@@ -1154,6 +1243,10 @@ export function ChatPage() {
                 </span>
               </div>
             ))}
+                  </>
+                )}
+              </div>
+            ))}
             {sessions.length > 0 && filteredSessions.length === 0 && (
               <div className="px-2 py-6 text-center text-xs text-muted-foreground">没有匹配的对话</div>
             )}
@@ -1164,19 +1257,56 @@ export function ChatPage() {
             )}
           </div>
         </ScrollArea>
+        <div className="flex items-center justify-between border-t px-3 py-2 text-[11px] text-muted-foreground">
+          <span className="truncate">ADK Go v2 · Wails v3</span>
+          <span className="flex shrink-0 items-center gap-1">
+            <button title="设置（⌘,）" onClick={() => onOpenSettings()} className="rounded p-1 hover:bg-accent hover:text-foreground">
+              <SettingsIcon className="h-3.5 w-3.5" />
+            </button>
+            <button title="快捷键与命令" onClick={onOpenHelp} className="rounded p-1 hover:bg-accent hover:text-foreground">
+              <CircleHelp className="h-3.5 w-3.5" />
+            </button>
+            <button title="切换深色/浅色主题" onClick={onToggleTheme} className="rounded p-1 hover:bg-accent hover:text-foreground">
+              {isDark ? <Sun className="h-3.5 w-3.5" /> : <Moon className="h-3.5 w-3.5" />}
+            </button>
+          </span>
+        </div>
       </div>
+      )}
 
       {/* Chat area */}
       <div className="flex min-w-0 flex-1 flex-col">
         <div className="flex items-center justify-between border-b px-4 py-2.5">
           <div className="flex items-center gap-2 text-sm">
+            {sidebarCollapsed && (
+              <button
+                title="展开对话列表（⌘B）"
+                onClick={toggleSidebar}
+                className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
+              >
+                <PanelLeftOpen className="h-4 w-4" />
+              </button>
+            )}
             <MessageSquare className="h-4 w-4 text-muted-foreground" />
             <span className="max-w-[320px] truncate font-medium">{active ? active.title : "WorkBuddy"}</span>
             {active && (
-              <Badge variant="outline" className="font-normal">
-                {active.targetType === "team" ? "团队" : active.targetType === "remote" ? "远程" : active.targetType === "agent" ? "Agent" : "直聊"}
-                {active.targetType ? `: ${targetLabel}` : ""}
-              </Badge>
+              (() => {
+                const label = active.targetType === "team" ? "团队" : active.targetType === "remote" ? "远程" : active.targetType === "agent" ? "Agent" : "直聊";
+                // Configurable targets deep-link into the settings hub; direct
+                // chats ride the default provider, so their badge stays plain.
+                const tab: SettingsTab | undefined = active.targetType === "agent" ? "agents" : active.targetType === "team" ? "teams" : undefined;
+                return (
+                  <Badge
+                    variant="outline"
+                    className={cn("font-normal", tab && "cursor-pointer hover:border-foreground/40 hover:text-foreground")}
+                    title={tab ? "管理此配置" : undefined}
+                    onClick={tab ? () => onOpenSettings(tab) : undefined}
+                  >
+                    {label}
+                    {active.targetType ? `: ${targetLabel}` : ""}
+                  </Badge>
+                );
+              })()
             )}
             {active && (
               <button
@@ -1232,6 +1362,12 @@ export function ChatPage() {
                   {sessionModels.map((m) => (
                     <SelectItem key={m.id} value={m.id}>{m.id}</SelectItem>
                   ))}
+                  <button
+                    className="m-1 flex w-[calc(100%-8px)] items-center gap-1.5 rounded-md px-2 py-1.5 text-left text-xs text-muted-foreground hover:bg-accent hover:text-foreground"
+                    onClick={() => onOpenSettings("models")}
+                  >
+                    <Boxes className="h-3.5 w-3.5 shrink-0" /> 管理模型供应商…
+                  </button>
                 </SelectContent>
               </Select>
             )}
@@ -1351,7 +1487,7 @@ export function ChatPage() {
                 </div>
               </div>
             )}
-            {messages.length === 0 && !active && providerCount === 0 && <Onboarding />}
+            {messages.length === 0 && !active && providerCount === 0 && <Onboarding onOpenSettings={onOpenSettings} />}
             {messages.length === 0 && !active && providerCount > 0 && (
               // Providers exist but no chat is selected: previously this
               // rendered an empty pane with no hint about what to do.
@@ -1479,6 +1615,13 @@ export function ChatPage() {
                       </span>
                     </button>
                   ))}
+                  <button
+                    type="button"
+                    className="flex w-full items-center gap-2 border-t px-3 py-1.5 text-left text-xs text-muted-foreground hover:bg-accent/60 hover:text-foreground"
+                    onMouseDown={(e) => { e.preventDefault(); onOpenSettings("agents"); }}
+                  >
+                    <Bot className="h-3.5 w-3.5 shrink-0" /> 管理助手与团队…
+                  </button>
                 </div>
               )}
               {slashSuggestions.length > 0 && (
@@ -1712,16 +1855,11 @@ export function ChatPage() {
 }
 
 /** Onboarding guides first-run users like Codex/Claude desktops do. */
-function Onboarding() {
+function Onboarding({ onOpenSettings }: { onOpenSettings: (tab?: SettingsTab) => void }) {
   const steps = [
-    { n: 1, title: "配置模型供应商", desc: "添加 OpenAI 兼容 / Anthropic / Gemini 接口", page: "模型配置" },
-    { n: 2, title: "直接开聊", desc: "输入消息立即对话；@ 可指定助手、团队或远程 Agent", page: "对话" },
+    { n: 1, title: "配置模型供应商", desc: "添加 OpenAI 兼容 / Anthropic / Gemini 接口" },
+    { n: 2, title: "直接开聊", desc: "输入消息立即对话；@ 可指定助手、团队或远程 Agent" },
   ];
-  const go = (label: string) => {
-    const btns = Array.from(document.querySelectorAll("aside button"));
-    const target = btns.find((b) => b.textContent?.includes(label)) as HTMLElement | undefined;
-    target?.click();
-  };
   return (
     <div className="mx-auto mt-10 max-w-md rounded-xl border bg-card p-5 shadow-sm">
       <div className="mb-1 text-lg font-semibold">欢迎使用 WorkBuddy Agent 👋</div>
@@ -1730,7 +1868,7 @@ function Onboarding() {
         {steps.map((s) => (
           <button
             key={s.n}
-            onClick={() => go(s.page)}
+            onClick={s.n === 1 ? () => onOpenSettings("models") : undefined}
             className="flex w-full items-center gap-3 rounded-lg border p-3 text-left transition-colors hover:border-primary/50 hover:bg-accent/40"
           >
             <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary/10 text-sm font-semibold text-primary">
