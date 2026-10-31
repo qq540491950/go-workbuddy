@@ -203,8 +203,16 @@ func (k *KnowledgeIndex) ensureIndexed(ctx context.Context, workspace string, em
 	}
 
 	dir := filepath.Join(workspace, knowledgeDirName)
-	if _, err := os.Stat(dir); os.IsNotExist(err) {
-		return nil // empty knowledge base; search reports the empty state
+	if _, err := os.Stat(dir); err != nil {
+		if os.IsNotExist(err) {
+			// The whole knowledge directory is gone: wipe the index so
+			// searches stop returning content of files that no longer exist.
+			if err := k.DB.Where("1 = 1").Delete(&KnowledgeChunk{}).Error; err != nil {
+				return err
+			}
+			return nil
+		}
+		return err
 	}
 
 	// mtimes of files that still exist (relative paths support nesting).
@@ -322,11 +330,9 @@ func (k *KnowledgeIndex) ensureIndexed(ctx context.Context, workspace string, em
 	wg.Wait()
 	close(results)
 
-	select {
-	case err := <-errCh:
-		return err
-	default:
-	}
+	// Write every successful job first: a single failed file used to throw
+	// away the whole rebuild. Failed files keep no rows (their stale rows
+	// were deleted up front), so the next search retries just them.
 	for r := range results {
 		for i, vec := range r.vecs {
 			row := KnowledgeChunk{
@@ -335,9 +341,22 @@ func (k *KnowledgeIndex) ensureIndexed(ctx context.Context, workspace string, em
 				Dim: len(vec), Embedding: encodeVector(vec),
 			}
 			if err := k.DB.Create(&row).Error; err != nil {
-				return err
+				errCh <- fmt.Errorf("写入 %s 失败: %w", r.file, err)
 			}
 		}
+	}
+	var errs []string
+drain:
+	for {
+		select {
+		case err := <-errCh:
+			errs = append(errs, err.Error())
+		default:
+			break drain
+		}
+	}
+	if len(errs) > 0 {
+		return fmt.Errorf("%d 个文件嵌入失败: %s", len(errs), strings.Join(errs, "；"))
 	}
 	return nil
 }

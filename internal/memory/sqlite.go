@@ -107,8 +107,11 @@ func (s *SQLiteService) SearchMemory(_ context.Context, req *memory.SearchReques
 		conditions := make([]string, 0, len(keywords))
 		args := make([]any, 0, len(keywords))
 		for _, kw := range keywords {
-			conditions = append(conditions, "lower(content) LIKE ?")
-			args = append(args, "%"+kw+"%")
+			// Escape LIKE wildcards so "100%" matches the literal text
+			// (same contract as session content search).
+			esc := strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`).Replace(kw)
+			conditions = append(conditions, "lower(content) LIKE ? ESCAPE '\\'")
+			args = append(args, "%"+esc+"%")
 		}
 		q = q.Where("("+strings.Join(conditions, " OR ")+")", args...)
 	}

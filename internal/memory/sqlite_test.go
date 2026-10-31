@@ -20,7 +20,7 @@ import (
 
 // newFixture opens a temp database service plus a real ADK session containing
 // two exchanges, exercising the same storage used in production.
-func newFixture(t *testing.T) (*SQLiteService, session.Session) {
+func newFixture(t *testing.T, texts ...string) (*SQLiteService, session.Session) {
 	t.Helper()
 	db, err := gorm.Open(sqlite.Open(filepath.Join(t.TempDir(), "m.db")))
 	if err != nil {
@@ -50,11 +50,22 @@ func newFixture(t *testing.T) (*SQLiteService, session.Session) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	events := []*session.Event{
-		{ID: "e1", Author: "user", Timestamp: time.Now(),
-			LLMResponse: model.LLMResponse{Content: &genai.Content{Role: genai.RoleUser, Parts: []*genai.Part{{Text: "项目部署在 europe-west4 区"}}}}},
-		{ID: "e2", Author: "assistant", Timestamp: time.Now(),
-			LLMResponse: model.LLMResponse{Content: &genai.Content{Role: genai.RoleModel, Parts: []*genai.Part{{Text: "记住了。"}}}}},
+	defaultTexts := []string{"项目部署在 europe-west4 区", "记住了。"}
+	if len(texts) == 0 {
+		texts = defaultTexts
+	}
+	var events []*session.Event
+	for i, txt := range texts {
+		role := genai.RoleUser
+		author := "user"
+		body := txt
+		if i%2 == 1 {
+			role, author, body = genai.RoleModel, "assistant", "记住了。"
+		}
+		events = append(events, &session.Event{
+			ID: fmt.Sprintf("e%d", i+1), Author: author, Timestamp: time.Now(),
+			LLMResponse: model.LLMResponse{Content: &genai.Content{Role: role, Parts: []*genai.Part{{Text: body}}}},
+		})
 	}
 	for _, ev := range events {
 		if err := sessions.AppendEvent(ctx, get.Session, ev); err != nil {
@@ -66,6 +77,33 @@ func newFixture(t *testing.T) (*SQLiteService, session.Session) {
 		t.Fatal(err)
 	}
 	return svc, get2.Session
+}
+
+// TestSearchMemoryEscapesLikeWildcards: a query containing % or _ must match
+// literally — "%"-wildcard queries used to hit every stored row.
+func TestSearchMemoryEscapesLikeWildcards(t *testing.T) {
+	svc, sess := newFixture(t, "迁移进度 100% 完成并验证", "新增了 100 个单元测试")
+	if err := svc.AddSessionToMemory(context.Background(), sess); err != nil {
+		t.Fatal(err)
+	}
+	resp, err := svc.SearchMemory(context.Background(), &memory.SearchRequest{AppName: "app", UserID: "u", Query: "100%"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(resp.Memories) != 1 {
+		t.Fatalf("literal %% query must hit only the 100%% entry, got %d hits", len(resp.Memories))
+	}
+	found := false
+	for _, m := range resp.Memories {
+		for _, p := range m.Content.Parts {
+			if p != nil && strings.Contains(p.Text, "100%") {
+				found = true
+			}
+		}
+	}
+	if !found {
+		t.Fatal("literal 100% entry missing from results")
+	}
 }
 
 func TestAddAndSearchMemory(t *testing.T) {

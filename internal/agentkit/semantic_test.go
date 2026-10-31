@@ -1,10 +1,12 @@
 package agentkit
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"hash/fnv"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -110,6 +112,97 @@ func seedKnowledge(t *testing.T, files map[string]string) string {
 		}
 	}
 	return ws
+}
+
+// TestDeletedKnowledgeDirClearsIndex: removing the whole knowledge directory
+// must wipe the index — stale vectors used to survive and searches kept
+// returning content of files that no longer exist.
+func TestDeletedKnowledgeDirClearsIndex(t *testing.T) {
+	srv := httptest.NewServer(fakeEmbeddings())
+	defer srv.Close()
+	ws := seedKnowledge(t, map[string]string{
+		"k8s.md": "# 集群\n\nkubernetes pod 调度策略与资源配额管理。",
+	})
+	idx, err := openTestKnowledgeIndex(t)
+	if err != nil {
+		t.Fatal(err)
+	}
+	opts := SearchOptions{Workspace: ws, Index: idx, Embedding: &EmbeddingConfig{BaseURL: srv.URL, Model: "fake-embed"}}
+	if _, err := searchHybrid(opts, "kubernetes"); err != nil {
+		t.Fatal(err)
+	}
+	if rowCount(t, idx) == 0 {
+		t.Fatal("precondition: indexed rows expected")
+	}
+	if err := os.RemoveAll(filepath.Join(ws, "knowledge")); err != nil {
+		t.Fatal(err)
+	}
+	res, err := searchHybrid(opts, "kubernetes")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(res, "知识库为空") {
+		t.Fatalf("search must report an empty knowledge base after dir removal, got: %s", res)
+	}
+	if got := rowCount(t, idx); got != 0 {
+		t.Fatalf("index must be cleared after dir removal, rows=%d", got)
+	}
+}
+
+// TestPartialEmbeddingFailureKeepsGoodRows: one file failing to embed must
+// not discard the rows of the files that succeeded — a single network blip
+// used to throw away the whole rebuild.
+func TestPartialEmbeddingFailureKeepsGoodRows(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		r.Body = io.NopCloser(bytes.NewReader(body))
+		var req struct {
+			Input []string `json:"input"`
+		}
+		if err := json.Unmarshal(body, &req); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		for _, in := range req.Input {
+			if strings.Contains(in, "必然失败") {
+				http.Error(w, "boom", http.StatusInternalServerError)
+				return
+			}
+		}
+		fakeEmbeddings()(w, r)
+	}))
+	defer srv.Close()
+	ws := seedKnowledge(t, map[string]string{
+		"good.md": "kubernetes pod 调度策略与资源配额管理。",
+		"bad.md":  "这个文件必然失败：触发嵌入错误的标记。",
+	})
+	idx, err := openTestKnowledgeIndex(t)
+	if err != nil {
+		t.Fatal(err)
+	}
+	opts := SearchOptions{Workspace: ws, Index: idx, Embedding: &EmbeddingConfig{BaseURL: srv.URL, Model: "fake-embed"}}
+	// The tool degrades to keyword search on error; what we pin is the INDEX
+	// state: good.md's rows must survive the bad.md failure, and the error
+	// must name the failed file for diagnosis.
+	if err := idx.ensureIndexed(context.Background(), ws, opts.Embedding); err == nil {
+		t.Fatal("expected an aggregate embedding error")
+	} else if !strings.Contains(err.Error(), "bad.md") {
+		t.Fatalf("error must name the failed file, got: %v", err)
+	}
+	var goodRows int64
+	if err := idx.DB.Model(&KnowledgeChunk{}).Where("file = ?", "good.md").Count(&goodRows).Error; err != nil {
+		t.Fatal(err)
+	}
+	if goodRows == 0 {
+		t.Fatal("successful file lost its rows because another file failed to embed")
+	}
+	var badRows int64
+	if err := idx.DB.Model(&KnowledgeChunk{}).Where("file = ?", "bad.md").Count(&badRows).Error; err != nil {
+		t.Fatal(err)
+	}
+	if badRows != 0 {
+		t.Fatalf("failed file must not leave rows behind, got %d", badRows)
+	}
 }
 
 func TestSemanticSearchRanksAndCaches(t *testing.T) {
