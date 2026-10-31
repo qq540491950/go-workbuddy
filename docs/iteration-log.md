@@ -4,6 +4,22 @@
 
 ## 视觉测试与体验设计
 
+### 第一百四十六轮迭代：直聊会话与 @ 助手路由，滚动条与设置页修复（已实施）
+
+依据：用户反馈对齐 Codex / Claude Code / WorkBuddy 的对话模型——对话不应要求先创建 Agent，助手应通过 `@` 按需唤起；同时指出设置页布局失衡与全站滚动条观感问题。代码审查确认三处根因：新对话对话框在无 Agent 时死锁（必须先建 Agent）；全站无 `::-webkit-scrollbar` 样式，WebView2 深色主题渲染 15px 亮色原生滚动条且与聊天区 radix ScrollArea 风格割裂；设置页为唯一未居中的 `max-w-xl` 窄列（实测 1217px 视口中右侧空置 640px）。另发现既有缺陷：非 ASCII Agent 名经 `sanitizeAgentName` 变为 `agent_<hash>`，聊天气泡与流事件直接显示该哈希。
+
+实现要点：
+
+- **直聊会话**：`NewSessionWithWorkspace` 允许空目标（仅 `""`，非法类型仍拒绝）；`runTurn` 新增直聊分支——不落库地构造「默认供应商默认模型 + 通用提示词」的临时 Agent，会话级模型覆盖与工作区机制照常生效。无供应商时发送报错引导至模型配置页。
+- **@ 消息级路由**：`resolveMention` 解析消息开头 `@名称`（Agent/团队/远程，最长名匹配，须跟随空格边界），`turnTargetFor` 仅将该轮构建目标替换为被 @ 者，会话绑定不变；@ 提及保留在消息原文中，Regenerate / EditAndResend / HITL 恢复（从最后一条用户消息回溯解析）都按同一规则重放路由；未知名回落直聊。
+- **作者名反查**：新增 `displayAuthor` 将 ADK 事件作者（净化后标识符）映射回配置显示名，应用于流事件与历史渲染（导出经同一渲染受益），中文 Agent 名在气泡中正确显示。
+- **前端直聊流**：「新对话」按钮与 ⌘N 直接创建空目标会话（删除旧选择对话框）；无会话时输入框可用，首条消息惰性建会话（`freshInput` 草稿）；composer 输入 `@` 弹出助手/团队/远程候选浮层（键盘上下选择、Enter/Tab 采纳、Esc 关闭）；头部徽标「直聊」、模型选择器列默认供应商全部模型、空态与 Onboarding 改为「配供应商 → 直接开聊（@ 指定助手）」两步。
+- **滚动条统一**：全局 10px 细滚动条（thumb 用前景色 25% 混合、圆角、hover 提亮、track 透明）+ `scrollbar-width: thin`，设置/Agents/团队/Skills/MCP/模型页、弹窗与代码块与聊天区视觉一致。
+- **设置页布局**：`max-w-5xl` 居中 + `lg:grid-cols-2` 两列卡片网格（窄窗口回落单列），保存按钮改为吸底模糊操作栏（跨双列）。
+- **顺带修复**：`Input`/`Textarea` 改 `forwardRef`，修复 ChatPage 传 ref 无效导致的 ⌘K 聚焦失效（React "Function components cannot be given refs" 告警消失）。
+
+测试证据：后端新增 `chatservice_direct_test.go` 四用例（直聊会话目标不变且作者为「助手」、@路由至具名 Agent 且 Regenerate 保持路由、未知名回落直聊、无供应商报错引导），`go test ./internal/...` 与 `go vet ./internal/... .` 全绿；前端 `tsc --noEmit`、vitest 11 用例、生产构建通过；浏览器桩（1440×900）走查确认直聊会话创建、直聊徽标与默认模型选择器、`@写` 弹出候选且 Enter 采纳为 `@写手助手 `、设置页两列居中布局与吸底保存、细滚动条生效。
+
 ### 第一百四十五轮迭代：Wails v3 正式版与 Windows 启动告警修复（已实施）
 
 依据：Wails v3.0.0 正式发布后统一升级 Go SDK、CLI 与前端运行时；Windows `wails3 dev` 启动仍出现 `uname` / `tail` 缺失提示，定位为根 Taskfile 无条件加载 Android 全局 shell 变量所致，而非 Windows 构建需要这些工具。

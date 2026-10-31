@@ -107,12 +107,12 @@ export function SettingsPage() {
 
   return (
     <div className="h-full overflow-y-auto p-6">
-      <div className="mb-4">
+      <div className="mx-auto mb-4 max-w-5xl">
         <h1 className="text-lg font-semibold">设置</h1>
         <p className="text-sm text-muted-foreground">应用全局配置</p>
       </div>
 
-      <div className="max-w-xl space-y-4">
+      <div className="mx-auto grid max-w-5xl items-start gap-4 lg:grid-cols-2">
         <Card>
           <CardHeader>
             <CardTitle className="text-base">外观</CardTitle>
@@ -714,7 +714,9 @@ export function SettingsPage() {
           </CardContent>
         </Card>
 
-        <Button onClick={save} disabled={saving}>保存设置</Button>
+        <div className="sticky bottom-0 -mx-6 -mb-6 mt-2 flex justify-end border-t bg-background/90 px-6 py-3 backdrop-blur lg:col-span-2">
+          <Button onClick={save} disabled={saving}>保存设置</Button>
+        </div>
         {kbPreviewPath && (
           <ArtifactPreview path={kbPreviewPath} onClose={() => setKbPreviewPath(null)} />
         )}

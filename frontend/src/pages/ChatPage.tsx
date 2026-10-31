@@ -67,10 +67,16 @@ export function ChatPage() {
   // Per-session input drafts: switching sessions never loses what the user
   // was typing (pairs with parallel background sessions).
   const [drafts, setDrafts] = useState<Record<string, string>>({});
-  const input = activeID ? (drafts[activeID] ?? "") : "";
+  // Draft typed before any session exists: direct chats are created lazily
+  // on the first send, like the composer-first flow of Codex/ChatGPT desktop.
+  const [freshInput, setFreshInput] = useState("");
+  const input = activeID ? (drafts[activeID] ?? "") : freshInput;
   const setInput = useCallback(
     (v: string | ((prev: string) => string)) => {
-      if (!activeID) return;
+      if (!activeID) {
+        setFreshInput((cur) => (typeof v === "function" ? v(cur) : v));
+        return;
+      }
       setDrafts((prev) => {
         const cur = prev[activeID] ?? "";
         const next = typeof v === "function" ? v(cur) : v;
@@ -87,10 +93,6 @@ export function ChatPage() {
   const [providerCount, setProviderCount] = useState(0);
   const [providerList, setProviderList] = useState<ModelProvider[]>([]);
   const [search, setSearch] = useState("");
-  const [newChatOpen, setNewChatOpen] = useState(false);
-  const [newType, setNewType] = useState<"agent" | "team" | "remote">("agent");
-  const [newTarget, setNewTarget] = useState("");
-  const [newWorkspace, setNewWorkspace] = useState("");
   const [renaming, setRenaming] = useState<ChatSession | null>(null);
   const [renameText, setRenameText] = useState("");
   const [sessionUsage, setSessionUsage] = useState<UsageInfo | null>(null);
@@ -159,6 +161,23 @@ export function ChatPage() {
       .then((ss) => setSessions(ss ?? []))
       .catch((e) => toast.error(`加载会话失败: ${errText(e)}`));
   }, []);
+  // Latest direct-session creator for the global ⌘N handler, whose listener
+  // effect is registered before this definition exists in the render scope.
+  const createDirectSessionRef = useRef<() => void>(() => {});
+  // New chats are ALWAYS direct (no target): turns run on the default
+  // provider's model, and leading @助手 mentions route individual turns to
+  // agents, teams or remote A2A agents. No dialog, no pre-configuration.
+  const createDirectSession = useCallback(async () => {
+    try {
+      const s = await Chat.NewSessionWithWorkspace("", "", "", "");
+      setMessages([]);
+      reloadSessions();
+      setActiveID(s.id);
+    } catch (e) {
+      toast.error(`创建会话失败: ${errText(e)}`);
+    }
+  }, [reloadSessions]);
+  createDirectSessionRef.current = createDirectSession;
   useEffect(() => {
     reloadSessions();
     Config.GetConfig()
@@ -389,11 +408,11 @@ export function ChatPage() {
     if (scrollFrame.current != null) cancelAnimationFrame(scrollFrame.current);
   }, []);
 
-  // Cmd/Ctrl+N opens the new-chat dialog; Cmd/Ctrl+K focuses the composer.
+  // Cmd/Ctrl+N starts a direct chat; Cmd/Ctrl+K focuses the composer.
   // The keydown listener lives in App (the help panel documents them on every
   // page); ChatPage reacts to the dispatched custom events.
   useEffect(() => {
-    const onNew = () => setNewChatOpen(true);
+    const onNew = () => createDirectSessionRef.current();
     const onFocus = () => inputRef.current?.focus();
     window.addEventListener("wb-new-chat", onNew);
     window.addEventListener("wb-focus-composer", onFocus);
@@ -430,9 +449,28 @@ export function ChatPage() {
   const send = async (override?: string, targetID?: string) => {
     // targetID lets fireQueued deliver to the session the message was queued
     // for, not whichever chat happens to be active 80ms later.
-    const sid = targetID ?? activeID;
+    let sid = targetID ?? activeID;
     const text = (override ?? input).trim();
-    if (!text || !sid) return;
+    if (!text) return;
+    // Composer-first flow: with no session yet, the first message creates a
+    // direct chat on the fly. Only a provider is required — never an Agent.
+    if (!sid) {
+      if (providerCount === 0) {
+        toast.error("请先在「模型配置」页添加供应商并填入 API Key");
+        return;
+      }
+      try {
+        const s = await Chat.NewSessionWithWorkspace("", "", "", "");
+        sid = s.id;
+        setFreshInput("");
+        setActiveID(s.id);
+        setMessages([]);
+        reloadSessions();
+      } catch (e) {
+        toast.error(`创建会话失败: ${errText(e)}`);
+        return;
+      }
+    }
     if (runningMap[sid] && !override) {
       setQueued((prev) => ({ ...prev, [sid]: text }));
       if (sid === activeID) setInput("");
@@ -483,7 +521,7 @@ export function ChatPage() {
         }
         case "/new":
           setInput("");
-          setNewChatOpen(true);
+          createDirectSession();
           return;
         default:
           toast.error(`未知命令 ${cmd}。可用：/export /exporthtml /stats /todos /new`);
@@ -708,24 +746,6 @@ export function ChatPage() {
     }
   };
 
-  const createSession = async () => {
-    if (!newTarget) {
-      toast.error("请选择目标");
-      return;
-    }
-    try {
-      const s = await Chat.NewSessionWithWorkspace(newType, newTarget, "", newWorkspace);
-      setNewChatOpen(false);
-      setNewTarget("");
-      setNewWorkspace("");
-      reloadSessions();
-      setActiveID(s.id);
-      setMessages([]);
-    } catch (e) {
-      toast.error(`创建失败: ${errText(e)}`);
-    }
-  };
-
   const pickWorkspace = async () => {
     const picked = await Dialogs.OpenFile({
       CanChooseDirectories: true,
@@ -826,6 +846,13 @@ export function ChatPage() {
   // multimodal gating.
   const target = useMemo(() => {
     if (!active) return { provider: null as ModelProvider | null, model: null as ModelInfo | null };
+    if (active.targetType === "") {
+      // Direct chat: default provider's first model (the same resolution the
+      // backend uses for target-less sessions).
+      const provider = providerList.find((p) => p.isDefault) ?? providerList[0] ?? null;
+      const model = provider?.models?.[0] ?? null;
+      return { provider, model };
+    }
     let providerId = "";
     let modelId = "";
     if (active.targetType === "team") {
@@ -876,16 +903,22 @@ export function ChatPage() {
 
   const targetLabel = useMemo(() => {
     if (!active) return "";
+    if (active.targetType === "") return "助手";
     if (active.targetType === "team") {
       return teams.find((t) => t.id === active.targetId)?.name ?? "团队";
     }
     return agents.find((a) => a.id === active.targetId)?.name ?? "Agent";
   }, [active, agents, teams]);
 
-  // Per-session model picker (agent sessions only): mirrors the per-chat
+  // Per-session model picker (agent and direct sessions): mirrors the per-chat
   // model selector of Claude/ChatGPT desktops.
   const sessionModels = useMemo(() => {
-    if (!active || active.targetType !== "agent") return [];
+    if (!active) return [];
+    if (active.targetType === "") {
+      const provider = providerList.find((p) => p.isDefault) ?? providerList[0];
+      return provider?.models ?? [];
+    }
+    if (active.targetType !== "agent") return [];
     const agent = agents.find((a) => a.id === active.targetId);
     return providerList.find((p) => p.id === agent?.providerId)?.models ?? [];
   }, [active, agents, providerList]);
@@ -895,7 +928,7 @@ export function ChatPage() {
     try {
       await Chat.SetSessionModel(activeID, modelID === "__default" ? "" : modelID);
       reloadSessions();
-      toast.success(modelID === "__default" ? "已恢复 Agent 默认模型" : `本会话已切换到 ${modelID}`);
+      toast.success(modelID === "__default" ? "已恢复默认模型" : `本会话已切换到 ${modelID}`);
     } catch (e) {
       toast.error(`切换模型失败: ${errText(e)}`);
     }
@@ -971,6 +1004,35 @@ export function ChatPage() {
     return SLASH_COMMANDS.filter((c) => c.cmd.startsWith(q));
   }, [input]);
 
+  // @-mention autocomplete: a leading "@名称" routes that turn to the named
+  // agent/team/remote (parsed by the backend), so the popup offers exactly
+  // those candidates while the first token is still being typed.
+  const mentionQuery = useMemo(() => {
+    const m = /^@([^@\s]*)$/.exec(input);
+    return m ? m[1].toLowerCase() : null;
+  }, [input]);
+  const mentionCandidates = useMemo(() => {
+    if (mentionQuery == null) return [];
+    const all = [
+      ...agents.map((a) => ({ type: "agent" as const, id: a.id, name: a.name })),
+      ...teams.map((t) => ({ type: "team" as const, id: t.id, name: t.name })),
+      ...remotes.map((r) => ({ type: "remote" as const, id: r.id, name: r.name })),
+    ].filter((x) => x.name.toLowerCase().includes(mentionQuery));
+    return all.slice(0, 8);
+  }, [mentionQuery, agents, teams, remotes]);
+  const [mentionIdx, setMentionIdx] = useState(0);
+  const [mentionDismissed, setMentionDismissed] = useState<string | null>(null);
+  useEffect(() => {
+    setMentionIdx(0);
+    if (mentionQuery !== mentionDismissed) setMentionDismissed(null);
+  }, [mentionQuery, mentionDismissed]);
+  const mentionOpen = mentionQuery != null && mentionQuery !== mentionDismissed && mentionCandidates.length > 0;
+  const applyMention = (name: string) => {
+    setInput(`@${name} `);
+    setMentionDismissed(null);
+    inputRef.current?.focus();
+  };
+
   // contextUsage: how much of the target model's context window the session
   // has consumed so far (best-effort, based on streamed usage totals).
   const contextUsage = useMemo(() => {
@@ -993,7 +1055,7 @@ export function ChatPage() {
       {/* Sessions */}
       <div className="flex w-60 shrink-0 flex-col border-r">
         <div className="grid gap-2 p-3">
-          <Button className="w-full" size="sm" onClick={() => setNewChatOpen(true)}>
+          <Button className="w-full" size="sm" onClick={createDirectSession}>
             <Plus className="mr-1 h-4 w-4" /> 新对话
           </Button>
           <div className="relative">
@@ -1034,7 +1096,10 @@ export function ChatPage() {
                   }
                 }}
               >
-                {s.targetType === "team" ? <Users className="h-3.5 w-3.5 shrink-0 text-primary" /> : s.targetType === "remote" ? <Network className="h-3.5 w-3.5 shrink-0 text-primary" /> : <Bot className="h-3.5 w-3.5 shrink-0 text-primary" />}
+                {s.targetType === "team" ? <Users className="h-3.5 w-3.5 shrink-0 text-primary" />
+                  : s.targetType === "remote" ? <Network className="h-3.5 w-3.5 shrink-0 text-primary" />
+                    : s.targetType === "" ? <MessageSquare className="h-3.5 w-3.5 shrink-0 text-primary" />
+                      : <Bot className="h-3.5 w-3.5 shrink-0 text-primary" />}
                 <span className="min-w-0 flex-1">
                   <span className="block truncate" title={s.forkedFrom ? `分叉自「${sessions.find((x) => x.id === s.forkedFrom)?.title ?? s.forkedFrom}」` : s.title}>
                     {s.forkedFrom && <GitFork className="mr-1 inline h-3 w-3 text-muted-foreground" />}
@@ -1109,7 +1174,8 @@ export function ChatPage() {
             <span className="max-w-[320px] truncate font-medium">{active ? active.title : "WorkBuddy"}</span>
             {active && (
               <Badge variant="outline" className="font-normal">
-                {active.targetType === "team" ? "团队" : "Agent"}: {targetLabel}
+                {active.targetType === "team" ? "团队" : active.targetType === "remote" ? "远程" : active.targetType === "agent" ? "Agent" : "直聊"}
+                {active.targetType ? `: ${targetLabel}` : ""}
               </Badge>
             )}
             {active && (
@@ -1162,7 +1228,7 @@ export function ChatPage() {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="__default">Agent 默认模型</SelectItem>
+                  <SelectItem value="__default">{active.targetType === "agent" ? "Agent 默认模型" : "默认模型"}</SelectItem>
                   {sessionModels.map((m) => (
                     <SelectItem key={m.id} value={m.id}>{m.id}</SelectItem>
                   ))}
@@ -1291,13 +1357,15 @@ export function ChatPage() {
               // rendered an empty pane with no hint about what to do.
               <div className="py-24 text-center text-sm text-muted-foreground">
                 <div className="mb-2 text-4xl">💬</div>
-                还没有对话。点击左上角「新对话」选择 Agent 开始。
+                直接输入消息即可开始对话；输入 @ 可指定助手、团队或远程 Agent。
               </div>
             )}
             {messages.length === 0 && active && (
               <div className="py-24 text-center text-sm text-muted-foreground">
                 <div className="mb-2 text-4xl">💬</div>
-                向 <span className="font-medium text-foreground">{targetLabel}</span> 发送第一条消息
+                {active.targetType
+                  ? <>向 <span className="font-medium text-foreground">{targetLabel}</span> 发送第一条消息</>
+                  : <>直接输入开始对话；输入 <span className="font-medium text-foreground">@</span> 可指定助手</>}
               </div>
             )}
             {visibleMessages.map((m, i, arr) => {
@@ -1389,6 +1457,30 @@ export function ChatPage() {
             }}
           >
             <div className="relative flex-1">
+              {mentionOpen && (
+                <div className="absolute bottom-full left-0 right-0 z-10 mb-2 overflow-hidden rounded-lg border bg-popover shadow-md">
+                  {mentionCandidates.map((c, i) => (
+                    <button
+                      key={`${c.type}-${c.id}`}
+                      type="button"
+                      className={cn(
+                        "flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs",
+                        i === mentionIdx ? "bg-accent text-accent-foreground" : "hover:bg-accent/60",
+                      )}
+                      onMouseEnter={() => setMentionIdx(i)}
+                      onMouseDown={(e) => { e.preventDefault(); applyMention(c.name); }}
+                    >
+                      {c.type === "team" ? <Users className="h-3.5 w-3.5 shrink-0 text-primary" />
+                        : c.type === "remote" ? <Network className="h-3.5 w-3.5 shrink-0 text-primary" />
+                          : <Bot className="h-3.5 w-3.5 shrink-0 text-primary" />}
+                      <span className="min-w-0 flex-1 truncate">@{c.name}</span>
+                      <span className="shrink-0 text-[10px] text-muted-foreground">
+                        {c.type === "team" ? "团队" : c.type === "remote" ? "远程" : "助手"}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              )}
               {slashSuggestions.length > 0 && (
                 <div className="absolute bottom-full left-0 right-0 mb-2 flex flex-wrap gap-1.5">
                   {slashSuggestions.map((c) => (
@@ -1409,6 +1501,28 @@ export function ChatPage() {
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={(e) => {
+                  if (mentionOpen) {
+                    if (e.key === "ArrowDown") {
+                      e.preventDefault();
+                      setMentionIdx((i) => (i + 1) % mentionCandidates.length);
+                      return;
+                    }
+                    if (e.key === "ArrowUp") {
+                      e.preventDefault();
+                      setMentionIdx((i) => (i - 1 + mentionCandidates.length) % mentionCandidates.length);
+                      return;
+                    }
+                    if ((e.key === "Enter" || e.key === "Tab") && !e.shiftKey && !e.nativeEvent.isComposing) {
+                      e.preventDefault();
+                      applyMention(mentionCandidates[mentionIdx].name);
+                      return;
+                    }
+                    if (e.key === "Escape") {
+                      e.preventDefault();
+                      setMentionDismissed(mentionQuery);
+                      return;
+                    }
+                  }
                   if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
                     e.preventDefault();
                     send();
@@ -1421,10 +1535,10 @@ export function ChatPage() {
                   e.preventDefault();
                   addFiles(files);
                 }}
-                placeholder={active ? "输入消息，Enter 发送，Shift+Enter 换行（⌘K 聚焦）" : "请先创建对话（⌘N）"}
+                placeholder={active ? "输入消息，Enter 发送，Shift+Enter 换行（⌘K 聚焦）" : "输入消息开始新对话；@ 可指定助手"}
                 // Typing stays available while a reply streams (matching the
                 // desktops this app mirrors); send() guards the running state.
-                disabled={!active}
+                disabled={!active && providerCount === 0}
                 className={cn(listening && "border-primary/60 ring-1 ring-primary/40")}
               />
               <input
@@ -1440,25 +1554,25 @@ export function ChatPage() {
               />
               <button
                 title={modelMultimodal ? "添加图片附件" : "当前模型未开启多模态（在模型配置中开启）"}
-                disabled={!active || running || !modelMultimodal}
+                disabled={(!active && providerCount === 0) || running || !modelMultimodal}
                 onClick={() => fileRef.current?.click()}
                 className={cn(
                   "absolute bottom-2 right-9 flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground",
-                  (!active || running || !modelMultimodal) && "opacity-40",
+                  ((!active && providerCount === 0) || running || !modelMultimodal) && "opacity-40",
                 )}
               >
                 <Paperclip className="h-3.5 w-3.5" />
               </button>
               <button
                 title={speechSupported() ? (listening ? "停止语音输入" : "语音输入") : "当前环境不支持语音识别"}
-                disabled={!active || running || !speechSupported()}
+                disabled={(!active && providerCount === 0) || running || !speechSupported()}
                 onClick={toggleVoiceInput}
                 className={cn(
                   "absolute bottom-2 right-2 flex h-7 w-7 items-center justify-center rounded-md transition-colors",
                   listening
                     ? "bg-destructive/15 text-destructive"
                     : "text-muted-foreground hover:bg-accent hover:text-foreground",
-                  (!active || running || !speechSupported()) && "opacity-40",
+                  ((!active && providerCount === 0) || running || !speechSupported()) && "opacity-40",
                 )}
               >
                 {speechSupported() ? (listening ? <SquareStop className="h-3.5 w-3.5" /> : <Mic className="h-3.5 w-3.5" />) : <MicOff className="h-3.5 w-3.5" />}
@@ -1469,7 +1583,7 @@ export function ChatPage() {
                 <Square className="mr-1 h-4 w-4" /> 停止
               </Button>
             ) : (
-              <Button onClick={() => send()} disabled={!active || (!input.trim() && !running)}>
+              <Button onClick={() => send()} disabled={(!active && providerCount === 0) || (!input.trim() && !running)}>
                 <Send className="mr-1 h-4 w-4" /> {editing ? "重发" : "发送"}
               </Button>
             )}
@@ -1568,90 +1682,6 @@ export function ChatPage() {
         </DialogContent>
       </Dialog>
 
-      {/* New chat dialog */}
-      <Dialog open={newChatOpen} onOpenChange={setNewChatOpen}>
-        <DialogContent className="sm:max-w-sm">
-          <DialogHeader>
-            <DialogTitle>新对话</DialogTitle>
-          </DialogHeader>
-          <div className="grid gap-4 py-2">
-            <div className="grid gap-1.5">
-              <label className="text-sm">类型</label>
-              <Select value={newType} onValueChange={(v) => { setNewType(v as "agent" | "team" | "remote"); setNewTarget(""); }}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="agent">单个 Agent</SelectItem>
-                  <SelectItem value="team">Agent 团队</SelectItem>
-                  <SelectItem value="remote">远程 Agent（A2A）</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="grid gap-1.5">
-              <label className="text-sm">
-                {newType === "agent" ? "选择 Agent" : newType === "team" ? "选择团队" : "选择远程 Agent"}
-              </label>
-              <Select value={newTarget || undefined} onValueChange={setNewTarget}>
-                <SelectTrigger><SelectValue placeholder="请选择" /></SelectTrigger>
-                <SelectContent>
-                  {newType === "agent"
-                    ? agents.map((a) => <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>)
-                    : newType === "team"
-                      ? teams.map((t) => <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>)
-                      : remotes.map((r) => <SelectItem key={r.id} value={r.id}>{r.name}</SelectItem>)}
-                </SelectContent>
-              </Select>
-              {((newType === "agent" && agents.length === 0) ||
-                (newType === "team" && teams.length === 0) ||
-                (newType === "remote" && remotes.length === 0)) && (
-                <p className="text-xs text-muted-foreground">
-                  没有可选目标，请先在侧边栏创建 {newType === "agent" ? "Agent" : newType === "team" ? "团队" : "远程 Agent（Agents 页）"}。
-                </p>
-              )}
-            </div>
-            <div className="grid gap-1.5">
-              <label className="text-sm">任务工作目录</label>
-              <div className="flex items-center gap-2">
-                <div
-                  className="min-w-0 flex-1 truncate rounded-md border bg-muted/30 px-2.5 py-2 text-xs text-muted-foreground"
-                  title={newWorkspace || "自动创建独立任务目录"}
-                >
-                  {newWorkspace || "自动创建独立任务目录"}
-                </div>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  className="shrink-0"
-                  onClick={async () => {
-                    try {
-                      const picked = await pickWorkspace();
-                      if (picked) setNewWorkspace(picked);
-                    } catch (e) {
-                      toast.error(`选择目录失败: ${errText(e)}`);
-                    }
-                  }}
-                >
-                  <FolderOpen className="mr-1 h-3.5 w-3.5" /> 选择文件夹
-                </Button>
-              </div>
-              {newWorkspace && (
-                <button
-                  type="button"
-                  className="w-fit text-xs text-primary hover:underline"
-                  onClick={() => setNewWorkspace("")}
-                >
-                  恢复为自动创建的独立目录
-                </button>
-              )}
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setNewChatOpen(false)}>取消</Button>
-            <Button onClick={createSession} disabled={!newTarget}>开始对话</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
       {/* Rename dialog */}
       <Dialog open={!!renaming} onOpenChange={(v) => !v && setRenaming(null)}>
         <DialogContent className="sm:max-w-sm">
@@ -1683,8 +1713,7 @@ export function ChatPage() {
 function Onboarding() {
   const steps = [
     { n: 1, title: "配置模型供应商", desc: "添加 OpenAI 兼容 / Anthropic / Gemini 接口", page: "模型配置" },
-    { n: 2, title: "创建 Agent", desc: "定义系统提示词，挂载 Skills 与 MCP 工具", page: "Agents" },
-    { n: 3, title: "开始对话", desc: "新建对话，单个 Agent 或团队协作", page: "对话" },
+    { n: 2, title: "直接开聊", desc: "输入消息立即对话；@ 可指定助手、团队或远程 Agent", page: "对话" },
   ];
   const go = (label: string) => {
     const btns = Array.from(document.querySelectorAll("aside button"));
@@ -1694,7 +1723,7 @@ function Onboarding() {
   return (
     <div className="mx-auto mt-10 max-w-md rounded-xl border bg-card p-5 shadow-sm">
       <div className="mb-1 text-lg font-semibold">欢迎使用 WorkBuddy Agent 👋</div>
-      <p className="mb-4 text-sm text-muted-foreground">基于 Google ADK 的本地 Agent 工作台，三步开始：</p>
+      <p className="mb-4 text-sm text-muted-foreground">基于 Google ADK 的本地 Agent 工作台，两步开始：</p>
       <div className="space-y-3">
         {steps.map((s) => (
           <button
