@@ -2,10 +2,12 @@ package agentkit
 
 import (
 	"context"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/http/httputil"
 	"net/url"
+	"reflect"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -46,13 +48,72 @@ func TestApplyGlobalProxy(t *testing.T) {
 	}
 
 	// Reset returns to direct.
+	// "Direct" now means ProxyFromEnvironment: an empty in-app proxy must
+	// not disable the user's HTTP_PROXY/HTTPS_PROXY environment.
 	if err := ApplyGlobalProxy(""); err != nil {
 		t.Fatal(err)
 	}
-	if transport.Proxy != nil {
-		t.Fatal("proxy not reset")
+	if transport.Proxy == nil {
+		t.Fatal("proxy not reset to environment fallback")
 	}
-	_ = url.Parse
+	if reflect.ValueOf(transport.Proxy).Pointer() != reflect.ValueOf(http.ProxyFromEnvironment).Pointer() {
+		t.Fatal("reset must delegate to ProxyFromEnvironment")
+	}
+}
+
+// TestApplyGlobalProxyEmptyFallsBackToEnvironment: without an in-app proxy
+// the transport must honor HTTP_PROXY/HTTPS_PROXY — blanking the proxy func
+// used to silently ignore environment proxies. The fallback delegates to
+// ProxyFromEnvironment, whose env handling (including NO_PROXY) is stdlib
+// behavior; here we pin that the delegation actually happens.
+func TestApplyGlobalProxyEmptyFallsBackToEnvironment(t *testing.T) {
+	t.Cleanup(func() { _ = ApplyGlobalProxy("") })
+	transport, ok := http.DefaultTransport.(*http.Transport)
+	if !ok {
+		t.Skip("default transport is not *http.Transport")
+	}
+	origProxy := transport.Proxy
+	t.Cleanup(func() { transport.Proxy = origProxy })
+
+	if err := ApplyGlobalProxy(""); err != nil {
+		t.Fatal(err)
+	}
+	if reflect.ValueOf(transport.Proxy).Pointer() != reflect.ValueOf(http.ProxyFromEnvironment).Pointer() {
+		t.Fatal("empty in-app proxy must fall back to ProxyFromEnvironment")
+	}
+}
+
+// TestApplyGlobalProxySkipsLoopback pins the loopback carve-out: local
+// Ollama, local MCP servers and A2A round-trips must never be pushed through
+// the configured proxy.
+func TestApplyGlobalProxySkipsLoopback(t *testing.T) {
+	t.Cleanup(func() { _ = ApplyGlobalProxy("") })
+	transport, ok := http.DefaultTransport.(*http.Transport)
+	if !ok {
+		t.Skip("default transport is not *http.Transport")
+	}
+	origProxy := transport.Proxy
+	t.Cleanup(func() { transport.Proxy = origProxy })
+
+	if err := ApplyGlobalProxy("http://proxy.example:7890"); err != nil {
+		t.Fatal(err)
+	}
+	for _, raw := range []string{
+		"http://127.0.0.1:11434/v1",
+		"http://localhost:9246/stub",
+		"http://[::1]:8080/a2a",
+	} {
+		req := httptest.NewRequest(http.MethodGet, raw, nil)
+		u, err := transport.Proxy(req)
+		if err != nil || u != nil {
+			t.Errorf("%s: loopback must stay direct, got %v err %v", raw, u, err)
+		}
+	}
+	req := httptest.NewRequest(http.MethodGet, "http://api.deepseek.com/v1", nil)
+	u, err := transport.Proxy(req)
+	if err != nil || u == nil || u.Host != "proxy.example:7890" {
+		t.Errorf("public host must use the proxy, got %v err %v", u, err)
+	}
 }
 
 func TestApplyGlobalProxyInvalid(t *testing.T) {
@@ -78,12 +139,20 @@ func TestGlobalProxyCoversMCPTransport(t *testing.T) {
 	mcpHandler := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return server }, nil)
 
 	mux := http.NewServeMux()
-	srv := httptest.NewServer(mux)
-	defer srv.Close()
-	target, err := url.Parse(srv.URL)
+	// Bind the origin to 127.0.0.2: loopback traffic is exempt from the
+	// global proxy by design, and the exemption list is 127.0.0.1/localhost/
+	// ::1 — so this address keeps the MCP-over-proxy contract observable
+	// while everything stays on the local machine. Platforms that cannot
+	// route the rest of 127/8 (older macOS) skip instead of failing.
+	ln, err := net.Listen("tcp", "127.0.0.2:0")
 	if err != nil {
-		t.Fatal(err)
+		t.Skipf("platform does not route 127.0.0.2: %v", err)
 	}
+	srv := &http.Server{Handler: mux, ReadHeaderTimeout: 10 * time.Second}
+	go func() { _ = srv.Serve(ln) }()
+	t.Cleanup(func() { _ = srv.Close() })
+	base := "http://" + ln.Addr().String()
+	target := mustParseURL(base)
 	mux.HandleFunc("/mcp", func(w http.ResponseWriter, r *http.Request) {
 		if hitProxy.Load() {
 			w.Header().Set("X-Proxied", "1")
@@ -108,7 +177,7 @@ func TestGlobalProxyCoversMCPTransport(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	tr := &mcp.StreamableClientTransport{Endpoint: srv.URL + "/mcp"} // default transport path
+	tr := &mcp.StreamableClientTransport{Endpoint: base + "/mcp"} // default transport path
 	client := mcp.NewClient(&mcp.Implementation{Name: "proxy-test", Version: "1.0.0"}, nil)
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
@@ -139,19 +208,10 @@ func TestGlobalProxyAppliesToEmptyClients(t *testing.T) {
 	t.Cleanup(func() { transport.Proxy = origProxy })
 
 	var hitProxy atomic.Bool
-	origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(200)
-		_, _ = w.Write([]byte("{}"))
-	}))
-	defer origin.Close()
-
 	proxySrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		hitProxy.Store(true)
-		p := httputil.NewSingleHostReverseProxy(mustParseURL(origin.URL))
-		direct := http.DefaultTransport.(*http.Transport).Clone()
-		direct.Proxy = nil
-		p.Transport = direct
-		p.ServeHTTP(w, r)
+		w.WriteHeader(200)
+		_, _ = w.Write([]byte("proxied"))
 	}))
 	defer proxySrv.Close()
 
@@ -159,7 +219,10 @@ func TestGlobalProxyAppliesToEmptyClients(t *testing.T) {
 		t.Fatal(err)
 	}
 	client := &http.Client{} // same shape as the gemini/a2a fallbacks
-	resp, err := client.Get(origin.URL + "/v1beta/models")
+	// The request TARGET must be a non-loopback host for the proxy func to
+	// engage (loopback targets are exempt by design); the proxy itself still
+	// listens on the local httptest addr.
+	resp, err := client.Get("http://destination.example/v1beta/models")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -176,3 +239,4 @@ func mustParseURL(raw string) *url.URL {
 	}
 	return u
 }
+
