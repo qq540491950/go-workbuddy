@@ -228,6 +228,21 @@ func (m *Manager) Disconnect(id string) {
 	}
 }
 
+// CloseAll disconnects every tracked server. The app shutdown hook calls it
+// so stdio child processes do not outlive the desktop app as orphans.
+// Idempotent: safe to call more than once.
+func (m *Manager) CloseAll() {
+	m.mu.Lock()
+	ids := make([]string, 0, len(m.conns))
+	for id := range m.conns {
+		ids = append(ids, id)
+	}
+	m.mu.Unlock()
+	for _, id := range ids {
+		m.Disconnect(id)
+	}
+}
+
 func (m *Manager) setState(st *ServerStatus) {
 	m.mu.Lock()
 	defer m.mu.Unlock()

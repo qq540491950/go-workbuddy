@@ -17,6 +17,7 @@ func TestRotatingWriterRotates(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { _ = w.Close() })
 	// Write past the cap: some writes go into the first generation, the rest
 	// into the rotated one.
 	for i := 0; i < 20; i++ {

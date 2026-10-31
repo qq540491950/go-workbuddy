@@ -130,6 +130,7 @@ func main() {
 			ApplicationShouldTerminateAfterLastWindowClosed: false,
 		},
 		OnShutdown: func() {
+			mgr.CloseAll()   // stdio MCP 子进程不孤儿化
 			a2aRPC.StopAll() // graceful: unpublish agents before exit
 		},
 	})
@@ -260,6 +261,19 @@ func (w *rotatingWriter) Write(p []byte) (int, error) {
 		w.f = f
 	}
 	return w.f.Write(p)
+}
+
+// Close releases the current log file handle (used by tests so TempDir
+// cleanup does not fail on Windows where open handles block deletion).
+func (w *rotatingWriter) Close() error {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if w.f == nil {
+		return nil
+	}
+	err := w.f.Close()
+	w.f = nil
+	return err
 }
 
 // newSessionService opens the ADK session service backed by SQLite and

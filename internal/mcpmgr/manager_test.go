@@ -38,6 +38,40 @@ func TestToolsetCachedUntilDisconnect(t *testing.T) {
 	}
 }
 
+// TestCloseAllClearsStateAndIsIdempotent pins the shutdown contract: one call
+// drops every tracked server (cache + status), repeated calls are safe. The
+// app's shutdown hook relies on this so stdio child processes do not outlive
+// the desktop app as orphans.
+func TestCloseAllClearsStateAndIsIdempotent(t *testing.T) {
+	m := New()
+	stdio := config.MCPServerConfig{ID: "srv1", Name: "S", Transport: config.MCPStdio, Command: "/bin/cat"}
+	httpSrv := config.MCPServerConfig{ID: "srv2", Name: "H", Transport: config.MCPStreamableHTTP, URL: "http://127.0.0.1:1/mcp"}
+	if _, err := m.Toolset(stdio); err != nil {
+		t.Fatalf("Toolset stdio: %v", err)
+	}
+	if _, err := m.Toolset(httpSrv); err != nil {
+		t.Fatalf("Toolset http: %v", err)
+	}
+
+	m.CloseAll()
+	m.CloseAll() // idempotent: no panic, no state resurrection
+
+	for _, cfg := range []config.MCPServerConfig{stdio, httpSrv} {
+		ts1, err := m.Toolset(cfg)
+		if err != nil {
+			t.Fatalf("Toolset after CloseAll: %v", err)
+		}
+		m.Disconnect(cfg.ID)
+		ts2, err := m.Toolset(cfg)
+		if err != nil {
+			t.Fatalf("Toolset rebuild: %v", err)
+		}
+		if ts1 == ts2 {
+			t.Fatalf("server %s: expected a fresh toolset after CloseAll + Disconnect cycle", cfg.ID)
+		}
+	}
+}
+
 // TestOAuthTransportPortNotHeld pins the lazy-listen contract: building an
 // OAuth transport must not keep the redirect port bound (a cached token makes
 // the consent flow unreachable, and holding the port broke reconnects on the
