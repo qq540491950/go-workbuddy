@@ -3,10 +3,12 @@ package services
 import (
 	"encoding/base64"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	"changeme/internal/agentkit"
@@ -15,6 +17,8 @@ import (
 const (
 	maxBinaryArtifact = 12 << 20  // 12 MB for image/pdf preview
 	maxTextArtifact   = 512 << 10 // 512 KB for text preview
+	maxSnapshotFiles  = 5000
+	snapshotListLimit = 200
 )
 
 // Artifact is a previewable file from the workspace.
@@ -35,6 +39,33 @@ type ArtifactInfo struct {
 	Path string `json:"path"`
 	Kind string `json:"kind"`
 	Size int64  `json:"size"`
+}
+
+// WorkspaceFileInfo is one file in a task workspace snapshot.
+type WorkspaceFileInfo struct {
+	Name        string    `json:"name"`
+	Path        string    `json:"path"`
+	Kind        string    `json:"kind"`
+	Size        int64     `json:"size"`
+	ModTime     time.Time `json:"modTime"`
+	Previewable bool      `json:"previewable"`
+	Status      string    `json:"status,omitempty"` // added|modified|deleted
+}
+
+// TaskWorkspaceSnapshot is the result pane contract for one chat task.
+type TaskWorkspaceSnapshot struct {
+	SessionID   string              `json:"sessionId"`
+	Workspace   string              `json:"workspace"`
+	Files       []WorkspaceFileInfo `json:"files"`
+	Artifacts   []WorkspaceFileInfo `json:"artifacts"`
+	Changes     []WorkspaceFileInfo `json:"changes"`
+	Discovered  int                 `json:"discovered"`
+	Added       int                 `json:"added"`
+	Modified    int                 `json:"modified"`
+	Deleted     int                 `json:"deleted"`
+	Truncated   bool                `json:"truncated"`
+	BaselineAt  *time.Time          `json:"baselineAt,omitempty"`
+	RefreshedAt time.Time           `json:"refreshedAt"`
 }
 
 // ArtifactService previews workspace files produced by tool calls.
@@ -82,13 +113,21 @@ func (a *ArtifactService) Open(relPath string) (*Artifact, error) {
 
 // OpenForSession previews a file inside the task workspace bound to sessionID.
 func (a *ArtifactService) OpenForSession(sessionID, relPath string) (*Artifact, error) {
+	ws, err := a.sessionWorkspace(sessionID)
+	if err != nil {
+		return nil, err
+	}
+	return a.openIn(ws, relPath)
+}
+
+func (a *ArtifactService) sessionWorkspace(sessionID string) (string, error) {
 	cfg := a.S.Store.Get()
 	for _, session := range cfg.Sessions {
 		if session.ID == sessionID {
-			return a.openIn(session.EffectiveWorkspace(cfg.Settings.WorkspaceDir), relPath)
+			return session.EffectiveWorkspace(cfg.Settings.WorkspaceDir), nil
 		}
 	}
-	return nil, fmt.Errorf("会话 %q 不存在", sessionID)
+	return "", fmt.Errorf("会话 %q 不存在", sessionID)
 }
 
 func (a *ArtifactService) openIn(ws, relPath string) (*Artifact, error) {
@@ -141,6 +180,136 @@ func (a *ArtifactService) openIn(ws, relPath string) (*Artifact, error) {
 		}
 		art.Text = text
 		return art, nil
+	}
+}
+
+// TaskWorkspaceSnapshot lists the active task's files. Artifacts and changes
+// are filled by the baseline-aware refresh path; the initial file browser
+// still returns the complete task view without blocking on baseline state.
+func (a *ArtifactService) TaskWorkspaceSnapshot(sessionID string) (*TaskWorkspaceSnapshot, error) {
+	ws, err := a.sessionWorkspace(sessionID)
+	if err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(ws) == "" {
+		return nil, fmt.Errorf("工作区目录未配置")
+	}
+	if st, err := os.Stat(ws); err != nil {
+		return nil, fmt.Errorf("任务工作区不可用: %w", err)
+	} else if !st.IsDir() {
+		return nil, fmt.Errorf("任务工作区必须是目录")
+	}
+	files, discovered, truncated, err := scanTaskFiles(ws)
+	if err != nil {
+		return nil, err
+	}
+	if len(files) > snapshotListLimit {
+		files = files[:snapshotListLimit]
+		truncated = true
+	}
+	return &TaskWorkspaceSnapshot{
+		SessionID:   sessionID,
+		Workspace:   ws,
+		Files:       files,
+		Artifacts:   []WorkspaceFileInfo{},
+		Changes:     []WorkspaceFileInfo{},
+		Discovered:  discovered,
+		Truncated:   truncated,
+		RefreshedAt: time.Now().UTC(),
+	}, nil
+}
+
+var skippedWorkspaceDirs = map[string]bool{
+	".git": true, ".hg": true, ".svn": true,
+	"node_modules": true, ".pnpm-store": true, ".yarn": true,
+	".venv": true, "venv": true, "__pycache__": true,
+	".cache": true, ".next": true,
+}
+
+func scanTaskFiles(ws string) ([]WorkspaceFileInfo, int, bool, error) {
+	var files []WorkspaceFileInfo
+	discovered := 0
+	truncated := false
+	err := filepath.WalkDir(ws, func(path string, d fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			if path == ws {
+				return walkErr
+			}
+			return nil
+		}
+		if path != ws && strings.HasPrefix(d.Name(), ".") {
+			if d.IsDir() {
+				return fs.SkipDir
+			}
+			return nil
+		}
+		if d.Type()&os.ModeSymlink != 0 {
+			if d.IsDir() {
+				return fs.SkipDir
+			}
+			return nil
+		}
+		if d.IsDir() {
+			if path != ws && skippedWorkspaceDirs[d.Name()] {
+				return fs.SkipDir
+			}
+			return nil
+		}
+		rel, err := filepath.Rel(ws, path)
+		if err != nil {
+			return nil
+		}
+		relSlash := filepath.ToSlash(rel)
+		if relSlash == "exports" || strings.HasPrefix(relSlash, "exports/") {
+			return nil
+		}
+		info, err := d.Info()
+		if err != nil {
+			return nil
+		}
+		discovered++
+		if len(files) >= maxSnapshotFiles {
+			truncated = true
+			return fs.SkipAll
+		}
+		ext := strings.ToLower(filepath.Ext(path))
+		kind, previewable := snapshotKind(ext)
+		files = append(files, WorkspaceFileInfo{
+			Name:        d.Name(),
+			Path:        relSlash,
+			Kind:        kind,
+			Size:        info.Size(),
+			ModTime:     info.ModTime(),
+			Previewable: previewable,
+		})
+		return nil
+	})
+	if err != nil {
+		return nil, 0, false, err
+	}
+	sort.Slice(files, func(i, j int) bool {
+		if !files[i].ModTime.Equal(files[j].ModTime) {
+			return files[i].ModTime.After(files[j].ModTime)
+		}
+		return files[i].Path < files[j].Path
+	})
+	return files, discovered, truncated, nil
+}
+
+func snapshotKind(ext string) (string, bool) {
+	mime := artifactMIME[ext]
+	if mime == "" || mime == "application/wasm" {
+		return "binary", false
+	}
+	switch artifactKind(ext) {
+	case "image":
+		return "image", true
+	case "pdf":
+		return "pdf", true
+	case "markdown":
+		return "markdown", true
+	default:
+		return "text", true
 	}
 }
 

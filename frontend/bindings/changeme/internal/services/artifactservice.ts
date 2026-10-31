@@ -36,6 +36,15 @@ export function OpenForSession(sessionID: string, relPath: string): $Cancellable
 }
 
 /**
+ * TaskWorkspaceSnapshot lists the active task's files. Artifacts and changes
+ * are filled by the baseline-aware refresh path; the initial file browser
+ * still returns the complete task view without blocking on baseline state.
+ */
+export function TaskWorkspaceSnapshot(sessionID: string): $CancellablePromise<$models.TaskWorkspaceSnapshot | null> {
+    return $Call.ByID(57605569, sessionID);
+}
+
+/**
  * Workspace returns the configured workspace directory (for UI display).
  */
 export function Workspace(): $CancellablePromise<string> {

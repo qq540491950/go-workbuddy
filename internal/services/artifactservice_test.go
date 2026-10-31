@@ -1,6 +1,7 @@
 package services
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -170,5 +171,107 @@ func TestOpenSessionArtifactIsIsolated(t *testing.T) {
 	}
 	if _, err := svc.OpenForSession("sess_a", "../b/same.md"); err == nil {
 		t.Fatal("expected traversal rejection")
+	}
+}
+
+func TestTaskWorkspaceSnapshotListsFilesSafely(t *testing.T) {
+	svc, ws := newArtifactFixture(t)
+	sessionDir := filepath.Join(ws, "tasks", "sess_snapshot")
+	for _, dir := range []string{
+		filepath.Join(sessionDir, "docs"),
+		filepath.Join(sessionDir, "node_modules", "pkg"),
+		filepath.Join(sessionDir, ".git"),
+	} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	files := map[string]string{
+		"docs/report.md":            "# report",
+		"notes.txt":                 "notes",
+		"node_modules/pkg/index.js": "dependency",
+		".git/config":               "git",
+		".hidden.txt":               "hidden",
+		"program.exe":               "binary",
+	}
+	for name, body := range files {
+		if err := os.WriteFile(filepath.Join(sessionDir, filepath.FromSlash(name)), []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	old := time.Now().Add(-2 * time.Hour)
+	if err := os.Chtimes(filepath.Join(sessionDir, "notes.txt"), old, old); err != nil {
+		t.Fatal(err)
+	}
+	mid := time.Now().Add(-time.Hour)
+	if err := os.Chtimes(filepath.Join(sessionDir, "program.exe"), mid, mid); err != nil {
+		t.Fatal(err)
+	}
+	outside := filepath.Join(t.TempDir(), "outside.txt")
+	if err := os.WriteFile(outside, []byte("outside"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	_ = os.Symlink(outside, filepath.Join(sessionDir, "escape.txt"))
+
+	if err := svc.S.Store.Update(func(cfg *config.Config) {
+		cfg.Sessions = []config.ChatSession{{ID: "sess_snapshot", WorkspaceDir: sessionDir}}
+	}); err != nil {
+		t.Fatal(err)
+	}
+	snap, err := svc.TaskWorkspaceSnapshot("sess_snapshot")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if snap.Workspace != sessionDir {
+		t.Fatalf("workspace = %q, want %q", snap.Workspace, sessionDir)
+	}
+	var paths []string
+	previewable := map[string]bool{}
+	for _, f := range snap.Files {
+		paths = append(paths, f.Path)
+		previewable[f.Path] = f.Previewable
+	}
+	got := strings.Join(paths, ",")
+	if got != "docs/report.md,program.exe,notes.txt" {
+		t.Fatalf("files = %s", got)
+	}
+	if !previewable["docs/report.md"] || previewable["program.exe"] {
+		t.Fatalf("previewability = %+v", previewable)
+	}
+	if snap.Truncated || snap.Discovered != 3 || snap.RefreshedAt.IsZero() {
+		t.Fatalf("snapshot metadata = %+v", snap)
+	}
+}
+
+func TestTaskWorkspaceSnapshotCapsLargeDirectories(t *testing.T) {
+	svc, ws := newArtifactFixture(t)
+	sessionDir := filepath.Join(ws, "tasks", "sess_large")
+	if err := os.MkdirAll(sessionDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < maxSnapshotFiles+1; i++ {
+		name := filepath.Join(sessionDir, fmt.Sprintf("f-%05d.txt", i))
+		if err := os.WriteFile(name, nil, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := svc.S.Store.Update(func(cfg *config.Config) {
+		cfg.Sessions = []config.ChatSession{{ID: "sess_large", WorkspaceDir: sessionDir}}
+	}); err != nil {
+		t.Fatal(err)
+	}
+	snap, err := svc.TaskWorkspaceSnapshot("sess_large")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !snap.Truncated || snap.Discovered != maxSnapshotFiles+1 || len(snap.Files) != snapshotListLimit {
+		t.Fatalf("truncated snapshot = discovered:%d files:%d truncated:%v", snap.Discovered, len(snap.Files), snap.Truncated)
+	}
+}
+
+func TestTaskWorkspaceSnapshotRejectsUnknownSession(t *testing.T) {
+	svc, _ := newArtifactFixture(t)
+	if _, err := svc.TaskWorkspaceSnapshot("sess_missing"); err == nil {
+		t.Fatal("expected unknown-session error")
 	}
 }

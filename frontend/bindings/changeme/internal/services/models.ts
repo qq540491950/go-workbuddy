@@ -229,10 +229,45 @@ export interface StorageInfo {
 }
 
 /**
+ * TaskWorkspaceSnapshot is the result pane contract for one chat task.
+ */
+export interface TaskWorkspaceSnapshot {
+    "sessionId": string;
+    "workspace": string;
+    "files": WorkspaceFileInfo[] | null;
+    "artifacts": WorkspaceFileInfo[] | null;
+    "changes": WorkspaceFileInfo[] | null;
+    "discovered": number;
+    "added": number;
+    "modified": number;
+    "deleted": number;
+    "truncated": boolean;
+    "baselineAt"?: string | null;
+    "refreshedAt": string;
+}
+
+/**
  * UsageInfo reports token consumption for a turn or a whole session.
  */
 export interface UsageInfo {
     "promptTokens": number;
     "completionTokens": number;
     "totalTokens": number;
+}
+
+/**
+ * WorkspaceFileInfo is one file in a task workspace snapshot.
+ */
+export interface WorkspaceFileInfo {
+    "name": string;
+    "path": string;
+    "kind": string;
+    "size": number;
+    "modTime": string;
+    "previewable": boolean;
+
+    /**
+     * added|modified|deleted
+     */
+    "status"?: string;
 }

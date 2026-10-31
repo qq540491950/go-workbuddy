@@ -5,6 +5,7 @@ import {
   Copy, Check, Search, ArrowRight, RefreshCw, Download, Mic, MicOff, Volume2, Square as SquareStop,
   Paperclip, X, BarChart3, Brain, ShieldAlert, Network, GitFork, Pin, PinOff, FileCode2, Archive, ListTodo, ClipboardCopy,
   FolderOpen,
+  PanelRightOpen,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -22,6 +23,7 @@ import { cn } from "@/lib/utils";
 import { computeEditFlags, computeRunningTools, computeToolDurations, dayLabel, fmtTime, isDayChange, mdToSpeech, type UIMessage } from "@/lib/chatUtils";
 import { MessageMarkdown, CopyButton } from "@/components/MessageMarkdown";
 import { ToolCallCard } from "@/components/ToolCallCard";
+import { TaskWorkspacePanel } from "@/components/TaskWorkspacePanel";
 import {
   Chat, Config, errText,
   type AgentConfig, type AttachmentIn, type ChatSession, type TeamConfig,
@@ -96,6 +98,8 @@ export function ChatPage() {
   const [stats, setStats] = useState<SessionStats | null>(null);
   const [autoSpeak, setAutoSpeak] = useState(false);
   const [globalWorkspace, setGlobalWorkspace] = useState("");
+  const [workspacePanelOpen, setWorkspacePanelOpen] = useState(false);
+  const [workspaceRefresh, setWorkspaceRefresh] = useState(0);
   const [listening, setListening] = useState(false);
   const [editing, setEditing] = useState(false);
   const [ctxBannerDismissed, setCtxBannerDismissed] = useState(false);
@@ -329,6 +333,7 @@ export function ChatPage() {
       });
       if (ev.kind === "done") {
         setSessionUsage(ev.sessionUsage ?? null);
+        setWorkspaceRefresh((n) => n + 1);
         // Read the latest flag through a ref: this subscription is created
         // once per session and would otherwise capture the startup value.
         if (autoSpeakRef.current) {
@@ -1191,6 +1196,15 @@ export function ChatPage() {
                 <Button variant="ghost" size="icon" title="导出为 Markdown" onClick={exportSession}>
                   <Download className="h-4 w-4" />
                 </Button>
+                <Button
+                  variant={workspacePanelOpen ? "secondary" : "ghost"}
+                  size="icon"
+                  title={workspacePanelOpen ? "收起任务结果区" : "打开任务结果区"}
+                  aria-label={workspacePanelOpen ? "收起任务结果区" : "打开任务结果区"}
+                  onClick={() => setWorkspacePanelOpen((v) => !v)}
+                >
+                  <PanelRightOpen className="h-4 w-4" />
+                </Button>
               </>
             )}
             {running && (
@@ -1433,6 +1447,17 @@ export function ChatPage() {
           </div>
         </div>
       </div>
+
+      {active && (
+        <TaskWorkspacePanel
+          sessionID={activeID}
+          workspace={active.workspaceDir || globalWorkspace}
+          open={workspacePanelOpen}
+          running={running}
+          refreshNonce={workspaceRefresh}
+          onClose={() => setWorkspacePanelOpen(false)}
+        />
+      )}
 
       {/* Session stats dialog */}
       <Dialog open={statsOpen} onOpenChange={setStatsOpen}>

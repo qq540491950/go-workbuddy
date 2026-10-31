@@ -31,5 +31,7 @@ export type {
     SessionStats,
     StatDay,
     StorageInfo,
-    UsageInfo
+    TaskWorkspaceSnapshot,
+    UsageInfo,
+    WorkspaceFileInfo
 } from "./models.js";

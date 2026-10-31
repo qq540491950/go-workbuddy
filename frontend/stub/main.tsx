@@ -75,7 +75,7 @@ const seedConfig = {
   skills: [],
   mcpServers: [],
   sessions: [
-    { id: "sess_confirm", title: "需要确认的写入", targetType: "agent", targetId: "agent_1", createdAt: "2026-09-18T01:00:00Z", updatedAt: "2026-09-18T01:05:00Z", modelOverride: "gpt-5-mini" },
+    { id: "sess_confirm", title: "需要确认的写入", targetType: "agent", targetId: "agent_1", createdAt: "2026-09-18T01:00:00Z", updatedAt: "2026-09-18T01:05:00Z", modelOverride: "gpt-5-mini", workspaceDir: "/tmp/workbuddy-workspace/tasks/sess_confirm" },
     { id: "sess_plain", title: "普通对话", targetType: "team", targetId: "team_1", createdAt: "2026-09-17T09:00:00Z", updatedAt: "2026-09-17T09:10:00Z" },
   ],
 };
@@ -125,6 +125,55 @@ const handlers: Record<string, (args: any[]) => any> = {
     }
     return null;
   },
+  // NewSessionWithWorkspace(targetType, targetID, title, workspaceDir)
+  "2938112124": (args) => {
+    const id = `sess_stub_${seedConfig.sessions.length + 1}`;
+    const sess = {
+      id,
+      title: "新对话",
+      targetType: args[0],
+      targetId: args[1],
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      workspaceDir: args[3] || `/tmp/workbuddy-workspace/tasks/${id}`,
+    };
+    seedConfig.sessions.unshift(sess);
+    histories[id] = [];
+    return sess;
+  },
+  // SetSessionWorkspace(sessionID, workspaceDir)
+  "3910017842": (args) => {
+    const sess = seedConfig.sessions.find((s) => s.id === args[0]);
+    if (sess) sess.workspaceDir = args[1];
+    return null;
+  },
+  // ArtifactService.TaskWorkspaceSnapshot(sessionID)
+  "57605569": (args) => ({
+    sessionId: args[0],
+    workspace: seedConfig.sessions.find((s) => s.id === args[0])?.workspaceDir || seedConfig.settings.workspaceDir,
+    files: [
+      { name: "weekly.md", path: "notes/weekly.md", kind: "markdown", size: 2048, modTime: "2026-09-18T01:06:00Z", previewable: true },
+      { name: "chart.png", path: "assets/chart.png", kind: "image", size: 40960, modTime: "2026-09-18T01:05:00Z", previewable: true },
+      { name: "archive.zip", path: "archive.zip", kind: "binary", size: 524288, modTime: "2026-09-17T09:00:00Z", previewable: false },
+    ],
+    artifacts: [],
+    changes: [],
+    discovered: 3,
+    added: 0,
+    modified: 0,
+    deleted: 0,
+    truncated: false,
+    refreshedAt: new Date().toISOString(),
+  }),
+  // ArtifactService.OpenForSession(sessionID, path)
+  "4168803584": (args) => ({
+    name: String(args[1]).split("/").pop(),
+    path: args[1],
+    kind: args[1].endsWith(".png") ? "image" : "markdown",
+    mime: args[1].endsWith(".png") ? "image/png" : "text/markdown",
+    size: 2048,
+    text: args[1].endsWith(".png") ? undefined : "# 周报\n\n任务文件预览。",
+  }),
   // AppInfo
   "2350821288": () => ({ name: "WorkBuddy Agent", version: "stub", adk: "google adk-go v2" }),
   // ConfirmToolCall(sessionID, callID, approved)
