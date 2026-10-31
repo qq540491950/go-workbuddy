@@ -31,7 +31,9 @@ export default function App() {
       e.preventDefault();
       if (key === "b") {
         setView("chat");
-        window.dispatchEvent(new CustomEvent("wb-toggle-sidebar"));
+        // Deferred like ⌘N: when leaving the settings view, ChatPage mounts
+        // on the next render and only then registers the listener.
+        setTimeout(() => window.dispatchEvent(new CustomEvent("wb-toggle-sidebar")), 50);
         return;
       }
       if (key === ",") {
