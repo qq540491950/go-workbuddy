@@ -188,6 +188,9 @@ type ChatService struct {
 // drop a newer run's cancel func when turns overlap.
 type runHandle struct {
 	cancel context.CancelFunc
+	// done is closed by release once the run has fully unwound (no more
+	// event writes); history-mutating entry points wait on it.
+	done chan struct{}
 }
 
 // SetToolAuditPath enables the JSONL tool-call audit trail at path.
@@ -358,11 +361,23 @@ func (c *ChatService) RenameSession(id, title string) error {
 // orphaned turn would keep burning tokens and re-create events for the
 // deleted session until its timeout.
 func (c *ChatService) DeleteSession(id string) error {
-	c.Cancel(id)
+	c.cancelAndWait(id)
 	if err := c.sessions.Delete(context.Background(), &session.DeleteRequest{
 		AppName: c.appName, UserID: c.userID, SessionID: id,
 	}); err != nil {
 		return fmt.Errorf("delete session events: %w", err)
+	}
+	// The ADK session service deletes only the sessions row — event rows are
+	// left behind as orphans that full-text session search keeps matching
+	// forever. Remove them explicitly once the in-flight run has unwound (so
+	// nothing can write new rows after this).
+	if c.db != nil {
+		if err := c.db.WithContext(context.Background()).Exec(
+			"DELETE FROM events WHERE app_name = ? AND user_id = ? AND session_id = ?",
+			c.appName, c.userID, id,
+		).Error; err != nil {
+			return fmt.Errorf("delete session event rows: %w", err)
+		}
 	}
 	var notFound error
 	if err := c.S.Store.Update(func(cfg *config.Config) {
@@ -643,7 +658,7 @@ var _ = context.Background
 func (c *ChatService) Regenerate(sessionID string) error {
 	// Same contract as DeleteSession: stop the in-flight run BEFORE touching
 	// stored events, or the old run keeps appending to the trimmed timeline.
-	c.Cancel(sessionID)
+	c.cancelAndWait(sessionID)
 	text, atts, err := c.trimLastTurn(sessionID)
 	if err != nil {
 		return err
@@ -657,7 +672,7 @@ func (c *ChatService) EditAndResend(sessionID, newText string) error {
 	if strings.TrimSpace(newText) == "" {
 		return fmt.Errorf("消息内容不能为空")
 	}
-	c.Cancel(sessionID) // see Regenerate: trim only after the old run stopped
+	c.cancelAndWait(sessionID) // see Regenerate: trim only after the old run stopped
 	_, atts, err := c.trimLastTurn(sessionID)
 	if err != nil {
 		return err
@@ -1801,7 +1816,7 @@ func (c *ChatService) IsRunning(sessionID string) bool {
 // registerRun cancels any previous run for the session and records the new
 // handle. The returned release must be called (deferred) when the run ends.
 func (c *ChatService) registerRun(sessionID string, cancel context.CancelFunc) (release func()) {
-	h := &runHandle{cancel: cancel}
+	h := &runHandle{cancel: cancel, done: make(chan struct{})}
 	c.mu.Lock()
 	old := c.runs[sessionID]
 	c.runs[sessionID] = h
@@ -1816,5 +1831,27 @@ func (c *ChatService) registerRun(sessionID string, cancel context.CancelFunc) (
 			delete(c.runs, sessionID)
 		}
 		c.mu.Unlock()
+		close(h.done)
+	}
+}
+
+// cancelAndWait aborts the in-flight run of a session, if any, and waits
+// (bounded) until it has fully unwound. Regenerate / EditAndResend /
+// DeleteSession trim or delete stored events right after this returns — an
+// old run that is still streaming could otherwise resurrect the deleted
+// history by writing its remaining events.
+func (c *ChatService) cancelAndWait(sessionID string) {
+	c.mu.Lock()
+	h := c.runs[sessionID]
+	c.mu.Unlock()
+	if h == nil {
+		return
+	}
+	h.cancel()
+	select {
+	case <-h.done:
+	case <-time.After(10 * time.Second):
+		// Bounded: a wedged unwind must not hang the RPC forever; the
+		// straggler's writes are no worse than the pre-fix behavior.
 	}
 }
