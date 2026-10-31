@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"changeme/internal/agentkit"
 	"changeme/internal/config"
@@ -67,6 +68,30 @@ func TestOpenMarkdownArtifact(t *testing.T) {
 	}
 	if art.DataURL != "" {
 		t.Fatal("text artifacts must not carry dataURL")
+	}
+}
+
+// TestOpenTruncatesLargeText pins the preview contract for oversized text
+// files: the tail is cut at a rune boundary with the truncated flag set, and
+// the payload stays bounded (the read itself stops at the cap).
+func TestOpenTruncatesLargeText(t *testing.T) {
+	svc, ws := newArtifactFixture(t)
+	big := strings.Repeat("汉", 200*1024) // 600KB of UTF-8, cap is 512KB
+	if err := os.WriteFile(filepath.Join(ws, "big.log"), []byte(big), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	art, err := svc.Open("big.log")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !art.Truncated {
+		t.Fatal("expected truncated flag")
+	}
+	if len(art.Text) > 512*1024+20 { // cap + truncation marker
+		t.Fatalf("text payload exceeds cap: %d bytes", len(art.Text))
+	}
+	if !utf8.ValidString(art.Text) {
+		t.Fatal("truncated preview is not valid UTF-8")
 	}
 }
 

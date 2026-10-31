@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"hash/fnv"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
@@ -683,6 +684,52 @@ func SafeWorkspacePath(workspace, rel string) (string, error) {
 	return safeWorkspacePath(workspace, rel)
 }
 
+const (
+	maxReadBytes  = 64 * 1024
+	maxWriteBytes = 6 << 20 // single write cap, same order as image attachments
+)
+
+// ReadBoundedFile reads at most limit bytes from path, stopping as soon as
+// the cap is reached (a huge file must not be loaded into memory just to be
+// truncated). The returned bool reports truncation; truncated content is cut
+// back to the nearest UTF-8 rune boundary and carries a trailing marker.
+func ReadBoundedFile(path string, limit int) (content string, truncated bool, err error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return "", false, err
+	}
+	defer f.Close()
+	buf := make([]byte, limit+1)
+	n, readErr := io.ReadFull(f, buf)
+	if readErr != nil && readErr != io.EOF && readErr != io.ErrUnexpectedEOF {
+		return "", false, readErr
+	}
+	truncated = n > limit
+	if truncated {
+		buf = buf[:limit]
+		// Trim back to the last COMPLETE rune: a cut may land inside a
+		// multi-byte sequence (a bare lead byte is RuneStart too).
+		for len(buf) > 0 {
+			if r, size := utf8.DecodeLastRune(buf); r != utf8.RuneError || size > 1 {
+				break
+			}
+			buf = buf[:len(buf)-1]
+		}
+		content = string(buf) + "\n...[truncated]"
+		return content, true, nil
+	}
+	return string(buf[:n]), false, nil
+}
+
+// WriteBoundedFile refuses payloads above limit bytes up front so a runaway
+// generation cannot fill the disk; the file is not created on rejection.
+func WriteBoundedFile(path, content string, limit int) error {
+	if len(content) > limit {
+		return fmt.Errorf("写入内容超过 %d MB 上限（%d 字节）", limit>>20, len(content))
+	}
+	return os.WriteFile(path, []byte(content), 0o644)
+}
+
 func safeWorkspacePath(workspace, rel string) (string, error) {
 	if workspace == "" {
 		return "", fmt.Errorf("未配置工作区目录")
@@ -782,20 +829,9 @@ func ReadFileTool(workspace string) (tool.Tool, error) {
 		if err != nil {
 			return readFileResult{}, err
 		}
-		data, err := os.ReadFile(root)
+		content, _, err := ReadBoundedFile(root, maxReadBytes)
 		if err != nil {
 			return readFileResult{}, err
-		}
-		const limit = 64 * 1024
-		content := string(data)
-		if len(content) > limit {
-			// Byte-exact truncation could split a UTF-8 sequence (invalid JSON
-			// payload down the line); back up to the nearest rune boundary.
-			cut := limit
-			for cut > 0 && !utf8.RuneStart(content[cut]) {
-				cut--
-			}
-			content = content[:cut] + "\n...[truncated]"
 		}
 		return readFileResult{Content: content}, nil
 	})
@@ -818,7 +854,7 @@ type writeResult struct {
 func WriteFileTool(workspace string, requireConfirmation bool) (tool.Tool, error) {
 	return functiontool.New(functiontool.Config{
 		Name:                "write_workspace_file",
-		Description:         "Create or overwrite a text file inside the user's workspace.",
+		Description:         "Create or overwrite a text file inside the user's workspace (single write up to 6MB).",
 		RequireConfirmation: requireConfirmation,
 	}, func(ctx agent.Context, args writeArgs) (writeResult, error) {
 		root, err := safeWorkspacePath(workspace, args.Path)
@@ -828,7 +864,7 @@ func WriteFileTool(workspace string, requireConfirmation bool) (tool.Tool, error
 		if err := os.MkdirAll(filepath.Dir(root), 0o755); err != nil {
 			return writeResult{}, err
 		}
-		if err := os.WriteFile(root, []byte(args.Content), 0o644); err != nil {
+		if err := WriteBoundedFile(root, args.Content, maxWriteBytes); err != nil {
 			return writeResult{}, err
 		}
 		return writeResult{OK: true, Bytes: len(args.Content)}, nil
