@@ -22,13 +22,22 @@ import (
 var URLOpener = defaultURLOpener
 
 func defaultURLOpener(raw string) error {
-	switch runtime.GOOS {
+	return browserCommand(runtime.GOOS, raw).Start()
+}
+
+// browserCommand builds the OS-specific command that opens the default
+// browser at raw. Windows must not route the URL through cmd.exe: cmd
+// re-parses the command line, and the `&` in every OAuth authorize URL would
+// truncate the address and execute the remainder as a separate command.
+// rundll32's FileProtocolHandler hands the URL to the shell as one argument.
+func browserCommand(goos, raw string) *exec.Cmd {
+	switch goos {
 	case "darwin":
-		return exec.Command("open", raw).Start()
+		return exec.Command("open", raw)
 	case "windows":
-		return exec.Command("cmd", "/c", "start", raw).Start()
+		return exec.Command("rundll32", "url.dll,FileProtocolHandler", raw)
 	default:
-		return exec.Command("xdg-open", raw).Start()
+		return exec.Command("xdg-open", raw)
 	}
 }
 

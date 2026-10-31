@@ -26,6 +26,24 @@ const (
 	testAPIKey      = "test-api-key-456"
 )
 
+// TestBrowserCommandKeepsAuthorizeURLIntact pins the platform browser-open
+// commands: the URL must arrive as ONE unmodified argument. Windows used to
+// route it through `cmd /c start`, which re-parses the command line — the `&`
+// in every OAuth authorize URL truncated the address and executed the rest as
+// a command, breaking consent entirely.
+func TestBrowserCommandKeepsAuthorizeURLIntact(t *testing.T) {
+	const authorizeURL = "https://auth.example.com/authorize?response_type=code&client_id=abc&redirect_uri=http%3A%2F%2F127.0.0.1%3A0%2Fcallback"
+	for _, goos := range []string{"windows", "darwin", "linux"} {
+		cmd := browserCommand(goos, authorizeURL)
+		if strings.Contains(strings.ToLower(cmd.Path), "cmd") {
+			t.Errorf("%s: URL must not be parsed by cmd.exe (path %q)", goos, cmd.Path)
+		}
+		if got := cmd.Args[len(cmd.Args)-1]; got != authorizeURL {
+			t.Errorf("%s: authorize URL split or modified: %q", goos, got)
+		}
+	}
+}
+
 // newProtectedMCPServer hosts a real go-sdk MCP server behind an auth
 // middleware. kind: "oauth2" (Bearer issued by the fake AS) | "api-key" | "bearer" (static).
 func newProtectedMCPServer(t *testing.T, kind, asBase string) *httptest.Server {
