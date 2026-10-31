@@ -580,6 +580,8 @@ func (c *ChatService) RenameSession(id, title string) error {
 // deleted session until its timeout.
 func (c *ChatService) DeleteSession(id string) error {
 	c.cancelAndWaitBounded(id)
+	c.workspaceMu.Lock()
+	defer c.workspaceMu.Unlock()
 	if err := c.sessions.Delete(context.Background(), &session.DeleteRequest{
 		AppName: c.appName, UserID: c.userID, SessionID: id,
 	}); err != nil {
@@ -618,6 +620,7 @@ func (c *ChatService) DeleteSession(id string) error {
 	if notFound != nil {
 		return notFound
 	}
+	removeTaskBaseline(c.S.Store, id)
 	c.audit(id, "session_deleted", "system", "session", mustJSON(map[string]string{"sessionId": id}), "")
 	return nil
 }
@@ -1714,15 +1717,34 @@ func (c *ChatService) ForkSession(sessionID string) (config.ChatSession, error) 
 	if c.db == nil {
 		return config.ChatSession{}, fmt.Errorf("会话数据库不可用")
 	}
+	c.workspaceMu.Lock()
+	defer c.workspaceMu.Unlock()
 	cfg := c.S.Store.Get()
 	src := c.resolveSessionTarget(cfg, sessionID)
 	if src == nil {
 		return config.ChatSession{}, fmt.Errorf("会话 %q 不存在", sessionID)
 	}
 	id := newID("sess_")
+	workspace := src.EffectiveWorkspace(cfg.Settings.WorkspaceDir)
+	if _, err := resetTaskBaseline(c.S.Store, id, workspace); err != nil {
+		return config.ChatSession{}, err
+	}
+	cleanupBranch := func() {
+		removeTaskBaseline(c.S.Store, id)
+		_ = c.sessions.Delete(context.Background(), &session.DeleteRequest{
+			AppName: c.appName, UserID: c.userID, SessionID: id,
+		})
+		if c.db != nil {
+			_ = c.db.WithContext(context.Background()).Exec(
+				"DELETE FROM events WHERE app_name = ? AND user_id = ? AND session_id = ?",
+				c.appName, c.userID, id,
+			).Error
+		}
+	}
 	if _, err := c.sessions.Create(context.Background(), &session.CreateRequest{
 		AppName: c.appName, UserID: c.userID, SessionID: id,
 	}); err != nil {
+		removeTaskBaseline(c.S.Store, id)
 		return config.ChatSession{}, err
 	}
 
@@ -1731,9 +1753,11 @@ func (c *ChatService) ForkSession(sessionID string) (config.ChatSession, error) 
 	// comes from the schema itself to survive ADK schema updates.
 	var cols []string
 	if err := c.db.Raw("SELECT name FROM pragma_table_info('events')").Pluck("name", &cols).Error; err != nil {
+		cleanupBranch()
 		return config.ChatSession{}, fmt.Errorf("读取事件表结构失败: %w", err)
 	}
 	if len(cols) == 0 {
+		cleanupBranch()
 		return config.ChatSession{}, fmt.Errorf("事件表不存在")
 	}
 	selects := make([]string, len(cols))
@@ -1749,23 +1773,27 @@ func (c *ChatService) ForkSession(sessionID string) (config.ChatSession, error) 
 			strings.Join(cols, ","), strings.Join(selects, ",")),
 		id, c.appName, c.userID, sessionID,
 	).Error; err != nil {
+		cleanupBranch()
 		return config.ChatSession{}, fmt.Errorf("复制会话事件失败: %w", err)
 	}
 
 	branch := config.ChatSession{
-		ID:         id,
-		Title:      strings.TrimSpace(src.Title + "（分支）"),
-		TargetType: src.TargetType,
-		TargetID:   src.TargetID,
-		CreatedAt:  nowUTC(),
-		UpdatedAt:  nowUTC(),
-		ForkedFrom: sessionID,
+		ID:           id,
+		Title:        strings.TrimSpace(src.Title + "（分支）"),
+		TargetType:   src.TargetType,
+		TargetID:     src.TargetID,
+		CreatedAt:    nowUTC(),
+		UpdatedAt:    nowUTC(),
+		ForkedFrom:   sessionID,
+		WorkspaceDir: workspace,
 	}
 	err := c.S.Store.Update(func(cfg *config.Config) {
 		cfg.Sessions = append([]config.ChatSession{branch}, cfg.Sessions...)
 	})
 	if err == nil {
 		c.audit(branch.ID, "session_forked", "system", "session", mustJSON(map[string]string{"forkedFrom": sessionID}), "")
+	} else {
+		cleanupBranch()
 	}
 	return branch, err
 }

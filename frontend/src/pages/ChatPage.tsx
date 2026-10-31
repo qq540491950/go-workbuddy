@@ -744,7 +744,7 @@ export function ChatPage() {
   };
 
   const removeSession = async (s: ChatSession) => {
-    if (!window.confirm(`确定删除会话「${s.title}」？该操作不可恢复。`)) return;
+    if (!window.confirm(`确定删除会话「${s.title}」？会话与消息将不可恢复，但任务工作区中的文件会保留。`)) return;
     await Chat.DeleteSession(s.id).catch((e) => toast.error(`删除失败: ${errText(e)}`));
     if (s.id === activeID) {
       setActiveID("");

@@ -261,3 +261,147 @@ func TestConfirmedTaskWriteAppearsInArtifacts(t *testing.T) {
 		t.Fatalf("approved write missing from artifacts: %+v", snap)
 	}
 }
+
+func TestForkSessionInheritsWorkspaceWithIndependentBaseline(t *testing.T) {
+	chat, _, _ := newWorkspaceTestChat(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte(sseText("ok") + sseDone))
+	})
+	source, err := chat.NewSessionWithWorkspace("agent", "agent_ws", "source", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(source.WorkspaceDir, "before-fork.md"), []byte("before"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	branch, err := chat.ForkSession(source.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if branch.WorkspaceDir != source.WorkspaceDir {
+		t.Fatalf("fork workspace = %q, source = %q", branch.WorkspaceDir, source.WorkspaceDir)
+	}
+	if err := os.WriteFile(filepath.Join(source.WorkspaceDir, "after-fork.md"), []byte("after"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	art := NewArtifactService(chat.S)
+	sourceSnap, err := art.TaskWorkspaceSnapshot(source.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	branchSnap, err := art.TaskWorkspaceSnapshot(branch.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sourceSnap.Added != 2 {
+		t.Fatalf("source baseline should predate both files: %+v", sourceSnap)
+	}
+	if branchSnap.Added != 1 || len(branchSnap.Changes) != 1 || branchSnap.Changes[0].Path != "after-fork.md" {
+		t.Fatalf("fork baseline was not established at fork time: %+v", branchSnap)
+	}
+}
+
+func TestDeleteSessionRemovesBaselineButKeepsTaskFiles(t *testing.T) {
+	chat, store, _ := newWorkspaceTestChat(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte(sseText("ok") + sseDone))
+	})
+	sess, err := chat.NewSessionWithWorkspace("agent", "agent_ws", "delete", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	file := filepath.Join(sess.WorkspaceDir, "keep.txt")
+	if err := os.WriteFile(file, []byte("keep"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	baselinePath := taskSnapshotPath(store, sess.ID)
+	if _, err := os.Stat(baselinePath); err != nil {
+		t.Fatalf("baseline missing before delete: %v", err)
+	}
+	if err := chat.DeleteSession(sess.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(baselinePath); !os.IsNotExist(err) {
+		t.Fatalf("baseline was not removed: %v", err)
+	}
+	if _, err := os.Stat(file); err != nil {
+		t.Fatalf("deleting a session removed its task file: %v", err)
+	}
+}
+
+func TestArchiveSessionKeepsWorkspaceAndSnapshots(t *testing.T) {
+	chat, _, _ := newWorkspaceTestChat(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte(sseText("ok") + sseDone))
+	})
+	sess, err := chat.NewSessionWithWorkspace("agent", "agent_ws", "archive", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(sess.WorkspaceDir, "archived.md"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := chat.ArchiveSession(sess.ID, true); err != nil {
+		t.Fatal(err)
+	}
+	snap, err := NewArtifactService(chat.S).TaskWorkspaceSnapshot(sess.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if snap.Added != 1 {
+		t.Fatalf("archive hid task snapshot: %+v", snap)
+	}
+	if err := chat.ArchiveSession(sess.ID, false); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(sess.WorkspaceDir, "archived.md")); err != nil {
+		t.Fatalf("archive moved or removed task file: %v", err)
+	}
+}
+
+func TestConcurrentTaskSnapshotsStayIsolated(t *testing.T) {
+	chat, _, _ := newWorkspaceTestChat(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte(sseText("ok") + sseDone))
+	})
+	a, err := chat.NewSessionWithWorkspace("agent", "agent_ws", "A", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := chat.NewSessionWithWorkspace("agent", "agent_ws", "B", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		sess config.ChatSession
+		body string
+	}{{a, "A"}, {b, "B"}} {
+		if err := os.WriteFile(filepath.Join(tc.sess.WorkspaceDir, "same.txt"), []byte(tc.body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	art := NewArtifactService(chat.S)
+	var wg sync.WaitGroup
+	errs := make(chan error, 40)
+	for i := 0; i < 20; i++ {
+		for _, sess := range []config.ChatSession{a, b} {
+			wg.Add(1)
+			go func(sess config.ChatSession) {
+				defer wg.Done()
+				snap, err := art.TaskWorkspaceSnapshot(sess.ID)
+				if err != nil {
+					errs <- err
+					return
+				}
+				if snap.Workspace != sess.WorkspaceDir || snap.Added != 1 || len(snap.Artifacts) != 1 {
+					errs <- fmt.Errorf("snapshot for %s crossed workspaces: %+v", sess.ID, snap)
+				}
+			}(sess)
+		}
+	}
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		t.Error(err)
+	}
+}
