@@ -289,6 +289,7 @@ export function ChatPage() {
       }
       if (ev.sessionId !== activeID) return;
       if (ev.kind === "user") turnStartedRef.current = true;
+      if (ev.kind === "tool_result") setWorkspaceRefresh((n) => n + 1);
       setMessages((prev) => {
         switch (ev.kind) {
           case "user":

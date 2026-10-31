@@ -221,3 +221,43 @@ func TestSetSessionWorkspaceBeforeFirstTurnOnly(t *testing.T) {
 		t.Fatalf("expected post-first-turn lock, got %v", err)
 	}
 }
+
+func TestConfirmedTaskWriteAppearsInArtifacts(t *testing.T) {
+	turn := 0
+	chat, _, _, _ := newConfirmTestChat(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		turn++
+		if turn == 1 {
+			_, _ = w.Write([]byte(sseToolCall("call_artifact", "write_workspace_file", `"{\"path\":\"approved.md\",\"content\":\"approved\"}"`) + sseDone))
+			return
+		}
+		_, _ = w.Write([]byte(sseText("approved") + sseDone))
+	})
+	events := hookEvents(t)
+	sess, err := chat.NewSessionWithWorkspace("agent", "agent_c", "approval", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := chat.Send(sess.ID, "write approved.md", nil); err != nil {
+		t.Fatal(err)
+	}
+	var callID string
+	for _, ev := range *events {
+		if ev.Kind == "confirm_request" {
+			callID = ev.CallID
+		}
+	}
+	if callID == "" {
+		t.Fatalf("missing confirmation event: %+v", *events)
+	}
+	if err := chat.ConfirmToolCall(sess.ID, callID, true); err != nil {
+		t.Fatal(err)
+	}
+	snap, err := NewArtifactService(chat.S).TaskWorkspaceSnapshot(sess.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if snap.Added != 1 || len(snap.Artifacts) != 1 || snap.Artifacts[0].Path != "approved.md" {
+		t.Fatalf("approved write missing from artifacts: %+v", snap)
+	}
+}

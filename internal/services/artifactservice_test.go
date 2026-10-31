@@ -2,6 +2,7 @@ package services
 
 import (
 	"fmt"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -273,5 +274,122 @@ func TestTaskWorkspaceSnapshotRejectsUnknownSession(t *testing.T) {
 	svc, _ := newArtifactFixture(t)
 	if _, err := svc.TaskWorkspaceSnapshot("sess_missing"); err == nil {
 		t.Fatal("expected unknown-session error")
+	}
+}
+
+func TestTaskWorkspaceSnapshotTracksChangesAndPersists(t *testing.T) {
+	svc, ws := newArtifactFixture(t)
+	sessionDir := filepath.Join(ws, "tasks", "sess_changes")
+	if err := os.MkdirAll(sessionDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	keep := filepath.Join(sessionDir, "keep.md")
+	deleted := filepath.Join(sessionDir, "deleted.txt")
+	if err := os.WriteFile(keep, []byte("v1"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(deleted, []byte("gone"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.S.Store.Update(func(cfg *config.Config) {
+		cfg.Sessions = []config.ChatSession{{ID: "sess_changes", WorkspaceDir: sessionDir}}
+	}); err != nil {
+		t.Fatal(err)
+	}
+	first, err := svc.TaskWorkspaceSnapshot("sess_changes")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.BaselineAt == nil || len(first.Artifacts) != 0 || len(first.Changes) != 0 {
+		t.Fatalf("first snapshot must establish a clean baseline: %+v", first)
+	}
+
+	if err := os.WriteFile(keep, []byte("version-two"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(deleted); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(sessionDir, "added.md"), []byte("# new"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	second, err := svc.TaskWorkspaceSnapshot("sess_changes")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if second.Added != 1 || second.Modified != 1 || second.Deleted != 1 {
+		t.Fatalf("counts added=%d modified=%d deleted=%d", second.Added, second.Modified, second.Deleted)
+	}
+	statuses := map[string]string{}
+	for _, f := range second.Changes {
+		statuses[f.Path] = f.Status
+	}
+	if statuses["added.md"] != "added" || statuses["keep.md"] != "modified" || statuses["deleted.txt"] != "deleted" {
+		t.Fatalf("change statuses = %+v", statuses)
+	}
+	if len(second.Artifacts) != 2 {
+		t.Fatalf("artifacts = %+v", second.Artifacts)
+	}
+
+	restarted := NewArtifactService(svc.S)
+	third, err := restarted.TaskWorkspaceSnapshot("sess_changes")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if third.BaselineAt == nil || !third.BaselineAt.Equal(*first.BaselineAt) {
+		t.Fatalf("baseline did not survive service restart: first=%v third=%v", first.BaselineAt, third.BaselineAt)
+	}
+	if third.Added != 1 || third.Modified != 1 || third.Deleted != 1 {
+		t.Fatalf("restart lost changes: %+v", third)
+	}
+}
+
+func TestNewTaskSessionEstablishesBaselineBeforeFirstWrite(t *testing.T) {
+	chat, _, _ := newWorkspaceTestChat(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte(sseText("ok") + sseDone))
+	})
+	sess, err := chat.NewSessionWithWorkspace("agent", "agent_ws", "baseline", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(sess.WorkspaceDir, "after-create.md"), []byte("# after"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	snap, err := NewArtifactService(chat.S).TaskWorkspaceSnapshot(sess.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if snap.Added != 1 || len(snap.Artifacts) != 1 || snap.Artifacts[0].Path != "after-create.md" {
+		t.Fatalf("post-create write missing from artifacts: %+v", snap)
+	}
+}
+
+func TestLegacySessionLazilyEstablishesBaseline(t *testing.T) {
+	svc, ws := newArtifactFixture(t)
+	if err := os.WriteFile(filepath.Join(ws, "existing.txt"), []byte("existing"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.S.Store.Update(func(cfg *config.Config) {
+		cfg.Sessions = []config.ChatSession{{ID: "sess_legacy"}}
+	}); err != nil {
+		t.Fatal(err)
+	}
+	first, err := svc.TaskWorkspaceSnapshot("sess_legacy")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(first.Changes) != 0 || first.BaselineAt == nil {
+		t.Fatalf("legacy baseline not initialized cleanly: %+v", first)
+	}
+	if err := os.WriteFile(filepath.Join(ws, "later.txt"), []byte("later"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	second, err := svc.TaskWorkspaceSnapshot("sess_legacy")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if second.Added != 1 || second.Changes[0].Path != "later.txt" {
+		t.Fatalf("legacy lazy baseline did not track later file: %+v", second)
 	}
 }

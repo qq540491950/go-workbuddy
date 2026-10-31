@@ -199,24 +199,7 @@ func (a *ArtifactService) TaskWorkspaceSnapshot(sessionID string) (*TaskWorkspac
 	} else if !st.IsDir() {
 		return nil, fmt.Errorf("任务工作区必须是目录")
 	}
-	files, discovered, truncated, err := scanTaskFiles(ws)
-	if err != nil {
-		return nil, err
-	}
-	if len(files) > snapshotListLimit {
-		files = files[:snapshotListLimit]
-		truncated = true
-	}
-	return &TaskWorkspaceSnapshot{
-		SessionID:   sessionID,
-		Workspace:   ws,
-		Files:       files,
-		Artifacts:   []WorkspaceFileInfo{},
-		Changes:     []WorkspaceFileInfo{},
-		Discovered:  discovered,
-		Truncated:   truncated,
-		RefreshedAt: time.Now().UTC(),
-	}, nil
+	return buildTaskSnapshot(a.S.Store, sessionID, ws)
 }
 
 var skippedWorkspaceDirs = map[string]bool{

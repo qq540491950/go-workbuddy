@@ -263,6 +263,11 @@ func (c *ChatService) newSession(targetType, targetID, title, workspaceDir strin
 			cleanupCreatedDir(createdDir)
 			return config.ChatSession{}, err
 		}
+		if _, err := ensureTaskBaseline(c.S.Store, id, workspaceDir); err != nil {
+			cleanupCreatedDir(createdDir)
+			removeTaskBaseline(c.S.Store, id)
+			return config.ChatSession{}, err
+		}
 	}
 	cs := config.ChatSession{
 		ID:           id,
@@ -274,8 +279,9 @@ func (c *ChatService) newSession(targetType, targetID, title, workspaceDir strin
 		WorkspaceDir: workspaceDir,
 	}
 	cleanup := func() {
-		if createdDir != "" {
-			_ = os.Remove(createdDir)
+		cleanupCreatedDir(createdDir)
+		if taskWorkspace {
+			removeTaskBaseline(c.S.Store, id)
 		}
 	}
 	if _, err := c.sessions.Create(context.Background(), &session.CreateRequest{
@@ -335,9 +341,11 @@ func (c *ChatService) SetSessionWorkspace(sessionID, workspaceDir string) error 
 		return err
 	}
 	var notFound error
+	oldWorkspace := ""
 	err = c.S.Store.Update(func(cfg *config.Config) {
 		for i := range cfg.Sessions {
 			if cfg.Sessions[i].ID == sessionID {
+				oldWorkspace = cfg.Sessions[i].WorkspaceDir
 				cfg.Sessions[i].WorkspaceDir = ws
 				cfg.Sessions[i].UpdatedAt = nowUTC()
 				return
@@ -350,6 +358,17 @@ func (c *ChatService) SetSessionWorkspace(sessionID, workspaceDir string) error 
 	}
 	if notFound != nil {
 		return notFound
+	}
+	if _, err := resetTaskBaseline(c.S.Store, sessionID, ws); err != nil {
+		_ = c.S.Store.Update(func(cfg *config.Config) {
+			for i := range cfg.Sessions {
+				if cfg.Sessions[i].ID == sessionID {
+					cfg.Sessions[i].WorkspaceDir = oldWorkspace
+					return
+				}
+			}
+		})
+		return err
 	}
 	c.audit(sessionID, "session_workspace_set", "system", "session", mustJSON(map[string]string{"workspace": ws}), "")
 	return nil

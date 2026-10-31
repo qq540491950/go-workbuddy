@@ -27,7 +27,7 @@ function fmtSize(n: number): string {
   return `${(n / 1024 / 1024).toFixed(1)} MB`;
 }
 
-function fmtTime(value: string | undefined): string {
+function fmtTime(value: string | null | undefined): string {
   if (!value) return "";
   const d = new Date(value);
   if (Number.isNaN(d.getTime())) return "";
@@ -215,6 +215,14 @@ export function TaskWorkspacePanel({ sessionID, workspace, open, running, refres
           </div>
         )}
 
+        {tab === "changes" && snapshot && (snapshot.added + snapshot.modified + snapshot.deleted > 0) && (
+          <div className="flex flex-wrap gap-1.5 border-b px-3 py-2">
+            <Badge variant="outline" className="font-normal text-emerald-600 dark:text-emerald-400">新增 {snapshot.added}</Badge>
+            <Badge variant="outline" className="font-normal text-amber-600 dark:text-amber-400">修改 {snapshot.modified}</Badge>
+            <Badge variant="outline" className="font-normal text-destructive">删除 {snapshot.deleted}</Badge>
+          </div>
+        )}
+
         <ScrollArea className="min-h-0 flex-1">
           <div className="space-y-1.5 p-2.5">
             {loading && !snapshot && (
@@ -246,7 +254,7 @@ export function TaskWorkspacePanel({ sessionID, workspace, open, running, refres
 
         {snapshot && (
           <div className="border-t px-3 py-1.5 text-[10px] text-muted-foreground">
-            已发现 {snapshot.discovered} 个文件 · 刷新于 {fmtTime(snapshot.refreshedAt)}
+            已发现 {snapshot.discovered} 个文件 · 基线 {fmtTime(snapshot.baselineAt)} · 刷新于 {fmtTime(snapshot.refreshedAt)}
           </div>
         )}
         <ArtifactPreview path={previewPath} sessionID={sessionID} onClose={() => setPreviewPath(null)} />
