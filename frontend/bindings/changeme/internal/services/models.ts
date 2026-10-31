@@ -256,6 +256,20 @@ export interface UsageInfo {
 }
 
 /**
+ * WorkspaceChangeStatus is the file-level state shown in the result pane.
+ */
+export enum WorkspaceChangeStatus {
+    /**
+     * The Go zero value for the underlying type of the enum.
+     */
+    $zero = "",
+
+    ChangeAdded = "added",
+    ChangeModified = "modified",
+    ChangeDeleted = "deleted",
+};
+
+/**
  * WorkspaceFileInfo is one file in a task workspace snapshot.
  */
 export interface WorkspaceFileInfo {
@@ -265,9 +279,5 @@ export interface WorkspaceFileInfo {
     "size": number;
     "modTime": string;
     "previewable": boolean;
-
-    /**
-     * added|modified|deleted
-     */
-    "status"?: string;
+    "status"?: WorkspaceChangeStatus;
 }

@@ -117,9 +117,7 @@ export function ListSessions(): $CancellablePromise<config$0.ChatSession[] | nul
 }
 
 /**
- * NewSession creates a chat bound to an agent, remote A2A agent or team.
- * It preserves the pre-task-workspace API: the session falls back to the
- * global workspace. New UI flows use NewSessionWithWorkspace.
+ * NewSession creates a task session with an automatically isolated workspace.
  */
 export function NewSession(targetType: string, targetID: string, title: string): $CancellablePromise<config$0.ChatSession> {
     return $Call.ByID(3793260767, targetType, targetID, title);
@@ -188,6 +186,15 @@ export function Send(sessionID: string, text: string, attachments: $models.Attac
  */
 export function SessionStats(sessionID: string): $CancellablePromise<$models.SessionStats | null> {
     return $Call.ByID(568481502, sessionID);
+}
+
+/**
+ * SessionWorkspace returns the effective task directory after checking that
+ * it still exists and is readable. The UI uses this instead of reproducing the
+ * legacy fallback rule.
+ */
+export function SessionWorkspace(sessionID: string): $CancellablePromise<string> {
+    return $Call.ByID(2695952392, sessionID);
 }
 
 /**

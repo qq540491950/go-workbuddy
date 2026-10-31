@@ -138,7 +138,7 @@ func TestChatSemanticKnowledgeE2E(t *testing.T) {
 	svc.Kit.SetKnowledgeIndex(idx)
 	chat := NewChatService(svc, sessions, db)
 
-	sess, err := chat.NewSession("agent", "agent_k", "")
+	sess, err := chat.newLegacySession("agent", "agent_k", "")
 	if err != nil {
 		t.Fatal(err)
 	}

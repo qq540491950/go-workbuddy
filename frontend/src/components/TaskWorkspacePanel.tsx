@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
+import { toast } from "sonner";
 import {
   AlertTriangle, FileImage, FileText, FolderOpen, Loader2, RefreshCw, Search, X,
 } from "lucide-react";
@@ -7,7 +8,10 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { ArtifactPreview } from "@/components/ToolCallCard";
-import { Artifact, errText, type TaskWorkspaceSnapshot, type WorkspaceFileInfo } from "@/lib/api";
+import {
+  Artifact, errText, WorkspaceChangeStatus,
+  type TaskWorkspaceSnapshot, type WorkspaceFileInfo,
+} from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 type Tab = "files" | "artifacts" | "changes";
@@ -34,10 +38,13 @@ function fmtTime(value: string | null | undefined): string {
   return d.toLocaleString("zh-CN", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" });
 }
 
-const statusLabel: Record<string, string> = {
-  added: "新增",
-  modified: "修改",
-  deleted: "删除",
+type ChangeFilter = "all" | WorkspaceChangeStatus;
+
+const statusMeta: Record<WorkspaceChangeStatus, { label: string; className: string }> = {
+  [WorkspaceChangeStatus.$zero]: { label: "", className: "" },
+  [WorkspaceChangeStatus.ChangeAdded]: { label: "新增", className: "text-emerald-600 dark:text-emerald-400" },
+  [WorkspaceChangeStatus.ChangeModified]: { label: "修改", className: "text-amber-600 dark:text-amber-400" },
+  [WorkspaceChangeStatus.ChangeDeleted]: { label: "删除", className: "text-destructive" },
 };
 
 function FileRow({ file, onPreview }: {
@@ -52,11 +59,15 @@ function FileRow({ file, onPreview }: {
       type="button"
       className={cn(
         "flex w-full items-start gap-2 rounded-lg border bg-card/40 px-2.5 py-2 text-left transition-colors",
-        file.previewable && file.status !== "deleted" ? "hover:border-primary/40 hover:bg-accent/40" : "cursor-default",
+        file.previewable && file.status !== WorkspaceChangeStatus.ChangeDeleted
+          ? "hover:border-primary/40 hover:bg-accent/40"
+          : "cursor-default",
       )}
-      disabled={!file.previewable || file.status === "deleted"}
-      onClick={() => file.previewable && file.status !== "deleted" && onPreview(file.path)}
-      title={file.previewable && file.status !== "deleted" ? `预览 ${file.path}` : `${file.path}（不支持内嵌预览）`}
+      disabled={!file.previewable || file.status === WorkspaceChangeStatus.ChangeDeleted}
+      onClick={() => file.previewable && file.status !== WorkspaceChangeStatus.ChangeDeleted && onPreview(file.path)}
+      title={file.previewable && file.status !== WorkspaceChangeStatus.ChangeDeleted
+        ? `预览 ${file.path}`
+        : `${file.path}（不支持内嵌预览）`}
       data-file-path={file.path}
     >
       <span className="mt-0.5 shrink-0 text-muted-foreground">{icon}</span>
@@ -65,10 +76,10 @@ function FileRow({ file, onPreview }: {
           <span className="truncate text-xs font-medium">{file.name}</span>
           {file.status && (
             <Badge
-              variant={file.status === "deleted" ? "destructive" : "outline"}
-              className="shrink-0 px-1 py-0 text-[10px] font-normal"
+              variant={file.status === WorkspaceChangeStatus.ChangeDeleted ? "destructive" : "outline"}
+              className={cn("shrink-0 px-1 py-0 text-[10px] font-normal", statusMeta[file.status]?.className)}
             >
-              {statusLabel[file.status] ?? file.status}
+              {statusMeta[file.status]?.label || file.status}
             </Badge>
           )}
         </span>
@@ -87,6 +98,7 @@ export function TaskWorkspacePanel({ sessionID, workspace, open, running, refres
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [tab, setTab] = useState<Tab>("files");
+  const [changeFilter, setChangeFilter] = useState<ChangeFilter>("all");
   const [query, setQuery] = useState("");
   const [previewPath, setPreviewPath] = useState<string | null>(null);
   const requestSeq = useRef(0);
@@ -94,6 +106,7 @@ export function TaskWorkspacePanel({ sessionID, workspace, open, running, refres
 
   useEffect(() => {
     if (!open || !sessionID) return;
+    setSnapshot((prev) => (prev?.sessionId === sessionID ? prev : null));
     const seq = ++requestSeq.current;
     setLoading(true);
     setError("");
@@ -104,7 +117,11 @@ export function TaskWorkspacePanel({ sessionID, workspace, open, running, refres
         setSnapshot(next);
       })
       .catch((e) => {
-        if (requestSeq.current === seq) setError(errText(e));
+        if (requestSeq.current === seq) {
+          const msg = errText(e);
+          setError(msg);
+          toast.error(`任务结果加载失败: ${msg}`);
+        }
       })
       .finally(() => {
         if (requestSeq.current === seq) setLoading(false);
@@ -113,13 +130,15 @@ export function TaskWorkspacePanel({ sessionID, workspace, open, running, refres
 
   useEffect(() => {
     setTab("files");
+    setChangeFilter("all");
     setQuery("");
     setPreviewPath(null);
   }, [sessionID]);
 
-  const files = snapshot?.files ?? [];
-  const artifacts = snapshot?.artifacts ?? [];
-  const changes = snapshot?.changes ?? [];
+  const activeSnapshot = snapshot?.sessionId === sessionID ? snapshot : null;
+  const files = activeSnapshot?.files ?? [];
+  const artifacts = activeSnapshot?.artifacts ?? [];
+  const changes = activeSnapshot?.changes ?? [];
   const visibleFiles = useMemo(() => {
     const q = query.trim().toLowerCase();
     return q ? files.filter((f) => f.path.toLowerCase().includes(q)) : files;
@@ -127,12 +146,30 @@ export function TaskWorkspacePanel({ sessionID, workspace, open, running, refres
 
   if (!open || !sessionID) return null;
 
-  const current = tab === "files" ? visibleFiles : tab === "artifacts" ? artifacts : changes;
+  const filteredChanges = changeFilter === "all"
+    ? changes
+    : changes.filter((f) => f.status === changeFilter);
+  const current = tab === "files" ? visibleFiles : tab === "artifacts" ? artifacts : filteredChanges;
   const emptyText = tab === "files"
     ? (query.trim() ? "没有匹配的文件" : "任务工作区还没有文件")
     : tab === "artifacts"
       ? "任务完成后，新增或修改的交付文件会显示在这里"
-      : "尚未发现新增、修改或删除的文件";
+      : changeFilter === "all"
+        ? "尚未发现新增、修改或删除的文件"
+        : `没有${statusMeta[changeFilter].label}的文件`;
+
+  const onTabKeyDown = (e: KeyboardEvent<HTMLButtonElement>, value: Tab) => {
+    const order: Tab[] = ["files", "artifacts", "changes"];
+    let next = value;
+    if (e.key === "ArrowRight") next = order[(order.indexOf(value) + 1) % order.length];
+    else if (e.key === "ArrowLeft") next = order[(order.indexOf(value) - 1 + order.length) % order.length];
+    else if (e.key === "Home") next = order[0];
+    else if (e.key === "End") next = order[order.length - 1];
+    else return;
+    e.preventDefault();
+    setTab(next);
+    requestAnimationFrame(() => document.getElementById(`task-tab-${next}`)?.focus());
+  };
 
   return (
     <>
@@ -181,82 +218,110 @@ export function TaskWorkspacePanel({ sessionID, workspace, open, running, refres
               key={value}
               type="button"
               role="tab"
+              id={`task-tab-${value}`}
               aria-selected={tab === value}
+              aria-controls={`task-panel-${value}`}
+              tabIndex={tab === value ? 0 : -1}
               className={cn(
                 "border-b-2 px-1 py-2 text-xs transition-colors",
                 tab === value ? "border-primary font-medium text-foreground" : "border-transparent text-muted-foreground hover:text-foreground",
               )}
               onClick={() => setTab(value)}
+              onKeyDown={(e) => onTabKeyDown(e, value)}
             >
               {label} {count > 0 && <span className="text-[10px] text-muted-foreground">({count})</span>}
             </button>
           ))}
         </div>
 
-        {tab === "files" && (
-          <div className="border-b p-2">
-            <div className="relative">
-              <Search className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                placeholder="按路径搜索文件"
-                className="h-8 pl-7 text-xs"
-                aria-label="按路径搜索任务文件"
-              />
+        <div
+          role="tabpanel"
+          id={`task-panel-${tab}`}
+          aria-labelledby={`task-tab-${tab}`}
+          className="flex min-h-0 flex-1 flex-col"
+          aria-live="polite"
+        >
+          {tab === "files" && (
+            <div className="border-b p-2">
+              <div className="relative">
+                <Search className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  placeholder="按路径搜索文件"
+                  className="h-8 pl-7 text-xs"
+                  aria-label="按路径搜索任务文件"
+                />
+              </div>
             </div>
-          </div>
-        )}
+          )}
 
-        {snapshot?.truncated && (
-          <div className="flex items-start gap-2 border-b bg-amber-500/10 px-3 py-2 text-[11px] text-amber-700 dark:text-amber-300">
-            <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-            已发现 {snapshot.discovered} 个文件，列表已截断；请缩小工作区范围后刷新。
-          </div>
-        )}
+          {activeSnapshot?.truncated && (
+            <div className="flex items-start gap-2 border-b bg-amber-500/10 px-3 py-2 text-[11px] text-amber-700 dark:text-amber-300">
+              <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+              已发现 {activeSnapshot.discovered} 个文件，列表已截断；请缩小工作区范围后刷新。
+            </div>
+          )}
 
-        {tab === "changes" && snapshot && (snapshot.added + snapshot.modified + snapshot.deleted > 0) && (
-          <div className="flex flex-wrap gap-1.5 border-b px-3 py-2">
-            <Badge variant="outline" className="font-normal text-emerald-600 dark:text-emerald-400">新增 {snapshot.added}</Badge>
-            <Badge variant="outline" className="font-normal text-amber-600 dark:text-amber-400">修改 {snapshot.modified}</Badge>
-            <Badge variant="outline" className="font-normal text-destructive">删除 {snapshot.deleted}</Badge>
-          </div>
-        )}
+          {tab === "changes" && activeSnapshot && (activeSnapshot.added + activeSnapshot.modified + activeSnapshot.deleted > 0) && (
+            <div className="flex flex-wrap gap-1.5 border-b px-3 py-2" role="group" aria-label="变更筛选">
+              {([
+                ["all", "全部", changes.length],
+                [WorkspaceChangeStatus.ChangeAdded, "新增", activeSnapshot.added],
+                [WorkspaceChangeStatus.ChangeModified, "修改", activeSnapshot.modified],
+                [WorkspaceChangeStatus.ChangeDeleted, "删除", activeSnapshot.deleted],
+              ] as const).map(([value, label, count]) => (
+                <button
+                  key={value}
+                  type="button"
+                  aria-pressed={changeFilter === value}
+                  className={cn(
+                    "rounded-full border px-2 py-0.5 text-[10px] transition-colors",
+                    changeFilter === value ? "border-primary bg-primary/10 text-foreground" : "text-muted-foreground hover:text-foreground",
+                  )}
+                  onClick={() => setChangeFilter(value)}
+                >
+                  {label} {count}
+                </button>
+              ))}
+            </div>
+          )}
 
-        <ScrollArea className="min-h-0 flex-1">
-          <div className="space-y-1.5 p-2.5">
-            {loading && !snapshot && (
-              <div className="flex h-40 items-center justify-center gap-2 text-xs text-muted-foreground">
-                <Loader2 className="h-4 w-4 animate-spin" /> 正在读取任务工作区…
-              </div>
-            )}
-            {!loading && error && (
-              <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-xs text-destructive">
-                <div className="mb-1 font-medium">无法读取任务结果</div>
-                <div className="break-words">{error}</div>
-                <Button size="sm" variant="outline" className="mt-2 h-7" onClick={() => setManualNonce((n) => n + 1)}>
-                  重试
-                </Button>
-              </div>
-            )}
-            {!loading && !error && current.length === 0 && (
-              <div className="py-16 text-center text-xs text-muted-foreground">{emptyText}</div>
-            )}
-            {!error && current.map((file) => (
-              <FileRow
-                key={file.path}
-                file={file}
-                onPreview={setPreviewPath}
-              />
-            ))}
-          </div>
-        </ScrollArea>
+          <ScrollArea className="min-h-0 flex-1">
+            <div className="space-y-1.5 p-2.5">
+              {loading && !activeSnapshot && (
+                <div className="flex h-40 items-center justify-center gap-2 text-xs text-muted-foreground">
+                  <Loader2 className="h-4 w-4 animate-spin" /> 正在读取任务工作区…
+                </div>
+              )}
+              {!loading && error && (
+                <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-xs text-destructive">
+                  <div className="mb-1 font-medium">无法读取任务结果</div>
+                  <div className="break-words">{error}</div>
+                  <Button size="sm" variant="outline" className="mt-2 h-7" onClick={() => setManualNonce((n) => n + 1)}>
+                    重试
+                  </Button>
+                </div>
+              )}
+              {!loading && !error && current.length === 0 && (
+                <div className="py-16 text-center text-xs text-muted-foreground">{emptyText}</div>
+              )}
+              {!error && current.map((file) => (
+                <FileRow
+                  key={file.path}
+                  file={file}
+                  onPreview={setPreviewPath}
+                />
+              ))}
+            </div>
+          </ScrollArea>
 
-        {snapshot && (
-          <div className="border-t px-3 py-1.5 text-[10px] text-muted-foreground">
-            已发现 {snapshot.discovered} 个文件 · 基线 {fmtTime(snapshot.baselineAt)} · 刷新于 {fmtTime(snapshot.refreshedAt)}
-          </div>
-        )}
+          {activeSnapshot && (
+            <div className="border-t px-3 py-1.5 text-[10px] text-muted-foreground">
+              已发现 {activeSnapshot.discovered} 个文件 · 基线 {fmtTime(activeSnapshot.baselineAt)} · 刷新于 {fmtTime(activeSnapshot.refreshedAt)}
+            </div>
+          )}
+        </div>
         <ArtifactPreview path={previewPath} sessionID={sessionID} onClose={() => setPreviewPath(null)} />
       </aside>
     </>

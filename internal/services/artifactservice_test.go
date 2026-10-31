@@ -320,11 +320,11 @@ func TestTaskWorkspaceSnapshotTracksChangesAndPersists(t *testing.T) {
 	if second.Added != 1 || second.Modified != 1 || second.Deleted != 1 {
 		t.Fatalf("counts added=%d modified=%d deleted=%d", second.Added, second.Modified, second.Deleted)
 	}
-	statuses := map[string]string{}
+	statuses := map[string]WorkspaceChangeStatus{}
 	for _, f := range second.Changes {
 		statuses[f.Path] = f.Status
 	}
-	if statuses["added.md"] != "added" || statuses["keep.md"] != "modified" || statuses["deleted.txt"] != "deleted" {
+	if statuses["added.md"] != ChangeAdded || statuses["keep.md"] != ChangeModified || statuses["deleted.txt"] != ChangeDeleted {
 		t.Fatalf("change statuses = %+v", statuses)
 	}
 	if len(second.Artifacts) != 2 {

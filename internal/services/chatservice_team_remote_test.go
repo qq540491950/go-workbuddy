@@ -103,7 +103,7 @@ func TestTeamRemoteMemberE2E(t *testing.T) {
 	svc := &Services{Store: store, Kit: agentkit.NewKit(store, mcpmgr.New()), MCP: mcpmgr.New()}
 	chat := NewChatService(svc, sessions, db)
 
-	sess, err := chat.NewSession("team", "team_r", "")
+	sess, err := chat.newLegacySession("team", "team_r", "")
 	if err != nil {
 		t.Fatal(err)
 	}

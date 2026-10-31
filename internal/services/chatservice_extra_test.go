@@ -58,7 +58,7 @@ func newChatFixture(t *testing.T, reply *atomic.Value) (*ChatService, config.Cha
 	}
 	svc := &Services{Store: store, Kit: agentkit.NewKit(store, mcpmgr.New()), MCP: mcpmgr.New()}
 	chat := NewChatService(svc, sessions, db)
-	sess, err := chat.NewSession("agent", "agent_1", "")
+	sess, err := chat.newLegacySession("agent", "agent_1", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -246,7 +246,7 @@ func TestSendWithImageAttachment(t *testing.T) {
 		t.Fatal(err)
 	}
 	chat := NewChatService(&Services{Store: store, Kit: agentkit.NewKit(store, mcpmgr.New()), MCP: mcpmgr.New()}, sessions, db)
-	sess, err := chat.NewSession("agent", "a1", "")
+	sess, err := chat.newLegacySession("agent", "a1", "")
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -65,7 +65,7 @@ func newTrimRaceChat(t *testing.T, srv *httptest.Server) (*ChatService, string) 
 	}
 	svc := &Services{Store: store, Kit: agentkit.NewKit(store, mcpmgr.New()), MCP: mcpmgr.New()}
 	chat := NewChatService(svc, sessions, db)
-	sess, err := chat.NewSession("agent", "agent_1", "")
+	sess, err := chat.newLegacySession("agent", "agent_1", "")
 	if err != nil {
 		t.Fatal(err)
 	}

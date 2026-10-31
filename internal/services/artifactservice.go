@@ -41,15 +41,24 @@ type ArtifactInfo struct {
 	Size int64  `json:"size"`
 }
 
+// WorkspaceChangeStatus is the file-level state shown in the result pane.
+type WorkspaceChangeStatus string
+
+const (
+	ChangeAdded    WorkspaceChangeStatus = "added"
+	ChangeModified WorkspaceChangeStatus = "modified"
+	ChangeDeleted  WorkspaceChangeStatus = "deleted"
+)
+
 // WorkspaceFileInfo is one file in a task workspace snapshot.
 type WorkspaceFileInfo struct {
-	Name        string    `json:"name"`
-	Path        string    `json:"path"`
-	Kind        string    `json:"kind"`
-	Size        int64     `json:"size"`
-	ModTime     time.Time `json:"modTime"`
-	Previewable bool      `json:"previewable"`
-	Status      string    `json:"status,omitempty"` // added|modified|deleted
+	Name        string                `json:"name"`
+	Path        string                `json:"path"`
+	Kind        string                `json:"kind"`
+	Size        int64                 `json:"size"`
+	ModTime     time.Time             `json:"modTime"`
+	Previewable bool                  `json:"previewable"`
+	Status      WorkspaceChangeStatus `json:"status,omitempty"`
 }
 
 // TaskWorkspaceSnapshot is the result pane contract for one chat task.
@@ -74,33 +83,57 @@ type ArtifactService struct{ S *Services }
 // NewArtifactService creates the service.
 func NewArtifactService(s *Services) *ArtifactService { return &ArtifactService{S: s} }
 
-var artifactMIME = map[string]string{
-	".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
-	".gif": "image/gif", ".webp": "image/webp", ".svg": "image/svg+xml",
-	".bmp": "image/bmp", ".ico": "image/x-icon",
-	".pdf": "application/pdf",
-	".md":  "text/markdown", ".markdown": "text/markdown",
-	".txt": "text/plain", ".log": "text/plain", ".csv": "text/csv",
-	".json": "application/json", ".yaml": "text/yaml", ".yml": "text/yaml",
-	".xml": "application/xml", ".html": "text/html", ".htm": "text/html",
-	".go": "text/x-go", ".ts": "text/typescript", ".tsx": "text/typescript",
-	".js": "text/javascript", ".jsx": "text/javascript", ".py": "text/x-python",
-	".rs": "text/x-rust", ".java": "text/x-java", ".c": "text/x-c",
-	".h": "text/x-c", ".cpp": "text/x-c++", ".sh": "text/x-shellscript",
-	".sql": "text/x-sql", ".toml": "text/plain", ".ini": "text/plain",
-	".css": "text/css", ".wasm": "application/wasm",
+type artifactFormat struct {
+	MIME        string
+	Kind        string
+	Previewable bool
 }
 
-func artifactKind(ext string) string {
-	switch ext {
-	case ".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".bmp", ".ico":
-		return "image"
-	case ".pdf":
-		return "pdf"
-	case ".md", ".markdown":
-		return "markdown"
+var artifactFormats = map[string]artifactFormat{
+	".png":      {"image/png", "image", true},
+	".jpg":      {"image/jpeg", "image", true},
+	".jpeg":     {"image/jpeg", "image", true},
+	".gif":      {"image/gif", "image", true},
+	".webp":     {"image/webp", "image", true},
+	".svg":      {"image/svg+xml", "image", true},
+	".bmp":      {"image/bmp", "image", true},
+	".ico":      {"image/x-icon", "image", true},
+	".pdf":      {"application/pdf", "pdf", true},
+	".md":       {"text/markdown", "markdown", true},
+	".markdown": {"text/markdown", "markdown", true},
+	".txt":      {"text/plain", "text", true},
+	".log":      {"text/plain", "text", true},
+	".csv":      {"text/csv", "text", true},
+	".json":     {"application/json", "text", true},
+	".yaml":     {"text/yaml", "text", true},
+	".yml":      {"text/yaml", "text", true},
+	".xml":      {"application/xml", "text", true},
+	".html":     {"text/html", "text", true},
+	".htm":      {"text/html", "text", true},
+	".go":       {"text/x-go", "text", true},
+	".ts":       {"text/typescript", "text", true},
+	".tsx":      {"text/typescript", "text", true},
+	".js":       {"text/javascript", "text", true},
+	".jsx":      {"text/javascript", "text", true},
+	".py":       {"text/x-python", "text", true},
+	".rs":       {"text/x-rust", "text", true},
+	".java":     {"text/x-java", "text", true},
+	".c":        {"text/x-c", "text", true},
+	".h":        {"text/x-c", "text", true},
+	".cpp":      {"text/x-c++", "text", true},
+	".sh":       {"text/x-shellscript", "text", true},
+	".sql":      {"text/x-sql", "text", true},
+	".toml":     {"text/plain", "text", true},
+	".ini":      {"text/plain", "text", true},
+	".css":      {"text/css", "text", true},
+	".wasm":     {"application/wasm", "binary", false},
+}
+
+func artifactFormatForExt(ext string) artifactFormat {
+	if format, ok := artifactFormats[ext]; ok {
+		return format
 	}
-	return "text"
+	return artifactFormat{MIME: "application/octet-stream", Kind: "binary"}
 }
 
 // workspace resolves the configured workspace directory.
@@ -146,17 +179,17 @@ func (a *ArtifactService) openIn(ws, relPath string) (*Artifact, error) {
 		return nil, fmt.Errorf("%q 是目录，仅支持预览文件", relPath)
 	}
 	ext := strings.ToLower(filepath.Ext(abs))
-	mime := artifactMIME[ext]
-	if mime == "" {
-		mime = "application/octet-stream"
+	format := artifactFormatForExt(ext)
+	if !format.Previewable {
+		return nil, fmt.Errorf("不支持预览该文件类型（%s）", filepath.Base(abs))
 	}
 	art := &Artifact{
 		Name: filepath.Base(abs),
 		Path: filepath.ToSlash(relPath),
-		MIME: mime,
+		MIME: format.MIME,
 		Size: st.Size(),
 	}
-	switch kind := artifactKind(ext); kind {
+	switch kind := format.Kind; kind {
 	case "image", "pdf":
 		if st.Size() > maxBinaryArtifact {
 			return nil, fmt.Errorf("文件超过预览上限（%d MB）", maxBinaryArtifact>>20)
@@ -166,7 +199,7 @@ func (a *ArtifactService) openIn(ws, relPath string) (*Artifact, error) {
 			return nil, err
 		}
 		art.Kind = kind
-		art.DataURL = "data:" + mime + ";base64," + base64.StdEncoding.EncodeToString(data)
+		art.DataURL = "data:" + format.MIME + ";base64," + base64.StdEncoding.EncodeToString(data)
 		return art, nil
 	default:
 		art.Kind = kind
@@ -250,20 +283,23 @@ func scanTaskFiles(ws string) ([]WorkspaceFileInfo, int, bool, error) {
 		if err != nil {
 			return nil
 		}
+		if !info.Mode().IsRegular() {
+			return nil
+		}
 		discovered++
 		if len(files) >= maxSnapshotFiles {
 			truncated = true
 			return fs.SkipAll
 		}
 		ext := strings.ToLower(filepath.Ext(path))
-		kind, previewable := snapshotKind(ext)
+		format := artifactFormatForExt(ext)
 		files = append(files, WorkspaceFileInfo{
 			Name:        d.Name(),
 			Path:        relSlash,
-			Kind:        kind,
+			Kind:        format.Kind,
 			Size:        info.Size(),
 			ModTime:     info.ModTime(),
-			Previewable: previewable,
+			Previewable: format.Previewable,
 		})
 		return nil
 	})
@@ -279,81 +315,25 @@ func scanTaskFiles(ws string) ([]WorkspaceFileInfo, int, bool, error) {
 	return files, discovered, truncated, nil
 }
 
-func snapshotKind(ext string) (string, bool) {
-	mime := artifactMIME[ext]
-	if mime == "" || mime == "application/wasm" {
-		return "binary", false
-	}
-	switch artifactKind(ext) {
-	case "image":
-		return "image", true
-	case "pdf":
-		return "pdf", true
-	case "markdown":
-		return "markdown", true
-	default:
-		return "text", true
-	}
-}
-
 // List returns previewable files under the workspace (newest first, capped).
 func (a *ArtifactService) List() ([]ArtifactInfo, error) {
 	ws := a.workspace()
 	if ws == "" {
 		return nil, fmt.Errorf("工作区目录未配置")
 	}
-	type found struct {
-		info ArtifactInfo
-		mt   int64
+	files, _, _, err := scanTaskFiles(ws)
+	if err != nil {
+		return nil, err
 	}
-	var foundFiles []found
-	_ = filepath.WalkDir(ws, func(path string, d os.DirEntry, err error) error {
-		if err != nil || d.IsDir() {
-			return nil
+	out := make([]ArtifactInfo, 0, len(files))
+	for _, f := range files {
+		if !f.Previewable {
+			continue
 		}
-		// ToSlash: WalkDir emits OS separators, and the exports filter must
-		// hold on Windows too.
-		if strings.Contains(filepath.ToSlash(path), "/exports/") || strings.HasPrefix(d.Name(), ".") {
-			return nil
-		}
-		ext := strings.ToLower(filepath.Ext(path))
-		if artifactMIME[ext] == "" {
-			return nil
-		}
-		st, err := d.Info()
-		if err != nil {
-			return nil
-		}
-		rel, err := filepath.Rel(ws, path)
-		if err != nil {
-			return nil
-		}
-		foundFiles = append(foundFiles, found{
-			info: ArtifactInfo{
-				Name: d.Name(), Path: filepath.ToSlash(rel),
-				Kind: artifactKind(ext), Size: st.Size(),
-			},
-			mt: st.ModTime().UnixNano(),
-		})
-		return nil
-	})
-	// The doc promises newest first: sort by mtime BEFORE capping, otherwise
-	// the lexical walk order decides which files survive the cap. Same-mtime
-	// files (bulk writes land in one timestamp tick) tie-break by path so the
-	// order stays deterministic.
-	sort.Slice(foundFiles, func(i, j int) bool {
-		if foundFiles[i].mt != foundFiles[j].mt {
-			return foundFiles[i].mt > foundFiles[j].mt
-		}
-		return foundFiles[i].info.Path < foundFiles[j].info.Path
-	})
-	const maxItems = 200
-	if len(foundFiles) > maxItems {
-		foundFiles = foundFiles[:maxItems]
+		out = append(out, ArtifactInfo{Name: f.Name, Path: f.Path, Kind: f.Kind, Size: f.Size})
 	}
-	out := make([]ArtifactInfo, 0, len(foundFiles))
-	for _, f := range foundFiles {
-		out = append(out, f.info)
+	if len(out) > snapshotListLimit {
+		out = out[:snapshotListLimit]
 	}
 	return out, nil
 }

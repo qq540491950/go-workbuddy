@@ -57,7 +57,7 @@ func testMemoryStatsAndClear(t *testing.T, autoRemember bool) {
 		t.Fatal(err)
 	}
 
-	sess, err := chat.NewSession("agent", "a1", "")
+	sess, err := chat.newLegacySession("agent", "a1", "")
 	if err != nil {
 		t.Fatal(err)
 	}

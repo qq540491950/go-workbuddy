@@ -64,7 +64,7 @@ func TestPlanTodosRoundTrip(t *testing.T) {
 	})
 	events := hookEvents(t)
 
-	sess, err := chat.NewSession("agent", "agent_t", "")
+	sess, err := chat.newLegacySession("agent", "agent_t", "")
 	if err != nil {
 		t.Fatal(err)
 	}

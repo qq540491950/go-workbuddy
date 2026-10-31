@@ -32,7 +32,7 @@ func TestSendTurnKeepsSessionUsableAfterFailure(t *testing.T) {
 	appEventHook = func(ev ChatStreamEvent) { events = append(events, ev) }
 	t.Cleanup(func() { appEventHook = nil })
 
-	sess, err := chat.NewSession("agent", "agent_1", "")
+	sess, err := chat.newLegacySession("agent", "agent_1", "")
 	if err != nil {
 		t.Fatal(err)
 	}

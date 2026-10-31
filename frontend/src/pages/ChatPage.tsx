@@ -97,7 +97,8 @@ export function ChatPage() {
   const [statsOpen, setStatsOpen] = useState(false);
   const [stats, setStats] = useState<SessionStats | null>(null);
   const [autoSpeak, setAutoSpeak] = useState(false);
-  const [globalWorkspace, setGlobalWorkspace] = useState("");
+  const [resolvedWorkspace, setResolvedWorkspace] = useState("");
+  const [workspaceError, setWorkspaceError] = useState("");
   const [workspacePanelOpen, setWorkspacePanelOpen] = useState(false);
   const [workspaceRefresh, setWorkspaceRefresh] = useState(0);
   const [listening, setListening] = useState(false);
@@ -168,10 +169,33 @@ export function ChatPage() {
         setProviderCount((c.providers ?? []).length);
         setProviderList(c.providers ?? []);
         setAutoSpeak(!!c.settings?.autoSpeak);
-        setGlobalWorkspace(c.settings?.workspaceDir ?? "");
       })
       .catch((e) => toast.error(`加载配置失败: ${errText(e)}`));
   }, [reloadSessions]);
+
+  useEffect(() => {
+    if (!activeID) {
+      setResolvedWorkspace("");
+      setWorkspaceError("");
+      return;
+    }
+    let cancelled = false;
+    setResolvedWorkspace("");
+    setWorkspaceError("");
+    Chat.SessionWorkspace(activeID)
+      .then((ws) => {
+        if (!cancelled) setResolvedWorkspace(ws);
+      })
+      .catch((e) => {
+        if (cancelled) return;
+        const msg = errText(e);
+        setWorkspaceError(msg);
+        toast.error(`任务工作区不可用: ${msg}`);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [activeID, active?.workspaceDir]);
 
   // Open the newest session on first load.
   useEffect(() => {
@@ -1091,14 +1115,18 @@ export function ChatPage() {
             {active && (
               <button
                 className="flex min-w-0 max-w-[260px] items-center gap-1 rounded-md px-1.5 py-1 text-[11px] text-muted-foreground hover:bg-accent hover:text-foreground"
-                title={messages.length > 0
-                  ? `任务工作区：${active.workspaceDir || globalWorkspace}`
-                  : `任务工作区：${active.workspaceDir || globalWorkspace}（首轮前可更改）`}
+                title={workspaceError
+                  ? `任务工作区错误：${workspaceError}`
+                  : messages.length > 0
+                    ? `任务工作区：${resolvedWorkspace}`
+                    : `任务工作区：${resolvedWorkspace}（首轮前可更改）`}
                 aria-label="当前任务工作区"
                 onClick={changeSessionWorkspace}
               >
-                <FolderOpen className="h-3 w-3 shrink-0" />
-                <span className="truncate">{active.workspaceDir || globalWorkspace || "未配置工作区"}</span>
+                <FolderOpen className={cn("h-3 w-3 shrink-0", workspaceError && "text-destructive")} />
+                <span className={cn("truncate", workspaceError && "text-destructive")}>
+                  {workspaceError ? "工作区不可用" : resolvedWorkspace || "读取工作区…"}
+                </span>
               </button>
             )}
             {active && (
@@ -1452,7 +1480,7 @@ export function ChatPage() {
       {active && (
         <TaskWorkspacePanel
           sessionID={activeID}
-          workspace={active.workspaceDir || globalWorkspace}
+          workspace={resolvedWorkspace || (workspaceError ? "工作区不可用" : "")}
           open={workspacePanelOpen}
           running={running}
           refreshNonce={workspaceRefresh}

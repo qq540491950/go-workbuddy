@@ -93,7 +93,7 @@ func TestA2AServiceLoopback(t *testing.T) {
 	}
 	clientSvc := &Services{Store: clientStore, Kit: agentkit.NewKit(clientStore, mcpmgr.New()), MCP: mcpmgr.New()}
 	clientChat := NewChatService(clientSvc, clientSessions, db)
-	sess, err := clientChat.NewSession("remote", "ra_loop", "")
+	sess, err := clientChat.newLegacySession("remote", "ra_loop", "")
 	if err != nil {
 		t.Fatal(err)
 	}

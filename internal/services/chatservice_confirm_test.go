@@ -97,7 +97,7 @@ func TestChatToolConfirmationApprove(t *testing.T) {
 	})
 	events := hookEvents(t)
 
-	sess, err := chat.NewSession("agent", "agent_c", "")
+	sess, err := chat.newLegacySession("agent", "agent_c", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -200,7 +200,7 @@ func TestChatToolConfirmationReject(t *testing.T) {
 	})
 	events := hookEvents(t)
 
-	sess, err := chat.NewSession("agent", "agent_c", "")
+	sess, err := chat.newLegacySession("agent", "agent_c", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -262,7 +262,7 @@ func TestChatToolConfirmationRestartResume(t *testing.T) {
 	})
 	hookEvents(t)
 
-	sess, err := chat.NewSession("agent", "agent_c", "")
+	sess, err := chat.newLegacySession("agent", "agent_c", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -327,7 +327,7 @@ func TestChatToolConfirmationGuards(t *testing.T) {
 		t.Fatal("expected error for unknown session")
 	}
 
-	sess, err := chat.NewSession("agent", "agent_c", "")
+	sess, err := chat.newLegacySession("agent", "agent_c", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -393,7 +393,7 @@ func TestToolAuditRecordsConfirmation(t *testing.T) {
 	events := []ChatStreamEvent{}
 	appEventHook = func(ev ChatStreamEvent) { events = append(events, ev) }
 
-	sess, err := chat.NewSession("agent", "agent_c", "")
+	sess, err := chat.newLegacySession("agent", "agent_c", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -439,7 +439,7 @@ func TestExportMarkdownIncludesHITL(t *testing.T) {
 	})
 	events := hookEvents(t)
 
-	sess, err := chat.NewSession("agent", "agent_c", "")
+	sess, err := chat.newLegacySession("agent", "agent_c", "")
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -145,13 +145,13 @@ func buildTaskSnapshot(store *config.Store, sessionID, workspace string) (*TaskW
 	for _, f := range files {
 		current[f.Path] = f
 		base, existed := baseline.Files[f.Path]
-		status := ""
+		status := WorkspaceChangeStatus("")
 		switch {
 		case !existed:
-			status = "added"
+			status = ChangeAdded
 			added++
 		case base.Size != f.Size || !base.ModTime.Equal(f.ModTime):
-			status = "modified"
+			status = ChangeModified
 			modified++
 		}
 		if status == "" {
@@ -169,15 +169,15 @@ func buildTaskSnapshot(store *config.Store, sessionID, workspace string) (*TaskW
 		}
 		deleted++
 		ext := strings.ToLower(filepath.Ext(path))
-		kind, previewable := snapshotKind(ext)
+		format := artifactFormatForExt(ext)
 		changes = append(changes, WorkspaceFileInfo{
 			Name:        filepath.Base(path),
 			Path:        path,
-			Kind:        kind,
+			Kind:        format.Kind,
 			Size:        base.Size,
 			ModTime:     base.ModTime,
-			Previewable: previewable,
-			Status:      "deleted",
+			Previewable: format.Previewable,
+			Status:      ChangeDeleted,
 		})
 	}
 	sortWorkspaceFiles(artifacts)

@@ -52,11 +52,11 @@ func TestChatParallelSessions(t *testing.T) {
 	svc := &Services{Store: store, Kit: agentkit.NewKit(store, mcpmgr.New()), MCP: mcpmgr.New()}
 	chat := NewChatService(svc, sessions, db)
 
-	sessA, err := chat.NewSession("agent", "agent_a", "")
+	sessA, err := chat.newLegacySession("agent", "agent_a", "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	sessB, err := chat.NewSession("agent", "agent_b", "")
+	sessB, err := chat.newLegacySession("agent", "agent_b", "")
 	if err != nil {
 		t.Fatal(err)
 	}

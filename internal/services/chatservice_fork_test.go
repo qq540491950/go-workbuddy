@@ -51,7 +51,7 @@ func TestForkSession(t *testing.T) {
 	svc := &Services{Store: store, Kit: agentkit.NewKit(store, mcpmgr.New()), MCP: mcpmgr.New()}
 	chat := NewChatService(svc, sessions, db)
 
-	orig, err := chat.NewSession("agent", "a1", "历史会话")
+	orig, err := chat.newLegacySession("agent", "a1", "历史会话")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -126,11 +126,11 @@ func TestPinSessionOrdering(t *testing.T) {
 	})
 	_ = dir
 
-	first, err := chat.NewSession("agent", "agent_c", "第一")
+	first, err := chat.newLegacySession("agent", "agent_c", "第一")
 	if err != nil {
 		t.Fatal(err)
 	}
-	second, err := chat.NewSession("agent", "agent_c", "第二")
+	second, err := chat.newLegacySession("agent", "agent_c", "第二")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -191,7 +191,7 @@ func TestExportSessionIncludesStats(t *testing.T) {
 	}
 	svc := &Services{Store: store, Kit: agentkit.NewKit(store, mcpmgr.New()), MCP: mcpmgr.New()}
 	chat := NewChatService(svc, sessions, db)
-	sess, err := chat.NewSession("agent", "a1", "")
+	sess, err := chat.newLegacySession("agent", "a1", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -241,7 +241,7 @@ func TestExportSessionHTML(t *testing.T) {
 	}
 	svc := &Services{Store: store, Kit: agentkit.NewKit(store, mcpmgr.New()), MCP: mcpmgr.New()}
 	chat := NewChatService(svc, sessions, db)
-	sess, err := chat.NewSession("agent", "a1", "")
+	sess, err := chat.newLegacySession("agent", "a1", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -303,7 +303,7 @@ func TestSessionPreviewUpdated(t *testing.T) {
 	}
 	svc := &Services{Store: store, Kit: agentkit.NewKit(store, mcpmgr.New()), MCP: mcpmgr.New()}
 	chat := NewChatService(svc, sessions, db)
-	sess, err := chat.NewSession("agent", "a1", "")
+	sess, err := chat.newLegacySession("agent", "a1", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -359,7 +359,7 @@ func TestExportSessionMarksForkLine(t *testing.T) {
 	}
 	svc := &Services{Store: store, Kit: agentkit.NewKit(store, mcpmgr.New()), MCP: mcpmgr.New()}
 	chat := NewChatService(svc, sessions, db)
-	sess, err := chat.NewSession("agent", "a1", "")
+	sess, err := chat.newLegacySession("agent", "a1", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -417,7 +417,7 @@ func TestSessionLifecycleAudit(t *testing.T) {
 	chat := NewChatService(svc, sessions, db)
 	chat.SetToolAuditPath(auditPath)
 
-	sess, err := chat.NewSession("agent", "a1", "")
+	sess, err := chat.newLegacySession("agent", "a1", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -477,7 +477,7 @@ func TestArchiveSessionRoundTrip(t *testing.T) {
 	if err := store.Update(func(cfg *config.Config) { cfg.Settings.ToolsAudit = true }); err != nil {
 		t.Fatal(err)
 	}
-	sess, err := chat.NewSession("agent", "a1", "")
+	sess, err := chat.newLegacySession("agent", "a1", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -539,11 +539,11 @@ func TestExportAllSessions(t *testing.T) {
 	}
 	svc := &Services{Store: store, Kit: agentkit.NewKit(store, mcpmgr.New()), MCP: mcpmgr.New()}
 	chat := NewChatService(svc, sessions, db)
-	s1, err := chat.NewSession("agent", "a1", "会话一")
+	s1, err := chat.newLegacySession("agent", "a1", "会话一")
 	if err != nil {
 		t.Fatal(err)
 	}
-	s2, err := chat.NewSession("agent", "a1", "会话二")
+	s2, err := chat.newLegacySession("agent", "a1", "会话二")
 	if err != nil {
 		t.Fatal(err)
 	}

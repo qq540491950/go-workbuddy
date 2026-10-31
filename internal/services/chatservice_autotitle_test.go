@@ -61,7 +61,7 @@ func TestAutoTitleGeneratesTitle(t *testing.T) {
 	chat := NewChatService(svc, sessions, db)
 	hookEvents(t)
 
-	sess, err := chat.NewSession("agent", "agent_at", "")
+	sess, err := chat.newLegacySession("agent", "agent_at", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -120,7 +120,7 @@ func TestAutoTitleDisabledKeepsFallback(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	sess, err := chat.NewSession("agent", "agent_r", "")
+	sess, err := chat.newLegacySession("agent", "agent_r", "")
 	if err != nil {
 		t.Fatal(err)
 	}

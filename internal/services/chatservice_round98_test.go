@@ -63,7 +63,7 @@ func TestRegeneratePreservesAttachments(t *testing.T) {
 	})
 	events := hookEvents(t)
 
-	sess, err := chat.NewSession("agent", "agent_r", "")
+	sess, err := chat.newLegacySession("agent", "agent_r", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -124,7 +124,7 @@ func TestEditAndResendKeepsAttachments(t *testing.T) {
 	})
 	hookEvents(t)
 
-	sess, err := chat.NewSession("agent", "agent_r", "")
+	sess, err := chat.newLegacySession("agent", "agent_r", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -167,7 +167,7 @@ func TestRegenerateAfterHitlConfirm(t *testing.T) {
 	})
 	events := hookEvents(t)
 
-	sess, err := chat.NewSession("agent", "agent_c", "")
+	sess, err := chat.newLegacySession("agent", "agent_c", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -226,7 +226,7 @@ func TestExportHTMLIncludesHITLAndNames(t *testing.T) {
 	})
 	events := hookEvents(t)
 
-	sess, err := chat.NewSession("agent", "agent_c", "")
+	sess, err := chat.newLegacySession("agent", "agent_c", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -273,7 +273,7 @@ func TestDeleteSessionCancelsRunningTurn(t *testing.T) {
 	})
 	hookEvents(t)
 
-	sess, err := chat.NewSession("agent", "agent_r", "")
+	sess, err := chat.newLegacySession("agent", "agent_r", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -334,7 +334,7 @@ func TestTurnUsageAccumulatesAcrossToolLoop(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	sess, err := chat.NewSession("agent", "agent_c", "")
+	sess, err := chat.newLegacySession("agent", "agent_c", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -365,7 +365,7 @@ func TestChatPreviewTruncatedByRune(t *testing.T) {
 	})
 	hookEvents(t)
 
-	sess, err := chat.NewSession("agent", "agent_r", "")
+	sess, err := chat.newLegacySession("agent", "agent_r", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -418,7 +418,7 @@ func TestSearchSessionsEscapesLikeWildcards(t *testing.T) {
 	reply.Store("ok")
 	chat, sess1, _ := newChatFixture(t, &reply)
 
-	sess2, err := chat.NewSession("agent", "agent_1", "")
+	sess2, err := chat.newLegacySession("agent", "agent_1", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -459,7 +459,7 @@ func TestSessionModelOverride(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	sess, err := chat.NewSession("agent", "agent_r", "")
+	sess, err := chat.newLegacySession("agent", "agent_r", "")
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -8,7 +8,6 @@ import (
 	"log"
 	"os"
 	"path/filepath"
-	"runtime"
 	"slices"
 	"sort"
 	"strconv"
@@ -189,6 +188,9 @@ type ChatService struct {
 	// workspaceMu serializes task-workspace assignment/rebinding so two
 	// concurrent creations cannot both claim the same physical directory.
 	workspaceMu sync.Mutex
+	// workspaceLocks serialize one session's turn against workspace rebinding;
+	// different tasks can still run and create concurrently.
+	workspaceLocks map[string]*sync.Mutex
 }
 
 // runHandle identifies one in-flight turn. The pointer identity lets a
@@ -207,21 +209,20 @@ func (c *ChatService) SetToolAuditPath(path string) { c.auditPath = path }
 // NewChatService creates the service. db may be nil (disables Regenerate trimming).
 func NewChatService(s *Services, sessions session.Service, db *gorm.DB) *ChatService {
 	return &ChatService{
-		S:        s,
-		runs:     map[string]*runHandle{},
-		active:   map[string]map[*runHandle]struct{}{},
-		sessions: sessions,
-		db:       db,
-		appName:  "workbuddy",
-		userID:   "local",
+		S:              s,
+		runs:           map[string]*runHandle{},
+		active:         map[string]map[*runHandle]struct{}{},
+		workspaceLocks: map[string]*sync.Mutex{},
+		sessions:       sessions,
+		db:             db,
+		appName:        "workbuddy",
+		userID:         "local",
 	}
 }
 
-// NewSession creates a chat bound to an agent, remote A2A agent or team.
-// It preserves the pre-task-workspace API: the session falls back to the
-// global workspace. New UI flows use NewSessionWithWorkspace.
+// NewSession creates a task session with an automatically isolated workspace.
 func (c *ChatService) NewSession(targetType, targetID, title string) (config.ChatSession, error) {
-	return c.newSession(targetType, targetID, title, "", false)
+	return c.NewSessionWithWorkspace(targetType, targetID, title, "")
 }
 
 // NewSessionWithWorkspace creates a task session. An empty workspaceDir asks
@@ -306,156 +307,10 @@ func (c *ChatService) newSession(targetType, targetID, title, workspaceDir strin
 	return cs, err
 }
 
-// SetSessionWorkspace rebinds a task before its first event. The directory is
-// canonicalized and checked for writability and active-session conflicts.
-func (c *ChatService) SetSessionWorkspace(sessionID, workspaceDir string) error {
-	c.workspaceMu.Lock()
-	defer c.workspaceMu.Unlock()
-
-	if c.sessionRunning(sessionID) {
-		return fmt.Errorf("会话正在运行，不能更改工作区")
-	}
-	cfg := c.S.Store.Get()
-	found := false
-	for _, s := range cfg.Sessions {
-		if s.ID == sessionID {
-			found = true
-			break
-		}
-	}
-	if !found {
-		return fmt.Errorf("会话 %q 不存在", sessionID)
-	}
-	started, err := c.sessionHasEvents(sessionID)
-	if err != nil {
-		return err
-	}
-	if started {
-		return fmt.Errorf("首轮已开始，任务工作区不可更改")
-	}
-	ws, err := validateTaskWorkspace(workspaceDir)
-	if err != nil {
-		return err
-	}
-	if err := workspaceConflict(cfg, ws, sessionID); err != nil {
-		return err
-	}
-	var notFound error
-	oldWorkspace := ""
-	err = c.S.Store.Update(func(cfg *config.Config) {
-		for i := range cfg.Sessions {
-			if cfg.Sessions[i].ID == sessionID {
-				oldWorkspace = cfg.Sessions[i].WorkspaceDir
-				cfg.Sessions[i].WorkspaceDir = ws
-				cfg.Sessions[i].UpdatedAt = nowUTC()
-				return
-			}
-		}
-		notFound = fmt.Errorf("会话 %q 不存在", sessionID)
-	})
-	if err != nil {
-		return err
-	}
-	if notFound != nil {
-		return notFound
-	}
-	if _, err := resetTaskBaseline(c.S.Store, sessionID, ws); err != nil {
-		_ = c.S.Store.Update(func(cfg *config.Config) {
-			for i := range cfg.Sessions {
-				if cfg.Sessions[i].ID == sessionID {
-					cfg.Sessions[i].WorkspaceDir = oldWorkspace
-					return
-				}
-			}
-		})
-		return err
-	}
-	c.audit(sessionID, "session_workspace_set", "system", "session", mustJSON(map[string]string{"workspace": ws}), "")
-	return nil
-}
-
 func (c *ChatService) sessionRunning(sessionID string) bool {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return len(c.active[sessionID]) > 0
-}
-
-func (c *ChatService) sessionHasEvents(sessionID string) (bool, error) {
-	resp, err := c.sessions.Get(context.Background(), &session.GetRequest{
-		AppName: c.appName, UserID: c.userID, SessionID: sessionID,
-	})
-	if err != nil {
-		return false, err
-	}
-	if resp.Session == nil {
-		return false, fmt.Errorf("会话 %q 不存在", sessionID)
-	}
-	for ev := range resp.Session.Events().All() {
-		if ev != nil {
-			return true, nil
-		}
-	}
-	return false, nil
-}
-
-func validateTaskWorkspace(raw string) (string, error) {
-	raw = strings.TrimSpace(raw)
-	if raw == "" {
-		return "", fmt.Errorf("请选择任务工作目录")
-	}
-	abs, err := filepath.Abs(raw)
-	if err != nil {
-		return "", fmt.Errorf("工作区路径无效: %w", err)
-	}
-	abs, err = filepath.EvalSymlinks(filepath.Clean(abs))
-	if err != nil {
-		return "", fmt.Errorf("工作区不可用: %w", err)
-	}
-	st, err := os.Stat(abs)
-	if err != nil {
-		return "", fmt.Errorf("工作区不可用: %w", err)
-	}
-	if !st.IsDir() {
-		return "", fmt.Errorf("工作区必须是目录")
-	}
-	if _, err := os.ReadDir(abs); err != nil {
-		return "", fmt.Errorf("工作区不可读: %w", err)
-	}
-	probe, err := os.CreateTemp(abs, ".workbuddy-write-test-*")
-	if err != nil {
-		return "", fmt.Errorf("工作区不可写: %w", err)
-	}
-	probePath := probe.Name()
-	_ = probe.Close()
-	_ = os.Remove(probePath)
-	return abs, nil
-}
-
-func workspaceConflict(cfg config.Config, workspace, excludeSessionID string) error {
-	for _, s := range cfg.Sessions {
-		if s.ID == excludeSessionID || s.Archived || strings.TrimSpace(s.WorkspaceDir) == "" {
-			continue
-		}
-		if samePath(s.WorkspaceDir, workspace) {
-			return fmt.Errorf("工作区已被任务「%s」使用，请选择其他目录", s.Title)
-		}
-	}
-	return nil
-}
-
-func samePath(a, b string) bool {
-	a, b = filepath.Clean(a), filepath.Clean(b)
-	if runtime.GOOS == "windows" {
-		return strings.EqualFold(a, b)
-	}
-	return a == b
-}
-
-func cleanupCreatedDir(path string) {
-	if path == "" {
-		return
-	}
-	_ = os.Remove(path)
 }
 
 // ListSessions returns all chat sessions, pinned first, then newest first.
@@ -621,6 +476,7 @@ func (c *ChatService) DeleteSession(id string) error {
 		return notFound
 	}
 	removeTaskBaseline(c.S.Store, id)
+	delete(c.workspaceLocks, id)
 	c.audit(id, "session_deleted", "system", "session", mustJSON(map[string]string{"sessionId": id}), "")
 	return nil
 }
@@ -1258,6 +1114,9 @@ func (c *ChatService) emitChat(sessionID string, ev ChatStreamEvent) {
 // sendTurn sanitizes the user input (guardrails), builds the message content
 // and hands the turn to runTurn.
 func (c *ChatService) sendTurn(sessionID, text string, attachments []AttachmentIn) error {
+	lock := c.sessionWorkspaceLock(sessionID)
+	lock.Lock()
+	defer lock.Unlock()
 	cfg := c.S.Store.Get()
 	target := c.resolveSessionTarget(cfg, sessionID)
 	if target == nil {
@@ -1335,6 +1194,9 @@ func (c *ChatService) ConfirmToolCall(sessionID, callID string, approved bool) e
 			Response: map[string]any{"confirmed": approved},
 		}}},
 	}
+	lock := c.sessionWorkspaceLock(sessionID)
+	lock.Lock()
+	defer lock.Unlock()
 	cfg := c.S.Store.Get()
 	target := c.resolveSessionTarget(cfg, sessionID)
 	if target == nil {

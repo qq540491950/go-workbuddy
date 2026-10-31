@@ -16,6 +16,10 @@ export {
     MCPService
 };
 
+export {
+    WorkspaceChangeStatus
+} from "./models.js";
+
 export type {
     A2AStatus,
     Artifact,

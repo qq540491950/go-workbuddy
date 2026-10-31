@@ -71,7 +71,7 @@ func TestGuardrailMaxToolCalls(t *testing.T) {
 		_, _ = w.Write([]byte(sseText("完成") + sseDone))
 	})
 
-	sess, err := chat.NewSession("agent", "a1", "")
+	sess, err := chat.newLegacySession("agent", "a1", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -101,7 +101,7 @@ func TestGuardrailMaxTurnSeconds(t *testing.T) {
 		_, _ = w.Write([]byte(sseText("太迟了") + sseDone))
 	})
 
-	sess, err := chat.NewSession("agent", "a1", "")
+	sess, err := chat.newLegacySession("agent", "a1", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -125,7 +125,7 @@ func TestGuardrailUnlimitedKeepsOldBehavior(t *testing.T) {
 		w.Header().Set("Content-Type", "text/event-stream")
 		_, _ = w.Write([]byte(sseText("直接回答") + sseDone))
 	})
-	sess, err := chat.NewSession("agent", "a1", "")
+	sess, err := chat.newLegacySession("agent", "a1", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -166,7 +166,7 @@ func TestGuardrailSessionTokenBudget(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	sess, err := chat.NewSession("agent", "a1", "")
+	sess, err := chat.newLegacySession("agent", "a1", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -232,7 +232,7 @@ func TestToolAuditTrail(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	sess, err := chat.NewSession("agent", "a1", "")
+	sess, err := chat.newLegacySession("agent", "a1", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -281,7 +281,7 @@ func TestCompactionIntervalSummarizes(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	sess, err := chat.NewSession("agent", "a1", "")
+	sess, err := chat.newLegacySession("agent", "a1", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -331,7 +331,7 @@ func TestSearchSessionsMatchesContent(t *testing.T) {
 		_, _ = w.Write([]byte(sseText("无关回答") + sseDone))
 	})
 
-	sess, err := chat.NewSession("agent", "a1", "")
+	sess, err := chat.newLegacySession("agent", "a1", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -374,7 +374,7 @@ func TestToolAuditRotation(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	sess, err := chat.NewSession("agent", "a1", "")
+	sess, err := chat.newLegacySession("agent", "a1", "")
 	if err != nil {
 		t.Fatal(err)
 	}

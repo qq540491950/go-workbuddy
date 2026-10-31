@@ -103,6 +103,12 @@ const histories: Record<string, any[]> = {
 };
 
 let pendingAnswer = 0;
+type TaskSnapshotMode = "success" | "empty" | "error" | "truncated" | "slow";
+// Browser walks can request empty/error/truncated/slow states with ?taskMode=.
+const requestedTaskSnapshotMode = new URLSearchParams(window.location.search).get("taskMode");
+let taskSnapshotMode: TaskSnapshotMode = (["success", "empty", "error", "truncated", "slow"] as const).includes(
+  requestedTaskSnapshotMode as TaskSnapshotMode,
+) ? requestedTaskSnapshotMode as TaskSnapshotMode : "success";
 
 const handlers: Record<string, (args: any[]) => any> = {
   // GetConfig
@@ -147,33 +153,69 @@ const handlers: Record<string, (args: any[]) => any> = {
     if (sess) sess.workspaceDir = args[1];
     return null;
   },
+  // SessionWorkspace(sessionID)
+  "2695952392": (args) => {
+    const sess = seedConfig.sessions.find((s) => s.id === args[0]);
+    if (!sess) throw new Error("会话不存在");
+    return sess.workspaceDir || seedConfig.settings.workspaceDir;
+  },
   // ArtifactService.TaskWorkspaceSnapshot(sessionID)
-  "57605569": (args) => ({
-    sessionId: args[0],
-    workspace: seedConfig.sessions.find((s) => s.id === args[0])?.workspaceDir || seedConfig.settings.workspaceDir,
-    files: [
+  "57605569": async (args) => {
+    if (taskSnapshotMode === "slow") {
+      await new Promise((resolve) => setTimeout(resolve, 700));
+    }
+    if (taskSnapshotMode === "error") throw new Error("任务工作区不可读");
+    const sessions = seedConfig.sessions as Array<{ id: string; workspaceDir?: string }>;
+    const workspace = sessions.find((s) => s.id === args[0])?.workspaceDir || seedConfig.settings.workspaceDir;
+    const base = {
+      sessionId: args[0],
+      workspace,
+      discovered: 0,
+      added: 0,
+      modified: 0,
+      deleted: 0,
+      truncated: false,
+      baselineAt: "2026-09-18T01:00:00Z",
+      refreshedAt: new Date().toISOString(),
+    };
+    if (taskSnapshotMode === "empty") {
+      return { ...base, files: [], artifacts: [], changes: [] };
+    }
+    if (taskSnapshotMode === "truncated") {
+      return {
+        ...base,
+        files: [
+          { name: "huge.log", path: "logs/huge.log", kind: "text", size: 532480, modTime: "2026-09-18T01:08:00Z", previewable: true },
+        ],
+        artifacts: [],
+        changes: [],
+        discovered: 5001,
+        truncated: true,
+      };
+    }
+    return {
+      ...base,
+      files: [
       { name: "report.md", path: "output/report.md", kind: "markdown", size: 7168, modTime: "2026-09-18T01:07:00Z", previewable: true },
       { name: "weekly.md", path: "notes/weekly.md", kind: "markdown", size: 2048, modTime: "2026-09-18T01:06:00Z", previewable: true },
       { name: "chart.png", path: "assets/chart.png", kind: "image", size: 40960, modTime: "2026-09-18T01:05:00Z", previewable: true },
       { name: "archive.zip", path: "archive.zip", kind: "binary", size: 524288, modTime: "2026-09-17T09:00:00Z", previewable: false },
-    ],
-    artifacts: [
+      ],
+      artifacts: [
       { name: "report.md", path: "output/report.md", kind: "markdown", size: 7168, modTime: "2026-09-18T01:07:00Z", previewable: true, status: "added" },
       { name: "weekly.md", path: "notes/weekly.md", kind: "markdown", size: 2048, modTime: "2026-09-18T01:06:00Z", previewable: true, status: "modified" },
-    ],
-    changes: [
+      ],
+      changes: [
       { name: "report.md", path: "output/report.md", kind: "markdown", size: 7168, modTime: "2026-09-18T01:07:00Z", previewable: true, status: "added" },
       { name: "weekly.md", path: "notes/weekly.md", kind: "markdown", size: 2048, modTime: "2026-09-18T01:06:00Z", previewable: true, status: "modified" },
       { name: "old.txt", path: "notes/old.txt", kind: "text", size: 512, modTime: "2026-09-17T09:00:00Z", previewable: true, status: "deleted" },
-    ],
-    discovered: 4,
-    added: 1,
-    modified: 1,
-    deleted: 1,
-    truncated: false,
-    baselineAt: "2026-09-18T01:00:00Z",
-    refreshedAt: new Date().toISOString(),
-  }),
+      ],
+      discovered: 4,
+      added: 1,
+      modified: 1,
+      deleted: 1,
+    };
+  },
   // ArtifactService.OpenForSession(sessionID, path)
   "4168803584": (args) => ({
     name: String(args[1]).split("/").pop(),
@@ -239,6 +281,9 @@ setTransport({
 // Expose a helper so tests can inject backend events (chat:stream ...).
 (window as any).__emit = (name: string, data: unknown) => {
   (window as any)._wails?.dispatchWailsEvent?.({ name, data });
+};
+(window as any).__setTaskSnapshotMode = (mode: TaskSnapshotMode) => {
+  taskSnapshotMode = mode;
 };
 
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(

@@ -10,11 +10,18 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"changeme/internal/agentkit"
 	"changeme/internal/config"
 	"changeme/internal/mcpmgr"
 )
+
+// newLegacySession keeps pre-task-workspace tests on their original global
+// fallback without exposing a test-only constructor through Wails.
+func (c *ChatService) newLegacySession(targetType, targetID, title string) (config.ChatSession, error) {
+	return c.newSession(targetType, targetID, title, "", false)
+}
 
 func newWorkspaceTestChat(t *testing.T, handler http.HandlerFunc) (*ChatService, *config.Store, string) {
 	t.Helper()
@@ -139,7 +146,7 @@ func TestLegacySessionWithoutWorkspaceFallsBackToGlobal(t *testing.T) {
 		_, _ = w.Write([]byte(sseToolCall("legacy", "write_workspace_file", `"{\"path\":\"legacy.txt\",\"content\":\"legacy\"}"`) + sseDone))
 	})
 
-	sess, err := chat.NewSession("agent", "agent_ws", "legacy")
+	sess, err := chat.newLegacySession("agent", "agent_ws", "legacy")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -151,6 +158,40 @@ func TestLegacySessionWithoutWorkspaceFallsBackToGlobal(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(globalWorkspace, "legacy.txt")); err != nil {
 		t.Fatalf("legacy session did not use the global workspace: %v", err)
+	}
+}
+
+func TestNewSessionDefaultsToTaskWorkspace(t *testing.T) {
+	chat, _, _ := newWorkspaceTestChat(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte(sseText("ok") + sseDone))
+	})
+	sess, err := chat.NewSession("agent", "agent_ws", "task")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sess.WorkspaceDir == "" {
+		t.Fatal("public NewSession must create a task workspace")
+	}
+	if _, err := os.Stat(sess.WorkspaceDir); err != nil {
+		t.Fatalf("task workspace was not created: %v", err)
+	}
+}
+
+func TestSessionWorkspaceReportsMissingDirectory(t *testing.T) {
+	chat, _, _ := newWorkspaceTestChat(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte(sseText("ok") + sseDone))
+	})
+	sess, err := chat.NewSessionWithWorkspace("agent", "agent_ws", "missing", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.RemoveAll(sess.WorkspaceDir); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := chat.SessionWorkspace(sess.ID); err == nil || !strings.Contains(err.Error(), "不可用") {
+		t.Fatalf("expected missing-workspace error, got %v", err)
 	}
 }
 
@@ -186,6 +227,9 @@ func TestExplicitWorkspaceValidationAndConflict(t *testing.T) {
 	}
 	if _, err := chat.NewSessionWithWorkspace("agent", "agent_ws", "file", file); err == nil || !strings.Contains(err.Error(), "目录") {
 		t.Fatalf("expected file-path rejection, got %v", err)
+	}
+	if _, err := chat.NewSessionWithWorkspace("agent", "agent_ws", "relative", "relative-workdir"); err == nil || !strings.Contains(err.Error(), "绝对") {
+		t.Fatalf("expected relative-path rejection, got %v", err)
 	}
 }
 
@@ -403,5 +447,43 @@ func TestConcurrentTaskSnapshotsStayIsolated(t *testing.T) {
 	close(errs)
 	for err := range errs {
 		t.Error(err)
+	}
+}
+
+func TestSetSessionWorkspaceWaitsForStartingTurn(t *testing.T) {
+	requestSeen := make(chan struct{})
+	release := make(chan struct{})
+	var seen sync.Once
+	chat, _, _ := newWorkspaceTestChat(t, func(w http.ResponseWriter, r *http.Request) {
+		seen.Do(func() { close(requestSeen) })
+		<-release
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte(sseText("done") + sseDone))
+	})
+	sess, err := chat.NewSessionWithWorkspace("agent", "agent_ws", "race", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	sendErr := make(chan error, 1)
+	go func() { sendErr <- chat.Send(sess.ID, "hello", nil) }()
+	select {
+	case <-requestSeen:
+	case <-time.After(3 * time.Second):
+		t.Fatal("model request did not start")
+	}
+	changeErr := make(chan error, 1)
+	chosen := t.TempDir()
+	go func() { changeErr <- chat.SetSessionWorkspace(sess.ID, chosen) }()
+	select {
+	case err := <-changeErr:
+		t.Fatalf("workspace rebinding returned before the active turn finished: %v", err)
+	case <-time.After(150 * time.Millisecond):
+	}
+	close(release)
+	if err := <-sendErr; err != nil {
+		t.Fatal(err)
+	}
+	if err := <-changeErr; err == nil || !strings.Contains(err.Error(), "首轮") {
+		t.Fatalf("expected post-turn workspace lock, got %v", err)
 	}
 }

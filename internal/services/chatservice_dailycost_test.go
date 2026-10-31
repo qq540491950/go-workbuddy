@@ -47,7 +47,7 @@ func TestSessionStatsDailyCost(t *testing.T) {
 	svc := &Services{Store: store, Kit: agentkit.NewKit(store, mcpmgr.New()), MCP: mcpmgr.New()}
 	chat := NewChatService(svc, sessions, db)
 
-	sess, err := chat.NewSession("agent", "a1", "")
+	sess, err := chat.newLegacySession("agent", "a1", "")
 	if err != nil {
 		t.Fatal(err)
 	}
