@@ -25,6 +25,7 @@ export type {
     AuthorStat,
     ChatMessage,
     ChatStreamEvent,
+    ImportAgentResult,
     KnowledgeFile,
     MemoryInfo,
     SessionStats,

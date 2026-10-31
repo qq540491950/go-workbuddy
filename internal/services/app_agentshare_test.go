@@ -23,10 +23,11 @@ func TestAgentShareRoundTrip(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	first, err := app.ImportAgent(string(data))
+	firstRes, err := app.ImportAgent(string(data))
 	if err != nil {
 		t.Fatal(err)
 	}
+	first := firstRes.Agent
 	if first.ID == "agent_1" || first.ID == "" {
 		t.Fatalf("imported agent must get a fresh ID: %q", first.ID)
 	}
@@ -35,10 +36,11 @@ func TestAgentShareRoundTrip(t *testing.T) {
 		t.Fatalf("name conflict suffix missing on first import: %q", first.Name)
 	}
 
-	second, err := app.ImportAgent(string(data))
+	secondRes, err := app.ImportAgent(string(data))
 	if err != nil {
 		t.Fatal(err)
 	}
+	second := secondRes.Agent
 	if second.Name != "A（3）" {
 		t.Fatalf("name conflict suffix missing: %q", second.Name)
 	}
@@ -59,6 +61,31 @@ func TestAgentShareRoundTrip(t *testing.T) {
 	}
 	_ = store
 	_ = workspace
+}
+
+// TestImportAgentStripsDanglingRefs: skill / MCP references that do not
+// exist on THIS machine are stripped at import (with a warning) — otherwise
+// every turn of the imported agent fails its build outright.
+func TestImportAgentStripsDanglingRefs(t *testing.T) {
+	app, _, _ := newBackupTestService(t)
+	data := `{"version":1,"agent":{` +
+		`"id":"agent_x","name":"访客","description":"d","providerId":"prov_1",` +
+		`"skillIds":["skill_1","skill_missing"],` +
+		`"mcpServerIds":["mcp_missing"],` +
+		`"builtinTools":["time"]}}`
+	res, err := app.ImportAgent(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Agent.SkillIDs) != 1 || res.Agent.SkillIDs[0] != "skill_1" {
+		t.Fatalf("dangling skill ref not stripped: %v", res.Agent.SkillIDs)
+	}
+	if len(res.Agent.MCPServerIDs) != 0 {
+		t.Fatalf("dangling MCP ref not stripped: %v", res.Agent.MCPServerIDs)
+	}
+	if len(res.Warnings) != 2 {
+		t.Fatalf("expected 2 warnings, got %v", res.Warnings)
+	}
 }
 
 // TestRemoteAgentShareRoundTrip mirrors the agent share flow for remote A2A

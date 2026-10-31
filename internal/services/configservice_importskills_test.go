@@ -14,6 +14,53 @@ import (
 // TestImportSkillsFromWorkspace covers the agentskills.io layout import:
 // frontmatter parsing, duplicate-name skipping, non-SKILL files ignored and
 // the no-directory error path.
+// TestImportSkillsRejectsNormalizedCollisions: names that normalize to the
+// same materialized directory (CJK names all collapse to the same bucket)
+// must conflict at import, not silently overwrite each other's SKILL.md.
+func TestImportSkillsRejectsNormalizedCollisions(t *testing.T) {
+	dir := t.TempDir()
+	workspace := t.TempDir()
+	store, err := config.Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Update(func(cfg *config.Config) {
+		cfg.Settings.WorkspaceDir = workspace
+	}); err != nil {
+		t.Fatal(err)
+	}
+	svc := &ConfigService{S: &Services{Store: store}}
+	skillsDir := filepath.Join(workspace, "skills")
+	mk := func(dirName, content string) {
+		t.Helper()
+		if err := os.MkdirAll(filepath.Join(skillsDir, dirName), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(skillsDir, dirName, "SKILL.md"), []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	mk("a", "---\nname: 周报\ndescription: 周报技能\n---\n\n正文一。")
+	mk("b", "---\nname: 指南\ndescription: 指南技能\n---\n\n正文二。")
+
+	n, err := svc.ImportSkillsFromWorkspace()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n != 1 {
+		t.Fatalf("normalized collision must import only one skill, got %d", n)
+	}
+	var importedCount int
+	for _, s := range store.Get().Skills {
+		if s.Name == "周报" || s.Name == "指南" {
+			importedCount++
+		}
+	}
+	if importedCount != 1 {
+		t.Fatalf("exactly one of the colliding skills may be stored, got %d", importedCount)
+	}
+}
+
 func TestImportSkillsFromWorkspace(t *testing.T) {
 	dir := t.TempDir()
 	workspace := t.TempDir()

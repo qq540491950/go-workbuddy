@@ -242,8 +242,12 @@ export function AgentsPage() {
               e.target.value = "";
               if (!f) return;
               try {
-                const imported = await App.ImportAgent(await f.text());
+              const res = await App.ImportAgent(await f.text());
+              const imported = res.agent;
                 toast.success(`已导入 Agent「${imported.name}」`);
+              if (res.warnings?.length) {
+                toast.warning(res.warnings.join("；"));
+              }
                 reload();
                 // Open the editor so the user picks a provider/model right away.
                 setEditing({ ...imported, skillIds: imported.skillIds ?? [], mcpServerIds: imported.mcpServerIds ?? [], builtinTools: imported.builtinTools ?? [] });

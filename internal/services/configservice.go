@@ -320,9 +320,13 @@ func (c *ConfigService) ImportSkillsFromWorkspace() (int, error) {
 func (c *ConfigService) addSkillIfNew(name, desc, body string) bool {
 	added := false
 	_ = c.S.Store.Update(func(cfg *config.Config) {
-		key := strings.ToLower(strings.Join(strings.Fields(name), "-"))
+		// Dedup by the MATERIALIZED name: two skills whose normalized names
+		// collide (CJK names collapse to the same bucket) share one directory
+		// and would silently overwrite each other's SKILL.md. Must match
+		// SaveSkill's collision rule exactly.
+		key := agentkit.MaterializedSkillName(name)
 		for _, sk := range cfg.Skills {
-			if strings.ToLower(strings.Join(strings.Fields(sk.Name), "-")) == key {
+			if agentkit.MaterializedSkillName(sk.Name) == key {
 				return
 			}
 		}

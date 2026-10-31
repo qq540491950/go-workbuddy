@@ -161,6 +161,14 @@ type agentShare struct {
 	Agent   config.AgentConfig `json:"agent"`
 }
 
+// ImportAgentResult is the import outcome: the stored agent plus any
+// machine-local fixes applied during import (stripped dangling refs), so the
+// UI can surface what was adjusted.
+type ImportAgentResult struct {
+	Agent    config.AgentConfig `json:"agent"`
+	Warnings []string           `json:"warnings,omitempty"`
+}
+
 // ExportAgent writes one agent (without secrets of its own — agents carry no
 // keys) as a shareable JSON file into <workspace>/exports/agents and returns
 // the file path.
@@ -203,22 +211,57 @@ func (a *AppService) ExportAgent(agentID string) (string, error) {
 
 // ImportAgent adds an agent from a share document with a fresh ID. When an
 // agent with the same name exists, a (2)/(3)… suffix is appended.
-func (a *AppService) ImportAgent(data string) (config.AgentConfig, error) {
+func (a *AppService) ImportAgent(data string) (ImportAgentResult, error) {
 	if len(data) > maxBackupBytes {
-		return config.AgentConfig{}, fmt.Errorf("文件过大")
+		return ImportAgentResult{}, fmt.Errorf("文件过大")
 	}
 	var share agentShare
 	if err := json.Unmarshal([]byte(data), &share); err != nil {
-		return config.AgentConfig{}, fmt.Errorf("分享文件解析失败: %w", err)
+		return ImportAgentResult{}, fmt.Errorf("分享文件解析失败: %w", err)
 	}
 	if share.Version > backupSchemaVersion {
-		return config.AgentConfig{}, fmt.Errorf("分享版本 v%d 高于当前支持的 v%d，请先升级应用", share.Version, backupSchemaVersion)
+		return ImportAgentResult{}, fmt.Errorf("分享版本 v%d 高于当前支持的 v%d，请先升级应用", share.Version, backupSchemaVersion)
 	}
 	imported := share.Agent
 	imported.ID = ""
 	imported.CreatedAt = time.Time{}
 	if imported.Name == "" {
-		return config.AgentConfig{}, fmt.Errorf("分享文件缺少 Agent 名称")
+		return ImportAgentResult{}, fmt.Errorf("分享文件缺少 Agent 名称")
+	}
+	// Strip references that do not exist on this machine BEFORE inserting:
+	// the strict build contract fails every turn of the imported agent
+	// otherwise, and the user has no way to know which refs to detach.
+	cfg := a.S.Store.Get()
+	var warnings []string
+	if len(imported.SkillIDs) > 0 {
+		known := make(map[string]bool, len(cfg.Skills))
+		for _, s := range cfg.Skills {
+			known[s.ID] = true
+		}
+		kept := make([]string, 0, len(imported.SkillIDs))
+		for _, id := range imported.SkillIDs {
+			if known[id] {
+				kept = append(kept, id)
+				continue
+			}
+			warnings = append(warnings, "已移除不存在的技能引用: "+id)
+		}
+		imported.SkillIDs = kept
+	}
+	if len(imported.MCPServerIDs) > 0 {
+		known := make(map[string]bool, len(cfg.MCPServers))
+		for _, s := range cfg.MCPServers {
+			known[s.ID] = true
+		}
+		kept := make([]string, 0, len(imported.MCPServerIDs))
+		for _, id := range imported.MCPServerIDs {
+			if known[id] {
+				kept = append(kept, id)
+				continue
+			}
+			warnings = append(warnings, "已移除不存在的 MCP 服务器引用: "+id)
+		}
+		imported.MCPServerIDs = kept
 	}
 	err := a.S.Store.Update(func(cfg *config.Config) {
 		nameExists := func(name string) bool {
@@ -238,9 +281,9 @@ func (a *AppService) ImportAgent(data string) (config.AgentConfig, error) {
 		cfg.Agents = append(cfg.Agents, imported)
 	})
 	if err != nil {
-		return config.AgentConfig{}, err
+		return ImportAgentResult{}, err
 	}
-	return imported, nil
+	return ImportAgentResult{Agent: imported, Warnings: warnings}, nil
 }
 
 // remoteShare is the portable per-remote-agent share document.

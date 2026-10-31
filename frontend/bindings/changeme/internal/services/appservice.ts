@@ -59,7 +59,7 @@ export function ExportRemoteAgent(id: string): $CancellablePromise<string> {
  * ImportAgent adds an agent from a share document with a fresh ID. When an
  * agent with the same name exists, a (2)/(3)… suffix is appended.
  */
-export function ImportAgent(data: string): $CancellablePromise<config$0.AgentConfig> {
+export function ImportAgent(data: string): $CancellablePromise<$models.ImportAgentResult> {
     return $Call.ByID(806202582, data);
 }
 
