@@ -4,6 +4,17 @@
 
 ## 视觉测试与体验设计
 
+### 第一百四十五轮迭代：Wails v3 正式版与 Windows 启动告警修复（已实施）
+
+依据：Wails v3.0.0 正式发布后统一升级 Go SDK、CLI 与前端运行时；Windows `wails3 dev` 启动仍出现 `uname` / `tail` 缺失提示，定位为根 Taskfile 无条件加载 Android 全局 shell 变量所致，而非 Windows 构建需要这些工具。
+
+实现要点：
+
+- Wails Go SDK、`@wailsio/runtime` 与本机 CLI 统一为 `v3.0.0`；README 安装命令同步更新，绑定重新生成。
+- Android `HOST_ARCH` / `ANDROID_ABI` 改用 Task 内置 `ARCH`，消除 include 阶段的 `uname` 求值；`avdmanager` 查找移入模拟器启动脚本，仅在实际需要时执行 `tail`。
+
+测试证据：`wails3 task --list-all` 无 Unix 工具缺失警告；Android `arm64` / `amd64` dry-run 保留正确 ABI 与交叉编译参数；`wails3 dev` 实测完成 Go 编译、Vite 启动、WebView2 创建和前端连接，启动日志无 `uname` / `tail` 警告。升级后 `go test ./internal/...`、`go vet`、前端 `tsc`、vitest 11 用例、生产构建及 `wails3 build` 均通过。未实际构建或运行 Android（本机无 Android SDK）。
+
 ### 第一百四十四轮迭代：任务级工作区与产物验收工作台（已实施）
 
 依据：MCP 调研 WorkBuddy 官方「结果查看 / 快速开始」后确认其核心闭环是任务级工作目录 + 右侧产物验收；结合本会话规格 issue #10 与垂直切片 #11–#15 实施。

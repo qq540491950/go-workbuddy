@@ -56,7 +56,7 @@
 - [Wails v3 CLI](https://v3.wails.io/getting-started/installation/)，与 Go SDK 保持同一版本：
 
 ```bash
-go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0-beta.20
+go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0
 ```
 
 macOS 需要 Xcode Command Line Tools；Linux 需要 GTK / WebKit 开发包。

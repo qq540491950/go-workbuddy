@@ -7,12 +7,10 @@ vars:
   APP_ID: '{{.APP_ID | default "com.wails.app"}}'
   MIN_SDK: '21'
   TARGET_SDK: '35'
-  # The emulator runs the host architecture; physical devices are arm64
-  HOST_ARCH:
-    sh: '[ "$(uname -m)" = "x86_64" ] && echo "amd64" || echo "arm64"'
-  # System-image ABI for the host, used in the "create an AVD" hint below.
-  ANDROID_ABI:
-    sh: '[ "$(uname -m)" = "arm64" ] && echo "arm64-v8a" || echo "x86_64"'
+  # Use Task's host GOARCH directly: included Taskfiles evaluate global sh vars
+  # even on Windows, where uname is not normally available.
+  HOST_ARCH: '{{ARCH}}'
+  ANDROID_ABI: '{{if eq ARCH "arm64"}}arm64-v8a{{else}}x86_64{{end}}'
   # SDK location: $ANDROID_HOME / $ANDROID_SDK_ROOT, else the per-OS default
   # (macOS: ~/Library/Android/sdk, Linux/other: ~/Android/Sdk)
   SDK_ROOT:
@@ -21,11 +19,6 @@ vars:
     sh: 'command -v adb || echo "${ANDROID_HOME:-${ANDROID_SDK_ROOT:-$([ -d "$HOME/Library/Android/sdk" ] && echo "$HOME/Library/Android/sdk" || echo "$HOME/Android/Sdk")}}/platform-tools/adb"'
   EMULATOR:
     sh: 'command -v emulator || echo "${ANDROID_HOME:-${ANDROID_SDK_ROOT:-$([ -d "$HOME/Library/Android/sdk" ] && echo "$HOME/Library/Android/sdk" || echo "$HOME/Android/Sdk")}}/emulator/emulator"'
-  # avdmanager lives under cmdline-tools/<version>/bin; used to auto-create an
-  # AVD when none exists (mirrors the iOS `ensure-simulator` auto-create flow).
-  AVDMANAGER:
-    sh: 'command -v avdmanager || ls "${ANDROID_HOME:-${ANDROID_SDK_ROOT:-$([ -d "$HOME/Library/Android/sdk" ] && echo "$HOME/Library/Android/sdk" || echo "$HOME/Android/Sdk")}}"/cmdline-tools/*/bin/avdmanager 2>/dev/null | sort -V 2>/dev/null | tail -1 || true'
-
 tasks:
   install:deps:
     summary: Check and install Android development dependencies
@@ -296,7 +289,8 @@ tasks:
           SDK_ROOT="{{.SDK_ROOT}}"
           ABI="{{.ANDROID_ABI}}"
           IMG=$(ls -d "$SDK_ROOT"/system-images/android-*/*/"$ABI" 2>/dev/null | sort -V 2>/dev/null | tail -1)
-          AVDMANAGER="{{.AVDMANAGER}}"
+          # Find avdmanager only when an emulator is actually requested.
+          AVDMANAGER=$(command -v avdmanager || ls "$SDK_ROOT"/cmdline-tools/*/bin/avdmanager 2>/dev/null | sort -V 2>/dev/null | tail -1 || true)
           if [ -n "$IMG" ] && [ -x "$AVDMANAGER" ]; then
             PKG="system-images;$(echo "$IMG" | sed "s|$SDK_ROOT/system-images/||" | tr '/' ';')"
             echo "No Android Virtual Devices found. Creating 'wails' from $PKG..."

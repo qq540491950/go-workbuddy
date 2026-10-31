@@ -10,7 +10,7 @@ require (
 	github.com/gomarkdown/markdown v0.0.0-20260917010721-cc30ffac3c05
 	github.com/google/jsonschema-go v0.4.3
 	github.com/modelcontextprotocol/go-sdk v1.7.0
-	github.com/wailsapp/wails/v3 v3.0.0-beta.20
+	github.com/wailsapp/wails/v3 v3.0.0
 	golang.org/x/oauth2 v0.36.0
 	google.golang.org/adk/v2 v2.4.0
 	google.golang.org/genai v1.70.0
