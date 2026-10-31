@@ -104,6 +104,14 @@ func TestSearchMemoryEscapesLikeWildcards(t *testing.T) {
 	if !found {
 		t.Fatal("literal 100% entry missing from results")
 	}
+	// "_" must also be literal: "europe_west" must not match "europe-west4".
+	resp, err = svc.SearchMemory(context.Background(), &memory.SearchRequest{AppName: "app", UserID: "u", Query: "100_"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(resp.Memories) != 0 {
+		t.Fatalf("literal _ query must not wildcard-match, got %d hits", len(resp.Memories))
+	}
 }
 
 func TestAddAndSearchMemory(t *testing.T) {

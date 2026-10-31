@@ -233,36 +233,18 @@ func (a *AppService) ImportAgent(data string) (ImportAgentResult, error) {
 	// otherwise, and the user has no way to know which refs to detach.
 	cfg := a.S.Store.Get()
 	var warnings []string
-	if len(imported.SkillIDs) > 0 {
-		known := make(map[string]bool, len(cfg.Skills))
-		for _, s := range cfg.Skills {
-			known[s.ID] = true
-		}
-		kept := make([]string, 0, len(imported.SkillIDs))
-		for _, id := range imported.SkillIDs {
-			if known[id] {
-				kept = append(kept, id)
-				continue
-			}
-			warnings = append(warnings, "已移除不存在的技能引用: "+id)
-		}
-		imported.SkillIDs = kept
+	knownSkills := make(map[string]bool, len(cfg.Skills))
+	for _, s := range cfg.Skills {
+		knownSkills[s.ID] = true
 	}
-	if len(imported.MCPServerIDs) > 0 {
-		known := make(map[string]bool, len(cfg.MCPServers))
-		for _, s := range cfg.MCPServers {
-			known[s.ID] = true
-		}
-		kept := make([]string, 0, len(imported.MCPServerIDs))
-		for _, id := range imported.MCPServerIDs {
-			if known[id] {
-				kept = append(kept, id)
-				continue
-			}
-			warnings = append(warnings, "已移除不存在的 MCP 服务器引用: "+id)
-		}
-		imported.MCPServerIDs = kept
+	knownMCP := make(map[string]bool, len(cfg.MCPServers))
+	for _, s := range cfg.MCPServers {
+		knownMCP[s.ID] = true
 	}
+	var skillWarnings, mcpWarnings []string
+	imported.SkillIDs, skillWarnings = stripMissingRefs(imported.SkillIDs, knownSkills, "技能")
+	imported.MCPServerIDs, mcpWarnings = stripMissingRefs(imported.MCPServerIDs, knownMCP, "MCP 服务器")
+	warnings = append(append(warnings, skillWarnings...), mcpWarnings...)
 	err := a.S.Store.Update(func(cfg *config.Config) {
 		nameExists := func(name string) bool {
 			for _, ag := range cfg.Agents {
@@ -284,6 +266,23 @@ func (a *AppService) ImportAgent(data string) (ImportAgentResult, error) {
 		return ImportAgentResult{}, err
 	}
 	return ImportAgentResult{Agent: imported, Warnings: warnings}, nil
+}
+
+// stripMissingRefs keeps only ids present in known and reports one warning
+// per stripped id. A nil/empty input is returned untouched.
+func stripMissingRefs(ids []string, known map[string]bool, label string) (kept, warnings []string) {
+	if len(ids) == 0 {
+		return ids, nil
+	}
+	kept = make([]string, 0, len(ids))
+	for _, id := range ids {
+		if known[id] {
+			kept = append(kept, id)
+			continue
+		}
+		warnings = append(warnings, "已移除不存在的"+label+"引用: "+id)
+	}
+	return kept, warnings
 }
 
 // remoteShare is the portable per-remote-agent share document.

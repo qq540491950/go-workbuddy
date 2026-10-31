@@ -7,6 +7,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"google.golang.org/adk/v2/model"
 	"google.golang.org/genai"
@@ -103,6 +104,44 @@ func TestRunHandleUnregistersOnlyOwnEntry(t *testing.T) {
 		t.Fatal("run stayed registered after release")
 	}
 	_ = ctxB
+}
+
+// TestCancelAndWaitWaitsForEveryHandle: when turn B replaces A in the
+// registry, A may still be unwinding. History-mutating entry points must wait
+// for BOTH — waiting only on the current handle let A's remaining writes
+// resurrect trimmed history.
+func TestCancelAndWaitWaitsForEveryHandle(t *testing.T) {
+	chat := &ChatService{runs: map[string]*runHandle{}, active: map[string]map[*runHandle]struct{}{}}
+
+	_, cancelA := context.WithCancel(context.Background())
+	defer cancelA()
+	releaseA := chat.registerRun("s1", cancelA)
+	_, cancelB := context.WithCancel(context.Background())
+	defer cancelB()
+	releaseB := chat.registerRun("s1", cancelB) // starting B cancels A
+
+	done := make(chan struct{})
+	go func() {
+		chat.cancelAndWaitBounded("s1")
+		close(done)
+	}()
+	select {
+	case <-done:
+		t.Fatal("returned before any handle unwound")
+	case <-time.After(50 * time.Millisecond):
+	}
+	releaseB()
+	select {
+	case <-done:
+		t.Fatal("returned while the older overlapping handle was still unwinding")
+	case <-time.After(50 * time.Millisecond):
+	}
+	releaseA()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("did not return after every handle was released")
+	}
 }
 
 // TestStoreConcurrentUpdates hammers the config store from many goroutines to

@@ -72,6 +72,18 @@ func TestCloseAllClearsStateAndIsIdempotent(t *testing.T) {
 	}
 }
 
+// TestDisconnectClearsStaleError: a stopped server must not keep reporting
+// the error that caused the last disconnect.
+func TestDisconnectClearsStaleError(t *testing.T) {
+	m := New()
+	m.setState(&ServerStatus{ID: "srv1", Name: "S", State: "error", Error: "boom"})
+	m.Disconnect("srv1")
+	st := m.Status("srv1", "S")
+	if st.State != "stopped" || st.Error != "" {
+		t.Fatalf("disconnect must clear stale error, got %+v", st)
+	}
+}
+
 // TestOAuthTransportPortNotHeld pins the lazy-listen contract: building an
 // OAuth transport must not keep the redirect port bound (a cached token makes
 // the consent flow unreachable, and holding the port broke reconnects on the

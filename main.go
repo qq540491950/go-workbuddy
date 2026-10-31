@@ -130,8 +130,8 @@ func main() {
 			ApplicationShouldTerminateAfterLastWindowClosed: false,
 		},
 		OnShutdown: func() {
-			mgr.CloseAll()   // stdio MCP 子进程不孤儿化
 			a2aRPC.StopAll() // graceful: unpublish agents before exit
+			mgr.CloseAll()   // then close MCP transports (no orphan stdio children)
 		},
 	})
 

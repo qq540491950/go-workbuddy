@@ -151,3 +151,40 @@ func TestDeleteSessionWaitsForOldRun(t *testing.T) {
 		t.Fatalf("deleted session has %d event rows (orphaned or resurrected)", n)
 	}
 }
+
+// TestEditAndResendWaitsForOldRun pins the third history-mutating entry point:
+// the edited turn replaces the old one without old text leaking back in.
+func TestEditAndResendWaitsForOldRun(t *testing.T) {
+	firstDelta := make(chan struct{})
+	srv := slowTurnServer(t, "编辑后的答案", firstDelta)
+	defer srv.Close()
+	chat, sessID := newTrimRaceChat(t, srv)
+
+	oldDone := make(chan error, 1)
+	go func() { oldDone <- chat.Send(sessID, "原始问题", nil) }()
+	<-firstDelta
+	if err := chat.EditAndResend(sessID, "修改后的问题"); err != nil {
+		t.Fatalf("edit and resend: %v", err)
+	}
+	<-oldDone
+
+	msgs, err := chat.GetSessionMessages(sessID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var userText, assistantText strings.Builder
+	for _, m := range msgs {
+		switch m.Kind {
+		case "user":
+			userText.WriteString(m.Text)
+		case "assistant":
+			assistantText.WriteString(m.Text)
+		}
+	}
+	if !strings.Contains(userText.String(), "修改后的问题") || strings.Contains(userText.String(), "原始问题") {
+		t.Fatalf("edited turn not cleanly replaced, user text=%q", userText.String())
+	}
+	if !strings.Contains(assistantText.String(), "编辑后的答案") || strings.Contains(assistantText.String(), "甲乙丙丁") {
+		t.Fatalf("edited turn leaked old reply: %q", assistantText.String())
+	}
+}

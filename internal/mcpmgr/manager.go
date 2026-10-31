@@ -219,6 +219,7 @@ func (m *Manager) Disconnect(id string) {
 	if st, ok := m.states[id]; ok {
 		st.State = "stopped"
 		st.Tools = nil
+		st.Error = "" // a stopped server must not keep a stale error
 		st.CheckedAt = time.Now()
 	}
 	m.mu.Unlock()

@@ -175,6 +175,10 @@ type ChatService struct {
 
 	mu        sync.Mutex
 	runs      map[string]*runHandle
+	// active tracks EVERY in-flight handle per session. runs only holds the
+	// current one (used for cancel); an overlapping older run may still be
+	// unwinding, and history-mutating entry points must wait for it too.
+	active    map[string]map[*runHandle]struct{}
 	sessions  session.Service
 	db        *gorm.DB // shared SQLite handle for event trimming (Regenerate)
 	appName   string
@@ -201,6 +205,7 @@ func NewChatService(s *Services, sessions session.Service, db *gorm.DB) *ChatSer
 	return &ChatService{
 		S:        s,
 		runs:     map[string]*runHandle{},
+		active:   map[string]map[*runHandle]struct{}{},
 		sessions: sessions,
 		db:       db,
 		appName:  "workbuddy",
@@ -361,7 +366,7 @@ func (c *ChatService) RenameSession(id, title string) error {
 // orphaned turn would keep burning tokens and re-create events for the
 // deleted session until its timeout.
 func (c *ChatService) DeleteSession(id string) error {
-	c.cancelAndWait(id)
+	c.cancelAndWaitBounded(id)
 	if err := c.sessions.Delete(context.Background(), &session.DeleteRequest{
 		AppName: c.appName, UserID: c.userID, SessionID: id,
 	}); err != nil {
@@ -658,7 +663,7 @@ var _ = context.Background
 func (c *ChatService) Regenerate(sessionID string) error {
 	// Same contract as DeleteSession: stop the in-flight run BEFORE touching
 	// stored events, or the old run keeps appending to the trimmed timeline.
-	c.cancelAndWait(sessionID)
+	c.cancelAndWaitBounded(sessionID)
 	text, atts, err := c.trimLastTurn(sessionID)
 	if err != nil {
 		return err
@@ -672,7 +677,7 @@ func (c *ChatService) EditAndResend(sessionID, newText string) error {
 	if strings.TrimSpace(newText) == "" {
 		return fmt.Errorf("消息内容不能为空")
 	}
-	c.cancelAndWait(sessionID) // see Regenerate: trim only after the old run stopped
+	c.cancelAndWaitBounded(sessionID) // see Regenerate: trim only after the old run stopped
 	_, atts, err := c.trimLastTurn(sessionID)
 	if err != nil {
 		return err
@@ -1818,8 +1823,20 @@ func (c *ChatService) IsRunning(sessionID string) bool {
 func (c *ChatService) registerRun(sessionID string, cancel context.CancelFunc) (release func()) {
 	h := &runHandle{cancel: cancel, done: make(chan struct{})}
 	c.mu.Lock()
+	if c.runs == nil {
+		c.runs = map[string]*runHandle{}
+	}
+	if c.active == nil {
+		c.active = map[string]map[*runHandle]struct{}{}
+	}
 	old := c.runs[sessionID]
 	c.runs[sessionID] = h
+	set := c.active[sessionID]
+	if set == nil {
+		set = map[*runHandle]struct{}{}
+		c.active[sessionID] = set
+	}
+	set[h] = struct{}{}
 	c.mu.Unlock()
 	if old != nil {
 		old.cancel()
@@ -1830,28 +1847,51 @@ func (c *ChatService) registerRun(sessionID string, cancel context.CancelFunc) (
 		if c.runs[sessionID] == h {
 			delete(c.runs, sessionID)
 		}
+		if set := c.active[sessionID]; set != nil {
+			delete(set, h)
+			if len(set) == 0 {
+				delete(c.active, sessionID)
+			}
+		}
 		c.mu.Unlock()
 		close(h.done)
 	}
 }
 
-// cancelAndWait aborts the in-flight run of a session, if any, and waits
-// (bounded) until it has fully unwound. Regenerate / EditAndResend /
-// DeleteSession trim or delete stored events right after this returns — an
-// old run that is still streaming could otherwise resurrect the deleted
-// history by writing its remaining events.
-func (c *ChatService) cancelAndWait(sessionID string) {
+// cancelAndWaitBounded aborts every in-flight run of a session (the current
+// one and any overlapping older handle still unwinding) and waits — bounded
+// — until all of them have fully unwound. Regenerate / EditAndResend /
+// DeleteSession trim or delete stored events right after this returns; a run
+// that is still streaming could otherwise resurrect the deleted history.
+func (c *ChatService) cancelAndWaitBounded(sessionID string) {
 	c.mu.Lock()
-	h := c.runs[sessionID]
+	var handles []*runHandle
+	seen := map[*runHandle]bool{}
+	for h := range c.active[sessionID] {
+		handles = append(handles, h)
+		seen[h] = true
+	}
+	// Defensive: a handle registered before active existed (tests) still
+	// gates the trim.
+	if h := c.runs[sessionID]; h != nil && !seen[h] {
+		handles = append(handles, h)
+	}
 	c.mu.Unlock()
-	if h == nil {
+	if len(handles) == 0 {
 		return
 	}
-	h.cancel()
-	select {
-	case <-h.done:
-	case <-time.After(10 * time.Second):
-		// Bounded: a wedged unwind must not hang the RPC forever; the
-		// straggler's writes are no worse than the pre-fix behavior.
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	for _, h := range handles {
+		h.cancel()
+	}
+	for _, h := range handles {
+		select {
+		case <-h.done:
+		case <-ctx.Done():
+			// Bounded: a wedged unwind must not hang the RPC forever; the
+			// straggler's writes are no worse than the pre-fix behavior.
+			return
+		}
 	}
 }

@@ -4,6 +4,8 @@ import (
 	"os"
 	"strings"
 	"testing"
+
+	"changeme/internal/config"
 )
 
 // TestAgentShareRoundTrip exports an agent and re-imports it (twice) to
@@ -67,9 +69,19 @@ func TestAgentShareRoundTrip(t *testing.T) {
 // exist on THIS machine are stripped at import (with a warning) — otherwise
 // every turn of the imported agent fails its build outright.
 func TestImportAgentStripsDanglingRefs(t *testing.T) {
-	app, _, _ := newBackupTestService(t)
+	app, store, _ := newBackupTestService(t)
+	if err := store.Update(func(cfg *config.Config) {
+		for i := range cfg.Skills {
+			if cfg.Skills[i].ID == "skill_1" {
+				cfg.Skills[i].Description = "fixture skill"
+			}
+		}
+	}); err != nil {
+		t.Fatal(err)
+	}
 	data := `{"version":1,"agent":{` +
 		`"id":"agent_x","name":"访客","description":"d","providerId":"prov_1",` +
+		`"model":"m",` +
 		`"skillIds":["skill_1","skill_missing"],` +
 		`"mcpServerIds":["mcp_missing"],` +
 		`"builtinTools":["time"]}}`
@@ -85,6 +97,9 @@ func TestImportAgentStripsDanglingRefs(t *testing.T) {
 	}
 	if len(res.Warnings) != 2 {
 		t.Fatalf("expected 2 warnings, got %v", res.Warnings)
+	}
+	if _, err := app.S.Kit.BuildAgent(res.Agent); err != nil {
+		t.Fatalf("imported agent must build after cleanup: %v", err)
 	}
 }
 
