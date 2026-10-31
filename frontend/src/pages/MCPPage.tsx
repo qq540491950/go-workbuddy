@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { Events } from "@wailsio/runtime";
-import { Plus, Trash2, Play, Square, RefreshCw, Wrench } from "lucide-react";
+import { Plus, Trash2, Play, RefreshCw, Wrench } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -14,6 +14,7 @@ import {
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
 import {
   Config, MCP, MCPTransport,
   type MCPServerConfig, type ServerStatus, errText } from "@/lib/api";
@@ -29,7 +30,7 @@ function blankServer(): MCPServerConfig {
     env: {},
     url: "",
     headers: {},
-    autoStart: false,
+    disabled: false,
   };
 }
 
@@ -121,12 +122,19 @@ export function MCPPage() {
     }
   };
 
-  const disconnect = async (s: MCPServerConfig) => {
+  // 启用开关是 MCP 的主控：开启即保存并立即连接，关闭即保存（后端随
+  // changed 判定自动断开缓存连接）。
+  const toggleEnabled = async (s: MCPServerConfig, enabled: boolean) => {
     try {
-      await MCP.Disconnect(s.id);
+      await Config.SaveMCPServer({ ...s, disabled: !enabled });
+      if (enabled) {
+        await connect(s);
+      } else {
+        toast.success(`${s.name} 已停用`);
+        reload();
+      }
     } catch (e) {
-      toast.error(`断开失败: ${errText(e)}`);
-    } finally {
+      toast.error(`保存失败: ${errText(e)}`);
       reload();
     }
   };
@@ -175,7 +183,11 @@ export function MCPPage() {
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-2">
                       <span className="font-medium">{s.name}</span>
-                      <Badge variant={meta.variant}>{meta.label}</Badge>
+                      {s.disabled ? (
+                        <Badge variant="outline" className="font-normal">已停用</Badge>
+                      ) : (
+                        <Badge variant={meta.variant}>{meta.label}</Badge>
+                      )}
                       <Badge variant="outline" className="font-normal">
                         {s.transport === MCPTransport.MCPStdio ? "stdio" : "streamable-http"}
                       </Badge>
@@ -209,11 +221,11 @@ export function MCPPage() {
                     )}
                   </div>
                   <div className="flex shrink-0 items-center gap-2">
-                    {st?.state === "connected" ? (
-                      <Button variant="outline" size="sm" onClick={() => disconnect(s)}>
-                        <Square className="mr-1 h-3.5 w-3.5" /> 断开
-                      </Button>
-                    ) : (
+                    <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                      启用
+                      <Switch checked={!s.disabled} onCheckedChange={(v) => toggleEnabled(s, v)} />
+                    </label>
+                    {!s.disabled && st?.state !== "connected" && (
                       <Button variant="outline" size="sm" disabled={busy === s.id} onClick={() => connect(s)}>
                         {busy === s.id
                           ? <RefreshCw className="mr-1 h-3.5 w-3.5 animate-spin" />
@@ -249,6 +261,15 @@ export function MCPPage() {
           </DialogHeader>
           {editing && (
             <div className="grid gap-4 py-2">
+              <div className="flex items-center justify-between rounded-lg border p-3">
+                <div>
+                  <div className="text-sm font-medium">启用</div>
+                  <div className="text-xs text-muted-foreground">
+                    开启后随应用启动自动连接，并注入所有会话
+                  </div>
+                </div>
+                <Switch checked={!editing.disabled} onCheckedChange={(v) => setEditing({ ...editing, disabled: !v })} />
+              </div>
               <div className="grid gap-1.5">
                 <Label>名称</Label>
                 <Input value={editing.name} onChange={(e) => setEditing({ ...editing, name: e.target.value })} placeholder="filesystem" />

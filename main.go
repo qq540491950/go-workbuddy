@@ -159,6 +159,23 @@ func main() {
 		}
 	}
 
+	// MCP 自启动：后台预连接所有启用的服务器并预热工具列表。顺序执行避免
+	// 一次性拉起过多子进程；失败只记日志，不阻塞启动窗口。
+	go func() {
+		defer func() { _ = recover() }()
+		for _, s := range store.Get().MCPServers {
+			if s.Disabled {
+				continue
+			}
+			st := mgr.Connect(s)
+			if st.State == "error" {
+				log.Printf("MCP「%s」自启动失败: %s", st.Name, st.Error)
+			} else {
+				log.Printf("MCP「%s」已自启动连接，发现 %d 个工具", st.Name, len(st.Tools))
+			}
+		}
+	}()
+
 	setupSystemTray(app, window)
 	// Global summon shortcut; a conflicting registration (another app owns
 	// it) must not block startup.

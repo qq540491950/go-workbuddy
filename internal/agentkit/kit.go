@@ -222,26 +222,33 @@ func (k *Kit) buildLLMAgentWithSubAgents(ac config.AgentConfig, cfg config.Confi
 		}
 	}
 
-	// MCP servers. A server whose transport cannot even be built (missing
+	// MCP servers. The per-server 启用 switch is authoritative: enabled
+	// servers are injected into every session (direct chat included) without
+	// per-agent mounting; disabled ones stay off unless an agent explicitly
+	// mounts them. A server whose transport cannot even be built (missing
 	// command/URL, OAuth misconfiguration) is reported instead of silently
-	// running an agent that is missing tools the user attached — the same
-	// contract as the skill toolset above.
-	var mcpErrs []string
+	// running an agent that is missing tools — the same contract as the
+	// skill toolset above.
+	explicit := make(map[string]bool, len(ac.MCPServerIDs))
 	for _, id := range ac.MCPServerIDs {
-		found := false
-		for _, s := range cfg.MCPServers {
-			if s.ID == id {
-				found = true
-				ts, err := k.mcp.Toolset(s)
-				if err != nil {
-					mcpErrs = append(mcpErrs, fmt.Sprintf("MCP「%s」不可用: %v", s.Name, err))
-				} else {
-					toolsets = append(toolsets, ts)
-				}
-				break
-			}
+		explicit[id] = true
+	}
+	var mcpErrs []string
+	seen := make(map[string]bool, len(cfg.MCPServers))
+	for _, s := range cfg.MCPServers {
+		seen[s.ID] = true
+		if s.Disabled && !explicit[s.ID] {
+			continue
 		}
-		if !found {
+		ts, err := k.mcp.Toolset(s)
+		if err != nil {
+			mcpErrs = append(mcpErrs, fmt.Sprintf("MCP「%s」不可用: %v", s.Name, err))
+		} else {
+			toolsets = append(toolsets, ts)
+		}
+	}
+	for _, id := range ac.MCPServerIDs {
+		if !seen[id] {
 			mcpErrs = append(mcpErrs, fmt.Sprintf("MCP 服务器 %q 不存在", id))
 		}
 	}

@@ -157,7 +157,9 @@ type MCPServerConfig struct {
 	Env       map[string]string `json:"env,omitempty"`     // stdio
 	URL       string            `json:"url"`               // streamable-http
 	Headers   map[string]string `json:"headers,omitempty"` // streamable-http
-	AutoStart bool              `json:"autoStart"`
+	// 启用开关（默认启用）：启用服务随应用启动自动连接，并注入所有会话；
+	// Disabled 服务不连接、不注入，除非某个 Agent 显式挂载（单独启用）。
+	Disabled bool `json:"disabled,omitempty"`
 	// Streamable-HTTP server authentication:
 	// AuthType "" | "bearer" | "api-key" | "oauth2" (authorization code + PKCE
 	// per the MCP authorization spec, handled by the official go-sdk handler).

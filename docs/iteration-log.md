@@ -19,6 +19,19 @@
 
 测试证据：分组纯函数 vitest 表驱动四用例（固定「当前时间」断言桶序与成员、7 天临界、无效时间回落更早、大小写与反斜杠路径归并、组间最新排序）；`internal/config` Go 测试覆盖新字段默认值、持久化与非法分组回退；浏览器桩走查两列外壳、时间 / 项目分组（截图）、归档折叠、侧栏折叠 / 展开三态下长对话 composer 几何（708 ≤ 720，消息区可滚）、设置九标签与管理页嵌入、@ 浮层入口截图与模型选择器入口 DOM 断言；走查中发现并修复「分组切换仅持久化未更新 UI 状态」缺陷。工作区另有并行会话进行中的 MCPPage / config / kit 改动（第一百四十九轮），未纳入本轮提交。
 
+### 第一百四十九轮迭代：MCP 启用开关——默认开启、随启动自连并注入所有会话（已实施）
+
+依据：用户反馈直聊里让助手用 Tavily 查天气，助手回答「当前会话尚未加载 Tavily MCP，无法热加载」（附截图）；并提出 MCP 应「只有开启和关闭」——默认在软件打开时就开启并注入会话，开关控件改用 Switch。代码定位三处断点：`directAgentConfig` 构建的直聊临时助手不带任何 `MCPServerIDs`，直聊会话零 MCP；`MCPServerConfig.AutoStart` 字段自创建起无后端读取、无 UI 控件，纯死配置，启动时也不连接；MCP 页只有「连接/断开」按钮，没有启用开关。
+
+实现要点：
+
+- **语义重定义**：以 `Disabled bool`（`disabled,omitempty`）替代死字段 `AutoStart`——省略即启用，存量配置零迁移自动变为「默认开启」，正好符合用户预期；启用开关是权威控制。
+- **注入所有会话**：`kit.buildLLMAgent` 的 MCP 挂载改为「启用的服务全量注入（直聊/Agent/团队统一生效）∪ Agent 显式挂载的补充（可单独启用某停用服务）」；显式挂载已停用服务仍生效（逃逸口），悬空 ID 依旧报错，启用但损坏的服务仍走「报错不静默降级」契约。直聊经 `BuildAgentWithModelAndWorkspace` 走同一装配，无需改 `directAgentConfig`。
+- **启动自连**：`main.go` 增加后台 goroutine 顺序预连接所有启用服务并预热工具列表，失败只记日志不阻塞启动；Manager 锁内建连，与页面「连接」共用同一状态缓存。
+- **MCP 页 Switch 化**：卡片操作区以「启用」Switch 为主控（开启即保存并立即连接，关闭即保存并自动断开），移除「断开」按钮，「连接」保留为启用状态下的手动重试；停用服务显示「已停用」徽标；编辑对话框顶部新增启用开关（说明：随应用启动自动连接并注入所有会话）；新增服务默认启用。
+
+测试证据：新增 `TestBuildAgentInjectsEnabledMCPServers`（修复前红：启用但损坏的 MCP 不注入、Build 不报错；修复后启用→报错注入、停用→构建通过、显式挂载停用服务→按需启用）并回归 `TestBuildAgentReportsMCPFailures` 保持通过；`go test ./internal/...`、`go vet ./internal/... .` 全绿；绑定再生成（`autoStart`→`disabled`）后 `tsc --noEmit`、vitest 16 用例、生产构建通过。`-race` 因本机缺 gcc 无法运行（环境限制）；启动自连 goroutine 只读 `Store.Get()` 快照且 Manager 自带锁。
+
 ### 第一百四十八轮迭代：MCP stdio 命令尾随空白导致连接失败修复（已实施）
 
 依据：用户反馈 MCP 页添加 npx 型 stdio 服务（`npx -y tavily-mcp`）点连接即报 `failed to list MCP tools: failed to init MCP session: exec: "npx ": executable file not found in %PATH%`，而同机其他 Agent 客户端配置同一服务正常。错误引号内的尾随空格暴露根因：命令输入框的值原样入库（前端仅对「参数」逐行 trim，command、后端 `SaveMCPServer` 与 `buildTransport` 全链路无规范化），`exec.Command("npx ")` 的 `LookPath("npx ")` 永远匹配不到 `npx.cmd`——与 PATH 无关，其他客户端的 JSON 配置不引入尾随空白故不受影响。
