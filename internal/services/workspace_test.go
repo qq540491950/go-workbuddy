@@ -457,6 +457,33 @@ func TestUnarchiveRejectsWorkspaceNowUsedByActiveTask(t *testing.T) {
 	}
 }
 
+func TestUnarchiveAllowsForkLineageSharingWorkspace(t *testing.T) {
+	chat, _, _ := newWorkspaceTestChat(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte(sseText("ok") + sseDone))
+	})
+	source, err := chat.NewSessionWithWorkspace("agent", "agent_ws", "source", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	branch, err := chat.ForkSession(source.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := chat.ArchiveSession(branch.ID, true); err != nil {
+		t.Fatal(err)
+	}
+	if err := chat.ArchiveSession(branch.ID, false); err != nil {
+		t.Fatalf("fork should be allowed to rejoin its source workspace: %v", err)
+	}
+	if err := chat.ArchiveSession(source.ID, true); err != nil {
+		t.Fatal(err)
+	}
+	if err := chat.ArchiveSession(source.ID, false); err != nil {
+		t.Fatalf("source should be allowed to rejoin its fork workspace: %v", err)
+	}
+}
+
 func TestSamePathUsesFilesystemIdentity(t *testing.T) {
 	dir := t.TempDir()
 	caseVariant := strings.ToUpper(dir)

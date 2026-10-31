@@ -188,6 +188,41 @@ func workspaceConflict(cfg config.Config, workspace, excludeSessionID string) er
 	return nil
 }
 
+// workspaceConflictForUnarchive allows tasks in the same fork family to keep
+// sharing their inherited workspace, while still rejecting unrelated tasks
+// that began using the directory after the target was archived.
+func workspaceConflictForUnarchive(cfg config.Config, target config.ChatSession) error {
+	targetRoot := forkRootID(cfg, target.ID)
+	for _, s := range cfg.Sessions {
+		if s.ID == target.ID || s.Archived || strings.TrimSpace(s.WorkspaceDir) == "" {
+			continue
+		}
+		if !samePath(s.WorkspaceDir, target.WorkspaceDir) || forkRootID(cfg, s.ID) == targetRoot {
+			continue
+		}
+		return fmt.Errorf("工作区已被任务「%s」使用，请选择其他目录", s.Title)
+	}
+	return nil
+}
+
+func forkRootID(cfg config.Config, sessionID string) string {
+	byID := make(map[string]config.ChatSession, len(cfg.Sessions))
+	for _, s := range cfg.Sessions {
+		byID[s.ID] = s
+	}
+	current := sessionID
+	seen := map[string]bool{}
+	for !seen[current] {
+		seen[current] = true
+		s, ok := byID[current]
+		if !ok || s.ForkedFrom == "" {
+			return current
+		}
+		current = s.ForkedFrom
+	}
+	return sessionID
+}
+
 func samePath(a, b string) bool {
 	a, b = filepath.Clean(a), filepath.Clean(b)
 	if a == b || runtime.GOOS == "windows" && strings.EqualFold(a, b) {

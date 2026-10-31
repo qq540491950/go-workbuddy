@@ -373,45 +373,30 @@ func (c *ChatService) SetSessionModel(sessionID, modelID string) error {
 // ArchiveSession toggles the archived flag of a session (archived sessions
 // are hidden from the default sidebar list but never deleted).
 func (c *ChatService) ArchiveSession(id string, archived bool) error {
-	if archived {
-		err := c.mutateSession(id, func(s *config.ChatSession) { s.Archived = true })
-		if err == nil {
-			c.audit(id, "session_archived", "system", "session", mustJSON(map[string]bool{"archived": true}), "")
-		}
-		return err
+	if !archived {
+		c.workspaceMu.Lock()
+		defer c.workspaceMu.Unlock()
 	}
-
-	c.workspaceMu.Lock()
-	defer c.workspaceMu.Unlock()
-	var conflict, notFound error
-	err := c.S.Store.Update(func(cfg *config.Config) {
-		for i := range cfg.Sessions {
-			if cfg.Sessions[i].ID != id {
-				continue
-			}
-			if ws := strings.TrimSpace(cfg.Sessions[i].WorkspaceDir); ws != "" {
-				if err := workspaceConflict(*cfg, ws, id); err != nil {
-					conflict = err
-					return
+	err := c.mutateSessionGuarded(id, func(s *config.ChatSession, cfg *config.Config) error {
+		if !archived {
+			if ws := strings.TrimSpace(s.WorkspaceDir); ws != "" {
+				if err := workspaceConflictForUnarchive(*cfg, *s); err != nil {
+					return err
 				}
 			}
-			cfg.Sessions[i].Archived = false
-			cfg.Sessions[i].UpdatedAt = nowUTC()
-			return
+			s.UpdatedAt = nowUTC()
 		}
-		notFound = fmt.Errorf("会话 %q 不存在", id)
+		s.Archived = archived
+		return nil
 	})
-	if err != nil {
-		return err
+	if err == nil {
+		phase := "session_archived"
+		if !archived {
+			phase = "session_unarchived"
+		}
+		c.audit(id, phase, "system", "session", mustJSON(map[string]bool{"archived": archived}), "")
 	}
-	if conflict != nil {
-		return conflict
-	}
-	if notFound != nil {
-		return notFound
-	}
-	c.audit(id, "session_unarchived", "system", "session", mustJSON(map[string]bool{"archived": false}), "")
-	return nil
+	return err
 }
 
 // PinSession toggles the pinned flag of a session.
@@ -423,13 +408,25 @@ func (c *ChatService) PinSession(id string, pinned bool) error {
 // errors — the shared found/notFound shape behind rename, model override,
 // pin and archive.
 func (c *ChatService) mutateSession(id string, fn func(*config.ChatSession)) error {
+	return c.mutateSessionGuarded(id, func(s *config.ChatSession, _ *config.Config) error {
+		fn(s)
+		return nil
+	})
+}
+
+// mutateSessionGuarded is mutateSession with a validation hook that can abort
+// the mutation (used by unarchive's workspace ownership check).
+func (c *ChatService) mutateSessionGuarded(id string, fn func(*config.ChatSession, *config.Config) error) error {
 	var notFound error
+	var guardErr error
 	err := c.S.Store.Update(func(cfg *config.Config) {
 		found := false
 		for i := range cfg.Sessions {
 			if cfg.Sessions[i].ID == id {
-				fn(&cfg.Sessions[i])
 				found = true
+				if guardErr = fn(&cfg.Sessions[i], cfg); guardErr != nil {
+					return
+				}
 			}
 		}
 		if !found {
@@ -438,6 +435,9 @@ func (c *ChatService) mutateSession(id string, fn func(*config.ChatSession)) err
 	})
 	if err == nil {
 		err = notFound
+	}
+	if err == nil {
+		err = guardErr
 	}
 	return err
 }

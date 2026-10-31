@@ -140,6 +140,9 @@ export function TaskWorkspacePanel({ sessionID, workspace, open, running, refres
   const files = activeSnapshot?.files ?? [];
   const artifacts = activeSnapshot?.artifacts ?? [];
   const changes = activeSnapshot?.changes ?? [];
+  const changeCount = activeSnapshot
+    ? activeSnapshot.added + activeSnapshot.modified + activeSnapshot.deleted
+    : changes.length;
   const visibleFiles = useMemo(() => {
     const q = query.trim().toLowerCase();
     return q ? files.filter((f) => f.path.toLowerCase().includes(q)) : files;
@@ -213,7 +216,7 @@ export function TaskWorkspacePanel({ sessionID, workspace, open, running, refres
           {([
             ["files", "全部文件", files.length],
             ["artifacts", "产物", artifacts.length],
-            ["changes", "变更", changes.length],
+            ["changes", "变更", changeCount],
           ] as const).map(([value, label, count]) => (
             <button
               key={value}
