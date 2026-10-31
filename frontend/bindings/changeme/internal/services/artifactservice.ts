@@ -29,6 +29,13 @@ export function Open(relPath: string): $CancellablePromise<$models.Artifact | nu
 }
 
 /**
+ * OpenForSession previews a file inside the task workspace bound to sessionID.
+ */
+export function OpenForSession(sessionID: string, relPath: string): $CancellablePromise<$models.Artifact | null> {
+    return $Call.ByID(4168803584, sessionID, relPath);
+}
+
+/**
  * Workspace returns the configured workspace directory (for UI display).
  */
 export function Workspace(): $CancellablePromise<string> {

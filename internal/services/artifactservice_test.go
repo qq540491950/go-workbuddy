@@ -131,3 +131,44 @@ func TestListArtifacts(t *testing.T) {
 		t.Fatalf("list = %v", names)
 	}
 }
+
+func TestOpenSessionArtifactIsIsolated(t *testing.T) {
+	svc, global := newArtifactFixture(t)
+	dirA := filepath.Join(global, "tasks", "a")
+	dirB := filepath.Join(global, "tasks", "b")
+	if err := os.MkdirAll(dirA, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(dirB, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dirA, "same.md"), []byte("# A"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dirB, "same.md"), []byte("# B"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.S.Store.Update(func(cfg *config.Config) {
+		cfg.Sessions = []config.ChatSession{
+			{ID: "sess_a", WorkspaceDir: dirA},
+			{ID: "sess_b", WorkspaceDir: dirB},
+		}
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	a, err := svc.OpenForSession("sess_a", "same.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := svc.OpenForSession("sess_b", "same.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if a.Text != "# A" || b.Text != "# B" {
+		t.Fatalf("session previews leaked: a=%q b=%q", a.Text, b.Text)
+	}
+	if _, err := svc.OpenForSession("sess_a", "../b/same.md"); err == nil {
+		t.Fatal("expected traversal rejection")
+	}
+}

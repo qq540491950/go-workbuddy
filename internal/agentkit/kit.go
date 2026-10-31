@@ -99,24 +99,32 @@ func (k *Kit) ResetKnowledgeIndex() error { return k.knowledge.Reset() }
 
 // BuildAgent builds an ADK agent for the given agent config.
 func (k *Kit) BuildAgent(ac config.AgentConfig) (agent.Agent, error) {
-	cfg := k.store.Get()
-	return k.buildLLMAgent(ac, cfg)
+	return k.BuildAgentWithModelAndWorkspace(ac, "", "")
 }
 
-func (k *Kit) buildLLMAgent(ac config.AgentConfig, cfg config.Config) (agent.Agent, error) {
-	return k.buildLLMAgentWithSubAgents(ac, cfg, nil)
+func (k *Kit) buildLLMAgent(ac config.AgentConfig, cfg config.Config, workspace string) (agent.Agent, error) {
+	return k.buildLLMAgentWithSubAgents(ac, cfg, nil, workspace)
 }
 
 // BuildAgentWithModel builds an agent pinned to a specific model of its
 // provider (per-session model override; empty modelID falls back to the
 // agent's configured model).
 func (k *Kit) BuildAgentWithModel(ac config.AgentConfig, modelID string) (agent.Agent, error) {
-	if strings.TrimSpace(modelID) == "" {
-		return k.BuildAgent(ac)
-	}
+	return k.BuildAgentWithModelAndWorkspace(ac, modelID, "")
+}
+
+// BuildAgentWithModelAndWorkspace is the session-aware build entry: model
+// override and effective task workspace are resolved together so file tools
+// and prompt variables cannot disagree about the directory.
+func (k *Kit) BuildAgentWithModelAndWorkspace(ac config.AgentConfig, modelID, workspace string) (agent.Agent, error) {
 	cfg := k.store.Get()
-	ac.Model = EffectiveModel(cfg, ac.ProviderID, ac.Model, modelID)
-	return k.buildLLMAgent(ac, cfg)
+	if strings.TrimSpace(modelID) != "" {
+		ac.Model = EffectiveModel(cfg, ac.ProviderID, ac.Model, modelID)
+	}
+	if strings.TrimSpace(workspace) == "" {
+		workspace = cfg.Settings.WorkspaceDir
+	}
+	return k.buildLLMAgent(ac, cfg, workspace)
 }
 
 // EffectiveModel resolves the model a session actually runs: the per-session
@@ -150,7 +158,7 @@ func modelSupported(cfg config.Config, providerID, modelID string) bool {
 	return false
 }
 
-func (k *Kit) buildLLMAgentWithSubAgents(ac config.AgentConfig, cfg config.Config, subAgents []agent.Agent) (agent.Agent, error) {
+func (k *Kit) buildLLMAgentWithSubAgents(ac config.AgentConfig, cfg config.Config, subAgents []agent.Agent, workspace string) (agent.Agent, error) {
 	var provider *config.ModelProvider
 	for i := range cfg.Providers {
 		if cfg.Providers[i].ID == ac.ProviderID {
@@ -179,7 +187,7 @@ func (k *Kit) buildLLMAgentWithSubAgents(ac config.AgentConfig, cfg config.Confi
 			}
 			tools = append(tools, t)
 		case "files":
-			builtin, err := workspaceFileTools(k.workspace(), confirmsTool(ac, "files"))
+			builtin, err := workspaceFileTools(workspace, confirmsTool(ac, "files"))
 			if err != nil {
 				return nil, fmt.Errorf("agent %q: %w", ac.Name, err)
 			}
@@ -241,7 +249,7 @@ func (k *Kit) buildLLMAgentWithSubAgents(ac config.AgentConfig, cfg config.Confi
 		return nil, fmt.Errorf("agent %q: %s", ac.Name, strings.Join(mcpErrs, "；"))
 	}
 
-	lc := k.llmConfig(ac, m, tools, toolsets)
+	lc := k.llmConfig(ac, m, tools, toolsets, workspace)
 	lc.SubAgents = subAgents
 	return llmagent.New(lc)
 }
@@ -249,8 +257,8 @@ func (k *Kit) buildLLMAgentWithSubAgents(ac config.AgentConfig, cfg config.Confi
 // llmConfig assembles the llmagent.Config for an agent config, using an
 // InstructionProvider so braces in user prompts are never treated as state
 // placeholders.
-func (k *Kit) llmConfig(ac config.AgentConfig, m model.LLM, tools []tool.Tool, toolsets []tool.Toolset) llmagent.Config {
-	instruction := applyPromptVars(ac.SystemPrompt, k.workspace())
+func (k *Kit) llmConfig(ac config.AgentConfig, m model.LLM, tools []tool.Tool, toolsets []tool.Toolset, workspace string) llmagent.Config {
+	instruction := applyPromptVars(ac.SystemPrompt, workspace)
 	if strings.TrimSpace(instruction) == "" {
 		instruction = "You are a helpful assistant."
 	}
@@ -281,7 +289,16 @@ func (k *Kit) llmConfig(ac config.AgentConfig, m model.LLM, tools []tool.Tool, t
 // sub-agents (ADK handles delegation/transfer between them), or an
 // auto-generated coordinator when requested.
 func (k *Kit) BuildTeam(tc config.TeamConfig) (agent.Agent, string, error) {
+	return k.BuildTeamWithWorkspace(tc, "")
+}
+
+// BuildTeamWithWorkspace builds a team whose local members use the session's
+// task workspace.
+func (k *Kit) BuildTeamWithWorkspace(tc config.TeamConfig, workspace string) (agent.Agent, string, error) {
 	cfg := k.store.Get()
+	if strings.TrimSpace(workspace) == "" {
+		workspace = cfg.Settings.WorkspaceDir
+	}
 
 	memberByID := map[string]config.AgentConfig{}
 	for _, a := range cfg.Agents {
@@ -299,7 +316,7 @@ func (k *Kit) BuildTeam(tc config.TeamConfig) (agent.Agent, string, error) {
 		if !ok {
 			continue
 		}
-		a, err := k.buildLLMAgent(ac, cfg)
+		a, err := k.buildLLMAgent(ac, cfg, workspace)
 		if err != nil {
 			return nil, "", err
 		}
@@ -344,7 +361,7 @@ func (k *Kit) BuildTeam(tc config.TeamConfig) (agent.Agent, string, error) {
 				}
 			}
 			leadAc := memberByID[tc.LeadAgentID]
-			leadAgent, err := k.buildLLMAgentWithSubAgents(leadAc, cfg, peers)
+			leadAgent, err := k.buildLLMAgentWithSubAgents(leadAc, cfg, peers, workspace)
 			if err != nil {
 				return nil, "", err
 			}
@@ -370,6 +387,7 @@ func (k *Kit) BuildTeam(tc config.TeamConfig) (agent.Agent, string, error) {
 	coordInstruction := firstNonEmpty(tc.SystemPrompt,
 		"You are the coordinator of an agent team. Analyze the user's request, "+
 			"then transfer the task to the most suitable member agent and synthesize the final answer.")
+	coordInstruction = applyPromptVars(coordInstruction, workspace)
 	instruction := fmt.Sprintf("%s\n\nTeam members: %s. Transfer to a member to work on the task, then summarize the result for the user.",
 		coordInstruction, strings.Join(memberNames, ", "))
 
@@ -385,8 +403,6 @@ func (k *Kit) BuildTeam(tc config.TeamConfig) (agent.Agent, string, error) {
 	}
 	return coord, rootName, nil
 }
-
-func (k *Kit) workspace() string { return k.store.Get().Settings.WorkspaceDir }
 
 // searchOptions assembles the knowledge tool options from current settings:
 // workspace plus the configured embedding backend, if any.

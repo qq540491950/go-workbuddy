@@ -77,7 +77,21 @@ func (a *ArtifactService) workspace() string { return a.S.Store.Get().Settings.W
 
 // Open reads a workspace file for preview. Path is relative to the workspace.
 func (a *ArtifactService) Open(relPath string) (*Artifact, error) {
-	ws := a.workspace()
+	return a.openIn(a.workspace(), relPath)
+}
+
+// OpenForSession previews a file inside the task workspace bound to sessionID.
+func (a *ArtifactService) OpenForSession(sessionID, relPath string) (*Artifact, error) {
+	cfg := a.S.Store.Get()
+	for _, session := range cfg.Sessions {
+		if session.ID == sessionID {
+			return a.openIn(session.EffectiveWorkspace(cfg.Settings.WorkspaceDir), relPath)
+		}
+	}
+	return nil, fmt.Errorf("会话 %q 不存在", sessionID)
+}
+
+func (a *ArtifactService) openIn(ws, relPath string) (*Artifact, error) {
 	if strings.TrimSpace(ws) == "" {
 		return nil, fmt.Errorf("工作区目录未配置")
 	}

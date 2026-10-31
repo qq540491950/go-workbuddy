@@ -106,6 +106,13 @@ export interface ChatSession {
      * model picker of the desktop AI clients.
      */
     "modelOverride"?: string;
+
+    /**
+     * WorkspaceDir is the task-level directory used by file tools, prompt
+     * variables and artifact previews. Empty keeps legacy sessions on the
+     * global workspace.
+     */
+    "workspaceDir"?: string;
 }
 
 /**

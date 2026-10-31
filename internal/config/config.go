@@ -7,6 +7,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 )
@@ -270,6 +271,19 @@ type ChatSession struct {
 	// provider (empty = the agent's configured model). Mirrors the per-chat
 	// model picker of the desktop AI clients.
 	ModelOverride string `json:"modelOverride,omitempty"`
+	// WorkspaceDir is the task-level directory used by file tools, prompt
+	// variables and artifact previews. Empty keeps legacy sessions on the
+	// global workspace.
+	WorkspaceDir string `json:"workspaceDir,omitempty"`
+}
+
+// EffectiveWorkspace resolves the directory a session should use. Explicit
+// task workspaces win; legacy sessions fall back to the app-level workspace.
+func (s ChatSession) EffectiveWorkspace(global string) string {
+	if ws := strings.TrimSpace(s.WorkspaceDir); ws != "" {
+		return ws
+	}
+	return global
 }
 
 // Clone returns an independent copy of the config. Slices, nested slices and

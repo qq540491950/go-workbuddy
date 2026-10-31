@@ -4,6 +4,7 @@ import {
   Plus, Send, Square, Trash2, Pencil, MessageSquare, Bot, Users, Loader2,
   Copy, Check, Search, ArrowRight, RefreshCw, Download, Mic, MicOff, Volume2, Square as SquareStop,
   Paperclip, X, BarChart3, Brain, ShieldAlert, Network, GitFork, Pin, PinOff, FileCode2, Archive, ListTodo, ClipboardCopy,
+  FolderOpen,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -93,6 +94,7 @@ export function ChatPage() {
   const [statsOpen, setStatsOpen] = useState(false);
   const [stats, setStats] = useState<SessionStats | null>(null);
   const [autoSpeak, setAutoSpeak] = useState(false);
+  const [globalWorkspace, setGlobalWorkspace] = useState("");
   const [listening, setListening] = useState(false);
   const [editing, setEditing] = useState(false);
   const [ctxBannerDismissed, setCtxBannerDismissed] = useState(false);
@@ -161,6 +163,7 @@ export function ChatPage() {
         setProviderCount((c.providers ?? []).length);
         setProviderList(c.providers ?? []);
         setAutoSpeak(!!c.settings?.autoSpeak);
+        setGlobalWorkspace(c.settings?.workspaceDir ?? "");
       })
       .catch((e) => toast.error(`加载配置失败: ${errText(e)}`));
   }, [reloadSessions]);
@@ -680,7 +683,7 @@ export function ChatPage() {
       return;
     }
     try {
-      const s = await Chat.NewSession(newType, newTarget, "");
+      const s = await Chat.NewSessionWithWorkspace(newType, newTarget, "", "");
       setNewChatOpen(false);
       setNewTarget("");
       reloadSessions();
@@ -1050,6 +1053,16 @@ export function ChatPage() {
             )}
             {active && (
               <button
+                className="flex min-w-0 max-w-[260px] items-center gap-1 rounded-md px-1.5 py-1 text-[11px] text-muted-foreground hover:bg-accent hover:text-foreground"
+                title={`任务工作区：${active.workspaceDir || globalWorkspace}`}
+                aria-label="当前任务工作区"
+              >
+                <FolderOpen className="h-3 w-3 shrink-0" />
+                <span className="truncate">{active.workspaceDir || globalWorkspace || "未配置工作区"}</span>
+              </button>
+            )}
+            {active && (
+              <button
                 className={cn(
                   "rounded p-1 text-muted-foreground transition-opacity hover:text-foreground",
                   filterOpen ? "opacity-100 text-primary" : "opacity-60 hover:opacity-100",
@@ -1232,6 +1245,7 @@ export function ChatPage() {
                   onEdit={startEdit}
                   canEdit={editFlags.get(m.id) === true && !running && !!activeID}
                   onConfirm={answerConfirm}
+                  sessionID={activeID}
                   />
                 </Fragment>
               );
@@ -1708,7 +1722,7 @@ function DaySeparator({ ts }: { ts: string | undefined }) {
 // last bubble each token, and every other bubble must keep the same props to
 // skip re-rendering. Callers therefore pass stable callbacks and precomputed
 // flags instead of per-row closures.
-const MessageBubble = memo(function MessageBubble({ m, isLastAssistant, onRegenerate, canRegenerate, toolRunning, onSpeak, costOf, onEdit, canEdit, onConfirm, durationMs }: {
+const MessageBubble = memo(function MessageBubble({ m, isLastAssistant, onRegenerate, canRegenerate, toolRunning, onSpeak, costOf, onEdit, canEdit, onConfirm, durationMs, sessionID }: {
   m: UIMessage;
   isLastAssistant: boolean;
   onRegenerate: () => void;
@@ -1720,6 +1734,7 @@ const MessageBubble = memo(function MessageBubble({ m, isLastAssistant, onRegene
   canEdit: boolean;
   onConfirm: (msgId: string, callId: string | undefined, approved: boolean) => void;
   durationMs?: number;
+  sessionID: string;
 }) {
   const [copied, setCopied] = useState(false);
   const copyMsg = async () => {
@@ -1795,6 +1810,7 @@ const MessageBubble = memo(function MessageBubble({ m, isLastAssistant, onRegene
     return (
       <ToolCallCard
         name={m.toolName ?? "tool"}
+        sessionID={sessionID}
         args={m.toolArgs}
         resp={m.toolResp}
         running={m.kind === "tool_call" && toolRunning}

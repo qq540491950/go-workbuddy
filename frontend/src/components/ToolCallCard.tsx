@@ -26,6 +26,7 @@ export function extractArtifactPaths(...objs: (unknown | null | undefined)[]): s
 
 type ToolCallProps = {
   name: string;
+  sessionID?: string;
   args?: { [k: string]: any } | null;
   resp?: { [k: string]: any } | null;
   running: boolean;
@@ -48,7 +49,7 @@ export function formatDuration(ms: number): string {
 /** ToolCallCard renders one tool invocation with live status visualization.
  *  Memoized because extractArtifactPaths JSON-stringifies args/results and
  *  would otherwise run for every visible tool on each streamed token. */
-export const ToolCallCard = memo(function ToolCallCard({ name, args, resp, running, durationMs }: ToolCallProps) {
+export const ToolCallCard = memo(function ToolCallCard({ name, sessionID, args, resp, running, durationMs }: ToolCallProps) {
   const [open, setOpen] = useState(false);
   const failed = useMemo(() => {
     if (!resp) return false;
@@ -116,7 +117,11 @@ export const ToolCallCard = memo(function ToolCallCard({ name, args, resp, runni
         <div className="flex flex-wrap items-center gap-1.5 border-t px-3 py-1.5">
           <span className="text-[11px] text-muted-foreground">产物：</span>
           {paths.map((p) => (
-            <ArtifactOpenButton key={p} path={p} />
+            <ArtifactOpenButton
+              key={p}
+              path={p}
+              sessionID={name === "search_knowledge" ? undefined : sessionID}
+            />
           ))}
         </div>
       )}
@@ -124,7 +129,7 @@ export const ToolCallCard = memo(function ToolCallCard({ name, args, resp, runni
   );
 });
 
-export function ArtifactOpenButton({ path, label }: { path: string; label?: string }) {
+export function ArtifactOpenButton({ path, label, sessionID }: { path: string; label?: string; sessionID?: string }) {
   const [target, setTarget] = useState<string | null>(null);
   return (
     <>
@@ -137,7 +142,7 @@ export function ArtifactOpenButton({ path, label }: { path: string; label?: stri
         <FileImage className="h-3 w-3" />
         {label ?? "预览"} {path.split("/").pop()}
       </Button>
-      <ArtifactPreview path={target} onClose={() => setTarget(null)} />
+      <ArtifactPreview path={target} sessionID={sessionID} onClose={() => setTarget(null)} />
     </>
   );
 }
@@ -146,7 +151,7 @@ const kindIcon = (kind: string) =>
   kind === "image" ? <FileImage className="h-4 w-4" /> : <FileText className="h-4 w-4" />;
 
 /** ArtifactPreview shows workspace files: images, PDF, markdown and text. */
-export function ArtifactPreview({ path, onClose }: { path: string | null | undefined; onClose: () => void }) {
+export function ArtifactPreview({ path, sessionID, onClose }: { path: string | null | undefined; sessionID?: string; onClose: () => void }) {
   const [art, setArt] = useState<ArtifactData | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -161,7 +166,7 @@ export function ArtifactPreview({ path, onClose }: { path: string | null | undef
     // B when the user re-targets quickly (knowledge-base previews do this).
     let cancelled = false;
     setLoading(true);
-    Artifact.Open(path)
+    (sessionID ? Artifact.OpenForSession(sessionID, path) : Artifact.Open(path))
       .then((a) => {
         if (cancelled) return;
         if (!a) throw new Error("未找到文件");
@@ -176,7 +181,7 @@ export function ArtifactPreview({ path, onClose }: { path: string | null | undef
     return () => {
       cancelled = true;
     };
-  }, [path]);
+  }, [path, sessionID]);
 
   return (
     <Dialog open={!!path} onOpenChange={(v) => !v && onClose()}>

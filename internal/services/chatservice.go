@@ -173,8 +173,8 @@ func attachmentsOut(content *genai.Content) []AttachmentOut {
 type ChatService struct {
 	S *Services
 
-	mu        sync.Mutex
-	runs      map[string]*runHandle
+	mu   sync.Mutex
+	runs map[string]*runHandle
 	// active tracks EVERY in-flight handle per session. runs only holds the
 	// current one (used for cancel); an overlapping older run may still be
 	// unwinding, and history-mutating entry points must wait for it too.
@@ -214,26 +214,73 @@ func NewChatService(s *Services, sessions session.Service, db *gorm.DB) *ChatSer
 }
 
 // NewSession creates a chat bound to an agent, remote A2A agent or team.
+// It preserves the pre-task-workspace API: the session falls back to the
+// global workspace. New UI flows use NewSessionWithWorkspace.
 func (c *ChatService) NewSession(targetType, targetID, title string) (config.ChatSession, error) {
+	return c.newSession(targetType, targetID, title, "", false)
+}
+
+// NewSessionWithWorkspace creates a task session. An empty workspaceDir asks
+// the backend to create a unique directory under the global workspace.
+func (c *ChatService) NewSessionWithWorkspace(targetType, targetID, title, workspaceDir string) (config.ChatSession, error) {
+	return c.newSession(targetType, targetID, title, workspaceDir, true)
+}
+
+func (c *ChatService) newSession(targetType, targetID, title, workspaceDir string, taskWorkspace bool) (config.ChatSession, error) {
 	if targetType != "agent" && targetType != "team" && targetType != "remote" {
 		return config.ChatSession{}, fmt.Errorf("invalid target type %q", targetType)
 	}
 	if title == "" {
 		title = "新对话"
 	}
+	id := newID("sess_")
+	createdDir := ""
+	if taskWorkspace {
+		if strings.TrimSpace(workspaceDir) == "" {
+			global := strings.TrimSpace(c.S.Store.Get().Settings.WorkspaceDir)
+			if global == "" {
+				return config.ChatSession{}, fmt.Errorf("工作区目录未配置")
+			}
+			workspaceDir = filepath.Join(global, "tasks", id)
+			if err := os.MkdirAll(workspaceDir, 0o755); err != nil {
+				return config.ChatSession{}, fmt.Errorf("创建任务工作区失败: %w", err)
+			}
+			createdDir = workspaceDir
+		} else {
+			abs, err := filepath.Abs(strings.TrimSpace(workspaceDir))
+			if err != nil {
+				return config.ChatSession{}, fmt.Errorf("工作区路径无效: %w", err)
+			}
+			workspaceDir = filepath.Clean(abs)
+			st, err := os.Stat(workspaceDir)
+			if err != nil {
+				return config.ChatSession{}, fmt.Errorf("工作区不可用: %w", err)
+			}
+			if !st.IsDir() {
+				return config.ChatSession{}, fmt.Errorf("工作区必须是目录")
+			}
+		}
+	}
 	cs := config.ChatSession{
-		ID:         newID("sess_"),
-		Title:      title,
-		TargetType: targetType,
-		TargetID:   targetID,
-		CreatedAt:  nowUTC(),
-		UpdatedAt:  nowUTC(),
+		ID:           id,
+		Title:        title,
+		TargetType:   targetType,
+		TargetID:     targetID,
+		CreatedAt:    nowUTC(),
+		UpdatedAt:    nowUTC(),
+		WorkspaceDir: workspaceDir,
+	}
+	cleanup := func() {
+		if createdDir != "" {
+			_ = os.Remove(createdDir)
+		}
 	}
 	if _, err := c.sessions.Create(context.Background(), &session.CreateRequest{
 		AppName:   c.appName,
 		UserID:    c.userID,
 		SessionID: cs.ID,
 	}); err != nil {
+		cleanup()
 		return config.ChatSession{}, err
 	}
 	err := c.S.Store.Update(func(cfg *config.Config) {
@@ -241,6 +288,11 @@ func (c *ChatService) NewSession(targetType, targetID, title string) (config.Cha
 	})
 	if err == nil {
 		c.audit(cs.ID, "session_created", "system", targetType, mustJSON(map[string]string{"targetId": targetID, "title": cs.Title}), "")
+	} else {
+		_ = c.sessions.Delete(context.Background(), &session.DeleteRequest{
+			AppName: c.appName, UserID: c.userID, SessionID: cs.ID,
+		})
+		cleanup()
 	}
 	return cs, err
 }
@@ -1142,6 +1194,7 @@ func (c *ChatService) runTurn(target *config.ChatSession, guardOn bool, msg *gen
 	sessionID := target.ID
 	defer c.recoverRun(sessionID, &err)
 	cfg := c.S.Store.Get()
+	workspace := target.EffectiveWorkspace(cfg.Settings.WorkspaceDir)
 	// Per-agent run guardrails (0 = unlimited); teams fall back to unlimited.
 	maxTurnSeconds, maxToolCalls := 0, 0
 	var maxSessionTokens int64
@@ -1169,7 +1222,7 @@ func (c *ChatService) runTurn(target *config.ChatSession, guardOn bool, msg *gen
 	case "team":
 		for _, t := range cfg.Teams {
 			if t.ID == target.TargetID {
-				root, _, err = c.S.Kit.BuildTeam(t)
+				root, _, err = c.S.Kit.BuildTeamWithWorkspace(t, workspace)
 				break
 			}
 		}
@@ -1191,7 +1244,7 @@ func (c *ChatService) runTurn(target *config.ChatSession, guardOn bool, msg *gen
 			if a.ID == target.TargetID {
 				// Per-session model override (chat-header picker): empty keeps
 				// the agent's configured model.
-				root, err = c.S.Kit.BuildAgentWithModel(a, target.ModelOverride)
+				root, err = c.S.Kit.BuildAgentWithModelAndWorkspace(a, target.ModelOverride, workspace)
 				break
 			}
 		}
