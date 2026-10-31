@@ -199,6 +199,14 @@ export function SetSessionModel(sessionID: string, modelID: string): $Cancellabl
 }
 
 /**
+ * SetSessionWorkspace rebinds a task before its first event. The directory is
+ * canonicalized and checked for writability and active-session conflicts.
+ */
+export function SetSessionWorkspace(sessionID: string, workspaceDir: string): $CancellablePromise<void> {
+    return $Call.ByID(3910017842, sessionID, workspaceDir);
+}
+
+/**
  * SetToolAuditPath enables the JSONL tool-call audit trail at path.
  */
 export function SetToolAuditPath(path: string): $CancellablePromise<void> {

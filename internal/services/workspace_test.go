@@ -153,3 +153,71 @@ func TestLegacySessionWithoutWorkspaceFallsBackToGlobal(t *testing.T) {
 		t.Fatalf("legacy session did not use the global workspace: %v", err)
 	}
 }
+
+func TestExplicitWorkspaceValidationAndConflict(t *testing.T) {
+	chat, _, _ := newWorkspaceTestChat(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte(sseText("ok") + sseDone))
+	})
+	chosen := t.TempDir()
+
+	first, err := chat.NewSessionWithWorkspace("agent", "agent_ws", "first", chosen)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.WorkspaceDir != filepath.Clean(chosen) {
+		t.Fatalf("workspace = %q, want %q", first.WorkspaceDir, filepath.Clean(chosen))
+	}
+	if _, err := chat.NewSessionWithWorkspace("agent", "agent_ws", "duplicate", chosen); err == nil || !strings.Contains(err.Error(), "已被") {
+		t.Fatalf("expected duplicate-workspace rejection, got %v", err)
+	}
+	if err := chat.ArchiveSession(first.ID, true); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := chat.NewSessionWithWorkspace("agent", "agent_ws", "reuse", chosen); err != nil {
+		t.Fatalf("archived session should release its workspace: %v", err)
+	}
+	if _, err := chat.NewSessionWithWorkspace("agent", "agent_ws", "missing", filepath.Join(t.TempDir(), "missing")); err == nil {
+		t.Fatal("expected missing-directory rejection")
+	}
+	file := filepath.Join(t.TempDir(), "not-a-dir")
+	if err := os.WriteFile(file, []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := chat.NewSessionWithWorkspace("agent", "agent_ws", "file", file); err == nil || !strings.Contains(err.Error(), "目录") {
+		t.Fatalf("expected file-path rejection, got %v", err)
+	}
+}
+
+func TestSetSessionWorkspaceBeforeFirstTurnOnly(t *testing.T) {
+	chat, _, _ := newWorkspaceTestChat(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte(sseText("ok") + sseDone))
+	})
+	sess, err := chat.NewSessionWithWorkspace("agent", "agent_ws", "pick", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	chosen := t.TempDir()
+	if err := chat.SetSessionWorkspace(sess.ID, chosen); err != nil {
+		t.Fatal(err)
+	}
+	stored := func() config.ChatSession {
+		for _, s := range chat.S.Store.Get().Sessions {
+			if s.ID == sess.ID {
+				return s
+			}
+		}
+		t.Fatal("session missing")
+		return config.ChatSession{}
+	}()
+	if stored.WorkspaceDir != filepath.Clean(chosen) {
+		t.Fatalf("stored workspace = %q, want %q", stored.WorkspaceDir, filepath.Clean(chosen))
+	}
+	if err := chat.Send(sess.ID, "hello", nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := chat.SetSessionWorkspace(sess.ID, t.TempDir()); err == nil || !strings.Contains(err.Error(), "首轮") {
+		t.Fatalf("expected post-first-turn lock, got %v", err)
+	}
+}

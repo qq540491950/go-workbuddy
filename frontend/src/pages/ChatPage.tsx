@@ -1,5 +1,5 @@
 import { Fragment, memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Events } from "@wailsio/runtime";
+import { Dialogs, Events } from "@wailsio/runtime";
 import {
   Plus, Send, Square, Trash2, Pencil, MessageSquare, Bot, Users, Loader2,
   Copy, Check, Search, ArrowRight, RefreshCw, Download, Mic, MicOff, Volume2, Square as SquareStop,
@@ -88,6 +88,7 @@ export function ChatPage() {
   const [newChatOpen, setNewChatOpen] = useState(false);
   const [newType, setNewType] = useState<"agent" | "team" | "remote">("agent");
   const [newTarget, setNewTarget] = useState("");
+  const [newWorkspace, setNewWorkspace] = useState("");
   const [renaming, setRenaming] = useState<ChatSession | null>(null);
   const [renameText, setRenameText] = useState("");
   const [sessionUsage, setSessionUsage] = useState<UsageInfo | null>(null);
@@ -683,14 +684,44 @@ export function ChatPage() {
       return;
     }
     try {
-      const s = await Chat.NewSessionWithWorkspace(newType, newTarget, "", "");
+      const s = await Chat.NewSessionWithWorkspace(newType, newTarget, "", newWorkspace);
       setNewChatOpen(false);
       setNewTarget("");
+      setNewWorkspace("");
       reloadSessions();
       setActiveID(s.id);
       setMessages([]);
     } catch (e) {
       toast.error(`创建失败: ${errText(e)}`);
+    }
+  };
+
+  const pickWorkspace = async () => {
+    const picked = await Dialogs.OpenFile({
+      CanChooseDirectories: true,
+      CanChooseFiles: false,
+      CanCreateDirectories: true,
+      ResolvesAliases: true,
+      Title: "选择任务工作目录",
+      ButtonText: "选择此文件夹",
+    });
+    return typeof picked === "string" ? picked : "";
+  };
+
+  const changeSessionWorkspace = async () => {
+    if (!active) return;
+    if (messages.length > 0) {
+      toast.info("首轮已开始，任务工作区已锁定");
+      return;
+    }
+    try {
+      const picked = await pickWorkspace();
+      if (!picked) return;
+      await Chat.SetSessionWorkspace(active.id, picked);
+      await reloadSessions();
+      toast.success("任务工作区已更新");
+    } catch (e) {
+      toast.error(`更新工作区失败: ${errText(e)}`);
     }
   };
 
@@ -1054,8 +1085,11 @@ export function ChatPage() {
             {active && (
               <button
                 className="flex min-w-0 max-w-[260px] items-center gap-1 rounded-md px-1.5 py-1 text-[11px] text-muted-foreground hover:bg-accent hover:text-foreground"
-                title={`任务工作区：${active.workspaceDir || globalWorkspace}`}
+                title={messages.length > 0
+                  ? `任务工作区：${active.workspaceDir || globalWorkspace}`
+                  : `任务工作区：${active.workspaceDir || globalWorkspace}（首轮前可更改）`}
                 aria-label="当前任务工作区"
+                onClick={changeSessionWorkspace}
               >
                 <FolderOpen className="h-3 w-3 shrink-0" />
                 <span className="truncate">{active.workspaceDir || globalWorkspace || "未配置工作区"}</span>
@@ -1518,6 +1552,42 @@ export function ChatPage() {
                 <p className="text-xs text-muted-foreground">
                   没有可选目标，请先在侧边栏创建 {newType === "agent" ? "Agent" : newType === "team" ? "团队" : "远程 Agent（Agents 页）"}。
                 </p>
+              )}
+            </div>
+            <div className="grid gap-1.5">
+              <label className="text-sm">任务工作目录</label>
+              <div className="flex items-center gap-2">
+                <div
+                  className="min-w-0 flex-1 truncate rounded-md border bg-muted/30 px-2.5 py-2 text-xs text-muted-foreground"
+                  title={newWorkspace || "自动创建独立任务目录"}
+                >
+                  {newWorkspace || "自动创建独立任务目录"}
+                </div>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className="shrink-0"
+                  onClick={async () => {
+                    try {
+                      const picked = await pickWorkspace();
+                      if (picked) setNewWorkspace(picked);
+                    } catch (e) {
+                      toast.error(`选择目录失败: ${errText(e)}`);
+                    }
+                  }}
+                >
+                  <FolderOpen className="mr-1 h-3.5 w-3.5" /> 选择文件夹
+                </Button>
+              </div>
+              {newWorkspace && (
+                <button
+                  type="button"
+                  className="w-fit text-xs text-primary hover:underline"
+                  onClick={() => setNewWorkspace("")}
+                >
+                  恢复为自动创建的独立目录
+                </button>
               )}
             </div>
           </div>
