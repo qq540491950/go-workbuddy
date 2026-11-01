@@ -18,6 +18,7 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
@@ -285,6 +286,10 @@ export function ChatPage({ isDark, onToggleTheme, onOpenHelp, onOpenSettings }: 
     let cancelled = false;
     setSessionUsage(null);
     setCtxBannerDismissed(false);
+    // Clear immediately: showing the previous session's messages while the
+    // next history loads is a correctness-level wrongness (stale flash).
+    setMessages([]);
+    setHistoryLoading(true);
     Chat.GetSessionMessages(activeID)
       .then((ms) => {
         if (cancelled) return;
@@ -321,6 +326,9 @@ export function ChatPage({ isDark, onToggleTheme, onOpenHelp, onOpenSettings }: 
       })
       .catch((e) => {
         if (!cancelled) toast.error(`加载历史失败: ${errText(e)}`);
+      })
+      .finally(() => {
+        if (!cancelled) setHistoryLoading(false);
       });
     Chat.IsRunning(activeID).then((r) => {
       if (cancelled) return;
@@ -333,6 +341,7 @@ export function ChatPage({ isDark, onToggleTheme, onOpenHelp, onOpenSettings }: 
     }).catch(() => {});
     return () => {
       cancelled = true;
+      setHistoryLoading(false);
     };
   }, [activeID]);
 
@@ -478,6 +487,9 @@ export function ChatPage({ isDark, onToggleTheme, onOpenHelp, onOpenSettings }: 
   // Unread flags: a background session that finished (or errored) while the
   // user was elsewhere gets a sidebar dot until they open it.
   const [unread, setUnread] = useState<Record<string, boolean>>({});
+  // History fetch in flight after a session switch: render skeletons instead
+  // of an empty-looking conversation.
+  const [historyLoading, setHistoryLoading] = useState(false);
 
   // Per-session message queue: sending while a reply streams parks the text
   // and auto-sends it when the turn settles (Codex-style queueing).
@@ -1811,6 +1823,21 @@ export function ChatPage({ isDark, onToggleTheme, onOpenHelp, onOpenSettings }: 
                 </Fragment>
               );
             })}
+            {historyLoading && messages.length === 0 && (
+              <div className="space-y-3" aria-hidden>
+                {[80, 60, 70].map((w, i) => (
+                  <div key={i} className={cn("flex", i % 2 ? "justify-end" : "justify-start")}>
+                    <div className="max-w-[80%] space-y-1.5">
+                      <Skeleton className="h-3 w-24" />
+                      <Skeleton className="h-14 rounded-2xl" style={{ width: `${w}%` }} />
+                    </div>
+                  </div>
+                ))}
+                <div className="flex items-center justify-center gap-2 pt-2 text-xs text-muted-foreground">
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" /> 正在加载会话历史…
+                </div>
+              </div>
+            )}
             <div ref={bottomRef} />
           </div>
         </ScrollArea>
@@ -1973,6 +2000,40 @@ export function ChatPage({ isDark, onToggleTheme, onOpenHelp, onOpenSettings }: 
                       e.preventDefault();
                       setMentionDismissed(mentionQuery);
                       return;
+                    }
+                  }
+                  // Esc walks back down the UI stack instead of doing nothing:
+                  // cancel edit → stop generation → close the filter bar.
+                  if (e.key === "Escape") {
+                    if (editing) {
+                      e.preventDefault();
+                      cancelEdit();
+                      return;
+                    }
+                    if (running) {
+                      e.preventDefault();
+                      cancel();
+                      return;
+                    }
+                    if (filterOpen) {
+                      e.preventDefault();
+                      setFilterOpen(false);
+                      return;
+                    }
+                  }
+                  // ↑ on an empty composer edits the last user message
+                  // (Codex-style) — the fastest way to fix a typo in a prompt.
+                  if (e.key === "ArrowUp" && input.length === 0 && !editing && !running && !e.nativeEvent.isComposing && !e.altKey && !e.metaKey && !e.ctrlKey) {
+                    for (let i = messages.length - 1; i >= 0; i--) {
+                      const m = messages[i];
+                      if (m.kind === "user" && m.text) {
+                        e.preventDefault();
+                        startEdit(m.text);
+                        return;
+                      }
+                      // A confirm card between the user message and now means
+                      // editing would misrepresent the pending interaction.
+                      if (m.kind === "confirm") return;
                     }
                   }
                   if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
@@ -2456,7 +2517,10 @@ const MessageBubble = memo(function MessageBubble({ m, isLastAssistant, onRegene
             {m.author}
             {m.timestamp && <span className="ml-1 opacity-70">· {fmtTime(m.timestamp)}</span>}
           </span>
-          {isLastAssistant && !m.streaming && m.text && (
+          {/* Copy/speak/usage work on every finished assistant message —
+              scrolling back to grab an earlier reply is a top action. Only
+              重新生成 stays bound to the last reply. */}
+          {!m.streaming && m.text && (
             <span className="flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
               <button
                 className="inline-flex items-center gap-0.5 rounded p-0.5 text-[11px] text-muted-foreground hover:text-foreground"
@@ -2465,7 +2529,7 @@ const MessageBubble = memo(function MessageBubble({ m, isLastAssistant, onRegene
                 {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
                 {copied ? "已复制" : "复制"}
               </button>
-              {canRegenerate && (
+              {isLastAssistant && canRegenerate && (
                 <button
                   className="inline-flex items-center gap-0.5 rounded p-0.5 text-[11px] text-muted-foreground hover:text-foreground"
                   title="重新生成最后一条回复"
