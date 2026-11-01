@@ -295,6 +295,7 @@ export function ChatPage({ isDark, onToggleTheme, onOpenHelp, onOpenSettings }: 
     // Clear immediately: showing the previous session's messages while the
     // next history loads is a correctness-level wrongness (stale flash).
     setMessages([]);
+    setRenderLimit(RENDER_LIMIT);
     setHistoryLoading(true);
     Chat.GetSessionMessages(activeID)
       .then((ms) => {
@@ -551,6 +552,9 @@ export function ChatPage({ isDark, onToggleTheme, onOpenHelp, onOpenSettings }: 
   // Unread flags: a background session that finished (or errored) while the
   // user was elsewhere gets a sidebar dot until they open it.
   const [unread, setUnread] = useState<Record<string, boolean>>({});
+  // How many trailing messages render; the omitted banner can raise it in
+  // RENDER_LIMIT steps to page backwards through very long sessions.
+  const [renderLimit, setRenderLimit] = useState(RENDER_LIMIT);
   // Reader position: off-bottom state drives the「回到底部」floater.
   const [atBottom, setAtBottom] = useState(true);
   useEffect(() => {
@@ -1260,8 +1264,8 @@ export function ChatPage({ isDark, onToggleTheme, onOpenHelp, onOpenSettings }: 
     return messages.filter((m) => (searchIndex.get(m.id) ?? "").includes(filterQ));
   }, [messages, filterQ, searchIndex]);
   const visibleMessages = useMemo(
-    () => (filterQ ? filteredMessages.slice(-RENDER_LIMIT) : messages.slice(-RENDER_LIMIT)),
-    [filterQ, filteredMessages, messages],
+    () => (filterQ ? filteredMessages.slice(-renderLimit) : messages.slice(-renderLimit)),
+    [filterQ, filteredMessages, messages, renderLimit],
   );
   // The slice source and how many entries sit above the render window: the
   // day separator of the first visible message must compare against the REAL
@@ -1933,7 +1937,19 @@ export function ChatPage({ isDark, onToggleTheme, onOpenHelp, onOpenSettings }: 
               if (omitted <= 0) return null;
               return (
                 <div className="rounded-lg border bg-muted/40 px-3 py-2 text-center text-xs text-muted-foreground">
-                  已省略较早的 {omitted} 条{filterQ ? "匹配" : ""}消息（完整历史已保存，可导出查看）
+                  <div className="flex items-center justify-center gap-2">
+                    <span>
+                      已省略较早的 {omitted} 条{filterQ ? "匹配" : ""}消息（完整历史已保存，可导出查看）
+                    </span>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-6 px-2 text-[11px]"
+                      onClick={() => setRenderLimit((l) => l + RENDER_LIMIT)}
+                    >
+                      显示更早 {Math.min(RENDER_LIMIT, omitted)} 条
+                    </Button>
+                  </div>
                 </div>
               );
             })()}

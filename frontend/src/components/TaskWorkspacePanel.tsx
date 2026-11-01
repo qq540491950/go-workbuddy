@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { ArtifactPreview } from "@/components/ToolCallCard";
+import { CopyButton } from "@/components/MessageMarkdown";
 import {
   App, Artifact, errText, WorkspaceChangeStatus,
   WorkspaceFileKind,
@@ -167,6 +168,17 @@ function DiffView({ sessionID, path }: { sessionID: string; path: string }) {
       <div className="border-t bg-muted/30 px-3 py-2 text-[11px] text-muted-foreground">与任务基线一致，无行级变更。</div>
     );
   }
+  // Unified patch text for「复制 Patch」— mirrors what a git diff shows.
+  const patch = result.hunks
+    .map((h) => {
+      const head = `@@ -${h.oldStart},${h.oldLines} +${h.newStart},${h.newLines} @@\n`;
+      const body = (h.lines ?? [])
+        .map((l) => (l.type === "add" ? `+${l.text}` : l.type === "del" ? `-${l.text}` : ` ${l.text}`))
+        .join("\n");
+      return head + body;
+    })
+    .join("\n");
+
   return (
     <div className="border-t bg-muted/20">
       <div className="max-h-80 overflow-auto font-mono text-[11px] leading-4">
@@ -204,6 +216,7 @@ function DiffView({ sessionID, path }: { sessionID: string; path: string }) {
         <span className="text-emerald-600 dark:text-emerald-400">+{result.addedLines}</span>
         <span className="text-red-600 dark:text-red-400">-{result.removedLines}</span>
         {result.truncated && <span className="font-sans">内容过长已截断</span>}
+        <CopyButton text={patch} className="ml-auto border-0 bg-transparent" />
       </div>
     </div>
   );
