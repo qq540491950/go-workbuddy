@@ -4,6 +4,19 @@
 
 ## 视觉测试与体验设计
 
+### 第一百五十七轮迭代：composer 手感——自动增高、斜杠键盘导航、排队不覆盖、拖拽高亮（已实施）
+
+依据：UX 盘点的输入区四项缺口：textarea 固定 `rows={2}` 多行输入体验落后；斜杠建议条只能鼠标点击（与 @ 提及弹层的完整键盘导航不一致）；排队输入只存一条、第二条静默覆盖第一条（真实丢消息）；拖文件到 composer 无任何视觉反馈，用户不知道松手会发生什么。
+
+实现要点：
+
+- **自动增高**：`input`/`activeID` 变化时 `height=auto → scrollHeight`，上限 192px（与 `max-h-48` 一致）——超过后 textarea 内部滚动，消息区不再被挤占。
+- **排队改数组**：`queued` 从 `Record<string, string[]>`。用户排队追加到队尾；被新忙会话弹回的排队投递插回队首（保序）；`fireQueued` 每次只出队首一条，剩余条目继续等待；横幅渲染每条队列项（各自带「取消」）；两处 truthiness 检查改为 `length > 0`（空数组为真会误触发）。
+- **斜杠建议键盘化**：补 `slashIdx`/`slashDismissed` 状态，↑↓ 循环、Enter/Tab 采纳（`onMouseDown` 防失焦）、Esc 关闭且输入变化后自动重开，选中项高亮 + `role="listbox"/"option"`/`aria-selected`；与 @ 弹层互斥优先级保持。
+- **拖拽高亮**：composer 拖入文件时 textarea 亮边框 + ring，`dragleave` 经子元素穿透用 `contains(relatedTarget)` 防闪烁，drop 后清除。
+
+测试证据：`tsc --noEmit`、vitest 17/17、`npm run build` 通过。浏览器桩走查：输入 `/` 出 5 个建议，ArrowDown 选中 0→1，Enter 采纳为 `/exporthtml `；Esc 关闭后改输入自动重开；8 行文本 textarea 高 176px（<192 上限，原为固定两行）；排队数组语义由类型与调用点审查覆盖（桩无法模拟运行态）。
+
 ### 第一百五十六轮迭代：会话切换加载态 + 消息操作补全（已实施）
 
 依据：双轴代码审查（Standards/Spec 之外的专项 UX 盘点）确认三组高频体验问题：切换会话时上一个会话的消息会一直显示到新历史加载完成（stale flash，正确性级别的「感觉不对」）；复制/朗读/token 徽标被 `isLastAssistant` 门控——翻回历史消息抄一段话是空操作；Esc 只能关 @ 弹层，停止生成、取消编辑都要去够按钮；编辑上一条提问要先滚回原消息悬停。

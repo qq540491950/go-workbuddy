@@ -169,15 +169,12 @@ export function ChatPage({ isDark, onToggleTheme, onOpenHelp, onOpenSettings }: 
   // still-running session keeps its queue; the message is delivered with its
   // OWN session id so switching chats mid-timer cannot misroute it.
   const fireQueued = useCallback((sessionID: string) => {
-    const q = queuedRef.current[sessionID];
-    if (!q) return;
+    const list = queuedRef.current[sessionID];
+    if (!list || list.length === 0) return;
     if (runningMapRef.current[sessionID]) return;
-    setQueued((prev) => {
-      const next = { ...prev };
-      delete next[sessionID];
-      return next;
-    });
-    setTimeout(() => sendRef.current(q, sessionID), 80);
+    const [first, ...rest] = list;
+    setQueued((prev) => ({ ...prev, [sessionID]: rest }));
+    setTimeout(() => sendRef.current(first, sessionID), 80);
   }, []);
 
   const reloadSessions = useCallback(() => {
@@ -335,7 +332,7 @@ export function ChatPage({ isDark, onToggleTheme, onOpenHelp, onOpenSettings }: 
       markRunning(activeID, r);
       // A queued message stranded by a session switch (its turn finished in
       // the background) fires now: the user is back and nothing is running.
-      if (!r && queuedRef.current[activeID]) {
+      if (!r && (queuedRef.current[activeID]?.length ?? 0) > 0) {
         fireQueued(activeID);
       }
     }).catch(() => {});
@@ -367,7 +364,7 @@ export function ChatPage({ isDark, onToggleTheme, onOpenHelp, onOpenSettings }: 
         reloadSessions();
         // A queued message fires as soon as the turn settles — including
         // after an error, so the user's follow-up is never stranded.
-        if (queuedRef.current[ev.sessionId] && ev.sessionId === activeID) {
+        if ((queuedRef.current[ev.sessionId]?.length ?? 0) > 0 && ev.sessionId === activeID) {
           fireQueued(ev.sessionId);
         }
         if (ev.sessionId !== activeID) {
@@ -492,8 +489,10 @@ export function ChatPage({ isDark, onToggleTheme, onOpenHelp, onOpenSettings }: 
   const [historyLoading, setHistoryLoading] = useState(false);
 
   // Per-session message queue: sending while a reply streams parks the text
-  // and auto-sends it when the turn settles (Codex-style queueing).
-  const [queued, setQueued] = useState<Record<string, string>>({});
+  // and auto-sends it when the turn settles (Codex-style queueing). A queue
+  // holds MULTIPLE messages — queueing twice must not silently drop the
+  // first; deliveries bounce to the front, user sends append to the back.
+  const [queued, setQueued] = useState<Record<string, string[]>>({});
   const queuedRef = useRef(queued);
   useEffect(() => { queuedRef.current = queued; }, [queued]);
   const runningMapRef = useRef(runningMap);
@@ -525,7 +524,7 @@ export function ChatPage({ isDark, onToggleTheme, onOpenHelp, onOpenSettings }: 
       }
     }
     if (runningMap[sid] && !override) {
-      setQueued((prev) => ({ ...prev, [sid]: text }));
+      setQueued((prev) => ({ ...prev, [sid]: [...(prev[sid] ?? []), text] }));
       if (sid === activeID) setInput("");
       toast("已排队：当前回复完成后自动发送");
       return;
@@ -533,8 +532,9 @@ export function ChatPage({ isDark, onToggleTheme, onOpenHelp, onOpenSettings }: 
     if (runningMap[sid]) {
       // Queued deliveries that raced with a newly-busy session go back into
       // the queue (fired again when the next turn settles) — never dropped.
+      // They re-enter at the FRONT to preserve the user's ordering.
       if (override !== undefined) {
-        setQueued((prev) => ({ ...prev, [sid]: text }));
+        setQueued((prev) => ({ ...prev, [sid]: [text, ...(prev[sid] ?? [])] }));
       }
       return;
     }
@@ -1161,6 +1161,32 @@ export function ChatPage({ isDark, onToggleTheme, onOpenHelp, onOpenSettings }: 
     const q = input.toLowerCase();
     return SLASH_COMMANDS.filter((c) => c.cmd.startsWith(q));
   }, [input]);
+  // Slash suggestions match the mention popup's interaction: full keyboard
+  // navigation, Enter/Tab to pick, Esc to dismiss until the text changes.
+  const [slashIdx, setSlashIdx] = useState(0);
+  const [slashDismissed, setSlashDismissed] = useState<string | null>(null);
+  const slashOpen = slashSuggestions.length > 0 && input !== slashDismissed;
+  useEffect(() => {
+    setSlashIdx(0);
+    if (input !== slashDismissed) setSlashDismissed(null);
+  }, [input, slashDismissed]);
+  const applySlash = (cmd: string) => {
+    setInput(cmd + " ");
+    setSlashDismissed(null);
+    inputRef.current?.focus();
+  };
+
+  // Auto-grow the composer with its content, capped by max-h-48 (192px) —
+  // beyond the cap the textarea scrolls internally and the message list
+  // keeps the remaining space.
+  useEffect(() => {
+    const ta = inputRef.current;
+    if (!ta) return;
+    ta.style.height = "auto";
+    ta.style.height = `${Math.min(ta.scrollHeight, 192)}px`;
+  }, [input, activeID]);
+  // Visual feedback while a file hovers the composer drop zone.
+  const [dragOver, setDragOver] = useState(false);
 
   // @-mention autocomplete: a leading "@名称" routes that turn to the named
   // agent/team/remote (parsed by the backend), so the popup offers exactly
@@ -1848,21 +1874,21 @@ export function ChatPage({ isDark, onToggleTheme, onOpenHelp, onOpenSettings }: 
               <PlanStrip todos={activePlan} />
             </div>
           )}
-          {activeID && queued[activeID] && (
-            <div className="mx-auto mb-2 flex max-w-3xl items-center gap-2 rounded-lg border border-primary/30 bg-primary/5 px-3 py-1.5 text-xs">
-              <span className="min-w-0 flex-1 truncate">已排队：{queued[activeID]}</span>
+          {(queued[activeID] ?? []).map((q, qi) => (
+            <div key={qi} className="mx-auto mb-2 flex max-w-3xl items-center gap-2 rounded-lg border border-primary/30 bg-primary/5 px-3 py-1.5 text-xs">
+              <span className="shrink-0 text-muted-foreground">{qi === 0 ? "已排队" : `排队 #${qi + 1}`}</span>
+              <span className="min-w-0 flex-1 truncate">{q}</span>
               <button
                 className="shrink-0 underline underline-offset-2 hover:text-foreground"
                 onClick={() => setQueued((prev) => {
-                  const next = { ...prev };
-                  delete next[activeID];
+                  const next = { ...prev, [activeID]: (prev[activeID] ?? []).filter((_, i) => i !== qi) };
                   return next;
                 })}
               >
                 取消
               </button>
             </div>
-          )}
+          ))}
           <div className="mx-auto max-w-3xl">
             {editing && (
               <div className="mb-2 flex items-center justify-between rounded-md border border-primary/40 bg-primary/5 px-3 py-1.5 text-xs text-muted-foreground">
@@ -1922,9 +1948,18 @@ export function ChatPage({ isDark, onToggleTheme, onOpenHelp, onOpenSettings }: 
           )}
           <div
             className="mx-auto flex max-w-3xl items-end gap-2"
-            onDragOver={(e) => e.preventDefault()}
+            onDragOver={(e) => {
+              e.preventDefault();
+              setDragOver(true);
+            }}
+            onDragLeave={(e) => {
+              // Child elements fire dragleave on the way through: only clear
+              // when the pointer actually left the drop zone.
+              if (!e.currentTarget.contains(e.relatedTarget as Node)) setDragOver(false);
+            }}
             onDrop={(e) => {
               e.preventDefault();
+              setDragOver(false);
               if (e.dataTransfer.files.length > 0) addFiles(e.dataTransfer.files);
             }}
           >
@@ -1960,13 +1995,19 @@ export function ChatPage({ isDark, onToggleTheme, onOpenHelp, onOpenSettings }: 
                   </button>
                 </div>
               )}
-              {slashSuggestions.length > 0 && (
-                <div className="absolute bottom-full left-0 right-0 mb-2 flex flex-wrap gap-1.5">
-                  {slashSuggestions.map((c) => (
+              {slashOpen && (
+                <div className="absolute bottom-full left-0 right-0 mb-2 flex flex-wrap gap-1.5" role="listbox" aria-label="斜杠命令建议">
+                  {slashSuggestions.map((c, i) => (
                     <button
                       key={c.cmd}
-                      className="rounded-lg border bg-background px-2.5 py-1 text-left text-xs hover:bg-accent"
-                      onClick={() => { setInput(c.cmd + " "); inputRef.current?.focus(); }}
+                      role="option"
+                      aria-selected={i === slashIdx}
+                      className={cn(
+                        "rounded-lg border px-2.5 py-1 text-left text-xs transition-colors",
+                        i === slashIdx ? "border-primary bg-accent text-accent-foreground" : "bg-background hover:bg-accent",
+                      )}
+                      onMouseEnter={() => setSlashIdx(i)}
+                      onMouseDown={(e) => { e.preventDefault(); applySlash(c.cmd); }}
                     >
                       <span className="font-mono">{c.cmd}</span>
                       <span className="ml-1.5 text-muted-foreground">{c.desc}</span>
@@ -1999,6 +2040,30 @@ export function ChatPage({ isDark, onToggleTheme, onOpenHelp, onOpenSettings }: 
                     if (e.key === "Escape") {
                       e.preventDefault();
                       setMentionDismissed(mentionQuery);
+                      return;
+                    }
+                  }
+                  // Slash suggestions sit below the mention popup in priority
+                  // (they never open together: "/" vs "@" prefixes).
+                  if (slashOpen && !mentionOpen) {
+                    if (e.key === "ArrowDown") {
+                      e.preventDefault();
+                      setSlashIdx((i) => (i + 1) % slashSuggestions.length);
+                      return;
+                    }
+                    if (e.key === "ArrowUp") {
+                      e.preventDefault();
+                      setSlashIdx((i) => (i - 1 + slashSuggestions.length) % slashSuggestions.length);
+                      return;
+                    }
+                    if ((e.key === "Enter" || e.key === "Tab") && !e.shiftKey && !e.nativeEvent.isComposing) {
+                      e.preventDefault();
+                      applySlash(slashSuggestions[slashIdx].cmd);
+                      return;
+                    }
+                    if (e.key === "Escape") {
+                      e.preventDefault();
+                      setSlashDismissed(input);
                       return;
                     }
                   }
@@ -2054,7 +2119,11 @@ export function ChatPage({ isDark, onToggleTheme, onOpenHelp, onOpenSettings }: 
                 disabled={!active && providerCount === 0}
                 // Cap the growing textarea so a long paste shrinks the message
                 // list instead of squeezing the composer out of the viewport.
-                className={cn("max-h-48 overflow-y-auto", listening && "border-primary/60 ring-1 ring-primary/40")}
+                className={cn(
+                  "max-h-48 overflow-y-auto",
+                  dragOver && "border-primary ring-2 ring-primary/30",
+                  listening && "border-primary/60 ring-1 ring-primary/40",
+                )}
               />
               <input
                 ref={fileRef}
