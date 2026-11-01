@@ -4,6 +4,18 @@
 
 ## 视觉测试与体验设计
 
+### 第一百五十四轮迭代：macOS 测试可移植性——临时目录符号链接归一化（已实施）
+
+依据：代码库从 Windows 迁到 macOS 开发后，`go test ./internal/services` 有 3 个用例失败：`TestNewSessionWorkspaceIsolatesParallelWrites`、`TestExplicitWorkspaceValidationAndConflict`、`TestSetSessionWorkspaceBeforeFirstTurnOnly`。根因是平台差异而非产品缺陷——macOS 的 `$TMPDIR`（`/var/folders/...`）本身是指向 `/private/var/folders/...` 的符号链接，生产代码 `validateTaskWorkspace` 按设计做 `filepath.EvalSymlinks` 归一化后存储工作区路径，而测试断言仍拿未解析的 `t.TempDir()` 原始路径做字符串比较，Windows 上没有这类符号链接所以从未暴露。
+
+实现要点：
+
+- `workspace_test.go` 新增 `canonicalDir` 辅助函数（与生产同款 `EvalSymlinks + Clean` 归一化，注释说明 macOS TMPDIR 符号链接背景）。
+- `newWorkspaceTestChat` 夹具在 MkdirAll 后立即归一化 `workspace`——返回的 `globalWorkspace` 与配置里存的 `Settings.WorkspaceDir` 全部变为解析后路径，自动任务目录前缀断言随之成立。
+- 两处需要「存储路径 = 传入路径」相等断言的 `chosen := t.TempDir()`（显式工作区校验、首轮改绑锁）改为 `canonicalDir(t, t.TempDir())`，语义不变：仍然验证传入目录经归一化后原样落库；仅断言错误文案的第三处（660 行附近）保持原样。
+
+测试证据：`go test ./internal/... .` 全绿（services 包 8.7s，3 个失败用例转通过，无新失败）；`go vet` 干净。产品行为零改动——`samePath` 的 `os.SameFile` 与 `validateTaskWorkspace` 归一化本就是平台无关的，本轮只修测试。
+
 ### 第一百五十三轮迭代：侧栏重排——新聊天、工作目录自动归类与最近列表（已实施）
 
 依据：用户附 ChatGPT 桌面端侧栏参考截图，要求左侧菜单改为「新聊天 + 项目（可折叠清单）+ 最近」的结构，而非原先「对话标题 + 新对话分裂按钮 + 时间/项目分组切换」的工具栏式布局。第一版仅列出手动注册的项目，用户实测（7 会话、0 注册项目、1 个显式绑定 `D:\projects\go-workbuddy`）后指出「对话的工作目录没有分类」——文件夹必须从会话工作区**自动推导**，而不是只认手动注册的项目。

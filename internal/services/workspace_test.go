@@ -45,6 +45,18 @@ func (c *ChatService) newLegacySession(targetType, targetID, title string) (conf
 	return cs, err
 }
 
+// canonicalDir mirrors validateTaskWorkspace's EvalSymlinks canonicalization
+// so path assertions hold on macOS, where TMPDIR (/var/folders) is itself a
+// symlink into /private/var/folders.
+func canonicalDir(t *testing.T, path string) string {
+	t.Helper()
+	resolved, err := filepath.EvalSymlinks(filepath.Clean(path))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return resolved
+}
+
 func newWorkspaceTestChat(t *testing.T, handler http.HandlerFunc) (*ChatService, *config.Store, string) {
 	t.Helper()
 	srv := httptest.NewServer(handler)
@@ -55,6 +67,7 @@ func newWorkspaceTestChat(t *testing.T, handler http.HandlerFunc) (*ChatService,
 	if err := os.MkdirAll(workspace, 0o755); err != nil {
 		t.Fatal(err)
 	}
+	workspace = canonicalDir(t, workspace)
 	store, err := config.Open(dir)
 	if err != nil {
 		t.Fatal(err)
@@ -222,7 +235,7 @@ func TestExplicitWorkspaceValidationAndConflict(t *testing.T) {
 		w.Header().Set("Content-Type", "text/event-stream")
 		_, _ = w.Write([]byte(sseText("ok") + sseDone))
 	})
-	chosen := t.TempDir()
+	chosen := canonicalDir(t, t.TempDir())
 
 	first, err := chat.NewSessionWithWorkspace("agent", "agent_ws", "first", chosen)
 	if err != nil {
@@ -264,7 +277,7 @@ func TestSetSessionWorkspaceBeforeFirstTurnOnly(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	chosen := t.TempDir()
+	chosen := canonicalDir(t, t.TempDir())
 	if err := chat.SetSessionWorkspace(sess.ID, chosen); err != nil {
 		t.Fatal(err)
 	}
