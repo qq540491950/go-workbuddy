@@ -31,8 +31,8 @@ func TestSessionStatsDailyCost(t *testing.T) {
 	err = store.Update(func(cfg *config.Config) {
 		cfg.Providers = append(cfg.Providers, config.ModelProvider{
 			ID: "p1", Name: "P", Protocol: config.ProtocolOpenAI,
-			BaseURL: srv.URL,
-			Models:  []config.ModelInfo{{ID: "m", PriceIn: 2, PriceOut: 8}},
+			BaseURL:   srv.URL,
+			Models:    []config.ModelInfo{{ID: "m", PriceIn: 2, PriceOut: 8}},
 			IsDefault: true,
 		})
 		cfg.Agents = append(cfg.Agents, config.AgentConfig{ID: "a1", Name: "A", ProviderID: "p1", Model: "m"})

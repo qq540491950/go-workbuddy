@@ -3,11 +3,11 @@ package mcpmgr
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
-	"fmt"
-	"io"
 	"strings"
 	"sync/atomic"
 	"testing"

@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"go-workbuddy/internal/config"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"go-workbuddy/internal/config"
 )
 
 // TestBuildTransportTrimsStdioCommand: pasted or imported configs can carry

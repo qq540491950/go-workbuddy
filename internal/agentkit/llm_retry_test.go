@@ -8,8 +8,8 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"google.golang.org/genai"
 	"google.golang.org/adk/v2/model"
+	"google.golang.org/genai"
 )
 
 // TestOpenAICompatRetriesTransient503: a 503 before any response bytes is

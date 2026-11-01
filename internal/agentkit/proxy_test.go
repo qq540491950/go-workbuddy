@@ -239,4 +239,3 @@ func mustParseURL(raw string) *url.URL {
 	}
 	return u
 }
-

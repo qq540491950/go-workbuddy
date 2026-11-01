@@ -9,8 +9,8 @@ import (
 
 	"go-workbuddy/internal/agentkit"
 	"go-workbuddy/internal/config"
-	"go-workbuddy/internal/memory"
 	"go-workbuddy/internal/mcpmgr"
+	"go-workbuddy/internal/memory"
 )
 
 // TestMemoryStatsAndClear: the remember flow feeds the store, stats report

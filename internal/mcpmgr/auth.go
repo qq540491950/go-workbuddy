@@ -99,8 +99,8 @@ func newOAuthTransport(cfg config.MCPServerConfig, tokenStore *config.Store, onA
 
 	fetcher := newBrowserAuthCodeFetcher(port, onAuthPending)
 	handlerCfg := &auth.AuthorizationCodeHandlerConfig{
-		PreregisteredClient: &oauthex.ClientCredentials{ClientID: cfg.OAuthClientID},
-		RedirectURL:         redirectURL,
+		PreregisteredClient:      &oauthex.ClientCredentials{ClientID: cfg.OAuthClientID},
+		RedirectURL:              redirectURL,
 		AuthorizationCodeFetcher: fetcher,
 		NewTokenSource: func(ctx context.Context, oc *oauth2.Config, token *oauth2.Token) (oauth2.TokenSource, error) {
 			// Persist every newly issued/refreshed token so restarts stay

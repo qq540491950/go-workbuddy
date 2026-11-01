@@ -2,8 +2,8 @@ package services
 
 import (
 	"net/http"
-	"os"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"

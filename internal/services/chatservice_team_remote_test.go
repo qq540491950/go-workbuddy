@@ -10,8 +10,8 @@ import (
 	a2acore "github.com/a2aproject/a2a-go/v2/a2a"
 	"github.com/a2aproject/a2a-go/v2/a2asrv"
 	"google.golang.org/adk/v2/agent/llmagent"
-	adka2av2 "google.golang.org/adk/v2/server/adka2a/v2"
 	"google.golang.org/adk/v2/runner"
+	adka2av2 "google.golang.org/adk/v2/server/adka2a/v2"
 
 	"go-workbuddy/internal/agentkit"
 	"go-workbuddy/internal/config"
@@ -68,7 +68,7 @@ func TestTeamRemoteMemberE2E(t *testing.T) {
 	// Coordinator model: transfer to the remote member on the first turn.
 	coordSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/event-stream")
-			target := agentkit.SanitizeAgentName("远程助手")
+		target := agentkit.SanitizeAgentName("远程助手")
 		args := `"{\"agent_name\":\"` + target + `\"}"`
 		_, _ = w.Write([]byte(sseToolCall("t1", "transfer_to_agent", args) + sseDone))
 	}))

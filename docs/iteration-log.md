@@ -3,6 +3,17 @@
 本文件按轮次记录每次功能迭代的依据、实现要点与测试证据。最新记录在最上方。
 
 ## 视觉测试与体验设计
+### 第一百七十三轮迭代：仓库卫生——gofmt 清零 + 依赖漏洞复扫（已实施）
+
+依据：抽查发现仓库存在 15 个未 gofmt 的历史文件（导入顺序/缩进偏差，CI 未强制 gofmt 故积累）；同时按惯例复扫依赖漏洞。
+
+实现要点：
+
+- `gofmt -w internal/ main.go` 一次性清零（15 文件，纯格式化），`gofmt -l` 复查为 0。
+- 依赖复扫：Go 侧本轮零新增依赖（diff 引擎手写未引库）；npm audit 余 6 项（2 low / 4 moderate）全部位于 shadcn CLI 的 devDependency 链（deepmerge 原型污染、minimatch DoS），不进生产产物，与第 136 轮结论一致，保持观察。
+
+测试证据：`go vet ./internal/... .` 干净、`go test ./internal/... . -count=1` 全绿（格式化零行为变更）；前端 `tsc --noEmit`、vitest 17/17、`npm run build` 通过。
+
 ### 第一百七十二轮迭代：批量清空已归档会话（已实施）
 
 依据：归档列表只能逐条删除，长期使用后堆积的归档会话没有批量清理出口；删除会话的取消等待/事件孤儿清理/基线清理链路已由 DeleteSession 验证，批量只是入口问题。

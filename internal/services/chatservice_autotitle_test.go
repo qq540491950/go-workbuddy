@@ -35,7 +35,7 @@ func TestAutoTitleGeneratesTitle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	db, sessions, err := newTestSessionService(t, dir + "/sessions.db")
+	db, sessions, err := newTestSessionService(t, dir+"/sessions.db")
 	if err != nil {
 		t.Fatal(err)
 	}

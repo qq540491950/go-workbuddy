@@ -10,8 +10,8 @@ import (
 	a2acore "github.com/a2aproject/a2a-go/v2/a2a"
 	"github.com/a2aproject/a2a-go/v2/a2asrv"
 	"google.golang.org/adk/v2/agent/llmagent"
-	adka2av2 "google.golang.org/adk/v2/server/adka2a/v2"
 	"google.golang.org/adk/v2/runner"
+	adka2av2 "google.golang.org/adk/v2/server/adka2a/v2"
 
 	"go-workbuddy/internal/agentkit"
 	"go-workbuddy/internal/config"

@@ -240,7 +240,7 @@ func TestSendCancelIsStable(t *testing.T) {
 		})
 		cfg.Agents = append(cfg.Agents, config.AgentConfig{ID: "a1", Name: "A", ProviderID: "p1", Model: "m"})
 	})
-	db, sessions, err := newTestSessionService(t, dir + "/s.db")
+	db, sessions, err := newTestSessionService(t, dir+"/s.db")
 	if err != nil {
 		t.Fatal(err)
 	}

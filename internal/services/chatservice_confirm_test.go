@@ -45,7 +45,7 @@ func newConfirmTestChat(t *testing.T, handler http.HandlerFunc) (*ChatService, *
 		})
 		cfg.Agents = append(cfg.Agents, config.AgentConfig{
 			ID: "agent_c", Name: "写手", ProviderID: "prov_c", Model: "fake-mini",
-			SystemPrompt: "你负责写文件", BuiltinTools:  []string{"files"},
+			SystemPrompt: "你负责写文件", BuiltinTools: []string{"files"},
 			ConfirmTools: []string{"files"},
 		})
 	})
