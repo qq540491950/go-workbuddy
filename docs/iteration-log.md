@@ -4,6 +4,19 @@
 
 ## 视觉测试与体验设计
 
+### 第一百五十九轮迭代：ConfirmDialog 化 + 按钮收敛 + 会话切换快捷键（已实施）
+
+依据：UX 盘点三处一致性问题：删除项目/会话用原生 `window.confirm`（焦点抢占、与应用主题割裂、不可样式化）；会话头部六个图标按钮与会话行悬停六个按钮在窄窗口拥挤、危险操作（删除）与高频操作（复制）并列无层次；快捷键缺会话切换且全局 ⌘ 系处理未防按住重复触发。
+
+实现要点：
+
+- **ConfirmDialog**：新增 `ui/alert-dialog.tsx`（radix AlertDialog 原语，样式与 dialog.tsx 同族）与 `ConfirmDialog` 组件（受控、destructive 变体、Esc/取消语义）；`removeSession` 与 `deleteProject` 改为请求式确认（`confirmRequest` 状态 + `action` 回调），删除改为确认后执行。
+- **头部收敛**：复制整段对话/导出 Markdown/导出 HTML/会话统计/存入长期记忆五项收进「更多操作」（MoreHorizontal）下拉菜单，结果区按钮保留在头部。
+- **会话行收敛**：归档/置顶保留为单击切换，分叉/重命名/移动到项目（子菜单）/删除收进「…」菜单，删除项 destructive 红色；行悬停控件从 6 个减到 3 个，全部补 aria-label。
+- **快捷键**：⌘⇧[ / ⌘⇧]（按 `e.code` 判定，跨键盘布局）切换上一个/下一个会话，经自定义事件转发（与 ⌘N 同款延迟派发，穿越设置视图），在 `sessions` 侧栏顺序上回绕；全局 ⌘ 系处理统一 `e.repeat` 防抖；帮助面板补 ⌘⇧[/]、↑ 编辑、Esc 链三行。
+
+测试证据：`tsc --noEmit`、vitest 17/17、`npm run build` 通过。浏览器桩走查：派发 `wb-next-session` 会话切换生效（GetSessionMessages 重新拉取）；「更多操作」菜单渲染五项；会话行悬停仅剩 归档/置顶/会话操作 三控件；「…」菜单四项含「移动到项目」子菜单；「删除会话…」打开 ConfirmDialog（标题/描述正确），取消关闭且不执行删除；⌘ 系快捷键按住不重复触发（代码路径同 ⌘N，`e.repeat` 早退）。
+
 ### 第一百五十八轮迭代：流式渲染性能——delta 合并与搜索索引惰性化（已实施）
 
 依据：UX 盘点确认长会话 + 高速流式的主线程压力：每个 delta token 触发一次 `setMessages`（ChatPage 整体重渲 + 消息列表全量 diff），且以 `messages` 为依赖的 `searchIndex` useMemo 对每条消息做 `JSON.stringify(toolResp/toolArgs)` 每 token 全量重算——200 条会话上每个 token 都是 O(n) 序列化。Markdown 每 token 重解析在 memo 已覆盖的前提下，主要瓶颈是 setState 频率与索引重算。

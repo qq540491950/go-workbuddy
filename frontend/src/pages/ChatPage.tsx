@@ -19,6 +19,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
+import { ConfirmDialog, type ConfirmRequest } from "@/components/ConfirmDialog";
 import {
   Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
@@ -26,7 +27,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import {
-  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger,
+  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuSub, DropdownMenuSubContent, DropdownMenuSubTrigger, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
 import { computeEditFlags, computeRunningTools, computeToolDurations, dayLabel, fmtTime, groupSessionsByProject, groupSessionsByTime, isDayChange, mdToSpeech, type UIMessage } from "@/lib/chatUtils";
@@ -513,6 +514,27 @@ export function ChatPage({ isDark, onToggleTheme, onOpenHelp, onOpenSettings }: 
     };
   }, []);
 
+  // ⌘⇧[ / ⌘⇧] (dispatched by App) walk the session list in its sidebar
+  // order (most recent first), wrapping at the ends.
+  useEffect(() => {
+    const step = (dir: number) => {
+      if (sessions.length === 0) return;
+      const idx = sessions.findIndex((s) => s.id === activeID);
+      const next = idx < 0
+        ? (dir > 0 ? 0 : sessions.length - 1)
+        : (idx + dir + sessions.length) % sessions.length;
+      setActiveID(sessions[next].id);
+    };
+    const onPrev = () => step(-1);
+    const onNext = () => step(1);
+    window.addEventListener("wb-prev-session", onPrev);
+    window.addEventListener("wb-next-session", onNext);
+    return () => {
+      window.removeEventListener("wb-prev-session", onPrev);
+      window.removeEventListener("wb-next-session", onNext);
+    };
+  }, [sessions, activeID]);
+
   // Window-level drag guard: dropping a file outside the composer must not
   // let the webview navigate away from the app.
   useEffect(() => {
@@ -531,6 +553,8 @@ export function ChatPage({ isDark, onToggleTheme, onOpenHelp, onOpenSettings }: 
   // History fetch in flight after a session switch: render skeletons instead
   // of an empty-looking conversation.
   const [historyLoading, setHistoryLoading] = useState(false);
+  // Shared destructive-confirmation dialog (replaces window.confirm).
+  const [confirmRequest, setConfirmRequest] = useState<ConfirmRequest | null>(null);
 
   // Per-session message queue: sending while a reply streams parks the text
   // and auto-sends it when the turn settles (Codex-style queueing). A queue
@@ -878,15 +902,20 @@ export function ChatPage({ isDark, onToggleTheme, onOpenHelp, onOpenSettings }: 
   };
 
   const deleteProject = async (p: Project) => {
-    if (!window.confirm(`确定删除项目「${p.name}」？其中的对话将回到默认项目，项目文件不会删除。`)) return;
-    try {
-      await Chat.DeleteProject(p.id);
-      reloadProjects();
-      reloadSessions();
-      toast.success(`已删除项目「${p.name}」`);
-    } catch (e) {
-      toast.error(`删除项目失败: ${errText(e)}`);
-    }
+    setConfirmRequest({
+      title: `删除项目「${p.name}」？`,
+      description: "其中的对话将回到默认项目，项目文件不会删除。",
+      confirmText: "删除",
+      action: () => {
+        Chat.DeleteProject(p.id)
+          .then(() => {
+            reloadProjects();
+            reloadSessions();
+            toast.success(`已删除项目「${p.name}」`);
+          })
+          .catch((e) => toast.error(`删除项目失败: ${errText(e)}`));
+      },
+    });
   };
 
   const changeSessionWorkspace = async () => {
@@ -918,14 +947,21 @@ export function ChatPage({ isDark, onToggleTheme, onOpenHelp, onOpenSettings }: 
     }
   };
 
-  const removeSession = async (s: ChatSession) => {
-    if (!window.confirm(`确定删除会话「${s.title}」？会话与消息将不可恢复，但任务工作区中的文件会保留。`)) return;
-    await Chat.DeleteSession(s.id).catch((e) => toast.error(`删除失败: ${errText(e)}`));
-    if (s.id === activeID) {
-      setActiveID("");
-      setMessages([]);
-    }
-    reloadSessions();
+  const removeSession = (s: ChatSession) => {
+    setConfirmRequest({
+      title: `删除会话「${s.title}」？`,
+      description: "会话与消息将不可恢复，任务工作区中的文件会保留。",
+      confirmText: "删除",
+      action: () => {
+        Chat.DeleteSession(s.id)
+          .catch((e) => toast.error(`删除失败: ${errText(e)}`));
+        if (s.id === activeID) {
+          setActiveID("");
+          setMessages([]);
+        }
+        reloadSessions();
+      },
+    });
   };
 
     const [contentMatches, setContentMatches] = useState<Set<string> | null>(null);
@@ -1336,28 +1372,12 @@ export function ChatPage({ isDark, onToggleTheme, onOpenHelp, onOpenSettings }: 
       {runningMap[s.id] && <Loader2 className="h-3 w-3 shrink-0 animate-spin text-primary" aria-label="生成中" />}
       {!runningMap[s.id] && unread[s.id] && <span className="h-2 w-2 shrink-0 rounded-full bg-primary" aria-label="有新回复未查看" />}
       <span className="hidden shrink-0 items-center gap-0.5 group-hover:flex">
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <button
-              className="rounded p-0.5 hover:bg-background"
-              title="移动到项目（首轮前生效）"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <FolderInput className="h-3 w-3" />
-            </button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
-            <DropdownMenuItem onClick={() => switchSessionProject(s, "")}>默认项目</DropdownMenuItem>
-            {projects.map((p) => (
-              <DropdownMenuItem key={p.id} title={p.rootDir} onClick={() => switchSessionProject(s, p.id)}>
-                {p.name}
-              </DropdownMenuItem>
-            ))}
-          </DropdownMenuContent>
-        </DropdownMenu>
+        {/* Frequent state toggles stay one click; the rest collapse into one
+            menu so the row keeps four controls instead of six. */}
         <button
           className="rounded p-0.5 hover:bg-background"
           title={s.archived ? "取消归档" : "归档此会话"}
+          aria-label={s.archived ? "取消归档" : "归档此会话"}
           onClick={(e) => {
             e.stopPropagation();
             Chat.ArchiveSession(s.id, !s.archived).then(reloadSessions).catch((e2) => toast.error(`归档失败: ${errText(e2)}`));
@@ -1368,6 +1388,7 @@ export function ChatPage({ isDark, onToggleTheme, onOpenHelp, onOpenSettings }: 
         <button
           className="rounded p-0.5 hover:bg-background"
           title={s.pinned ? "取消置顶" : "置顶此会话"}
+          aria-label={s.pinned ? "取消置顶" : "置顶此会话"}
           onClick={(e) => {
             e.stopPropagation();
             Chat.PinSession(s.id, !s.pinned).then(reloadSessions).catch((e2) => toast.error(`置顶失败: ${errText(e2)}`));
@@ -1375,25 +1396,43 @@ export function ChatPage({ isDark, onToggleTheme, onOpenHelp, onOpenSettings }: 
         >
           {s.pinned ? <PinOff className="h-3 w-3" /> : <Pin className="h-3 w-3" />}
         </button>
-        <button
-          className="rounded p-0.5 hover:bg-background"
-          title="分叉此会话（复制完整历史为独立新会话）"
-          onClick={(e) => { e.stopPropagation(); forkSession(s); }}
-        >
-          <GitFork className="h-3 w-3" />
-        </button>
-        <button
-          className="rounded p-0.5 hover:bg-background"
-          onClick={(e) => { e.stopPropagation(); setRenaming(s); setRenameText(s.title); }}
-        >
-          <Pencil className="h-3 w-3" />
-        </button>
-        <button
-          className="rounded p-0.5 hover:bg-background"
-          onClick={(e) => { e.stopPropagation(); removeSession(s); }}
-        >
-          <Trash2 className="h-3 w-3" />
-        </button>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button
+              className="rounded p-0.5 hover:bg-background"
+              title="会话操作"
+              aria-label="会话操作"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <MoreHorizontal className="h-3 w-3" />
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
+            <DropdownMenuSub>
+              <DropdownMenuSubTrigger>
+                <FolderInput className="mr-2 h-3.5 w-3.5" /> 移动到项目（首轮前生效）
+              </DropdownMenuSubTrigger>
+              <DropdownMenuSubContent>
+                <DropdownMenuItem onClick={() => switchSessionProject(s, "")}>默认项目</DropdownMenuItem>
+                {projects.map((p) => (
+                  <DropdownMenuItem key={p.id} title={p.rootDir} onClick={() => switchSessionProject(s, p.id)}>
+                    {p.name}
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuSubContent>
+            </DropdownMenuSub>
+            <DropdownMenuItem onClick={() => forkSession(s)}>
+              <GitFork className="mr-2 h-3.5 w-3.5" /> 分叉此会话
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => { setRenaming(s); setRenameText(s.title); }}>
+              <Pencil className="mr-2 h-3.5 w-3.5" /> 重命名
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem className="text-destructive focus:text-destructive" onClick={() => removeSession(s)}>
+              <Trash2 className="mr-2 h-3.5 w-3.5" /> 删除会话…
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </span>
     </div>
   );
@@ -1761,37 +1800,41 @@ export function ChatPage({ isDark, onToggleTheme, onOpenHelp, onOpenSettings }: 
             )}
             {active && (
               <>
-                <Button
-                  variant="ghost" size="icon" title="复制整段对话到剪贴板"
-                  onClick={copyConversation}
-                >
-                  <ClipboardCopy className="h-4 w-4" />
-                </Button>
-                <Button
-                  variant="ghost" size="icon" title="导出为自包含 HTML（样式化渲染）"
-                  onClick={exportHTML}
-                >
-                  <FileCode2 className="h-4 w-4" />
-                </Button>
-                <Button
-                  variant="ghost" size="icon" title="存入长期记忆（供其他对话召回）"
-                  onClick={async () => {
-                    try {
-                      const n = await Chat.RememberSession(activeID);
-                      toast.success(`已存入长期记忆（共 ${n} 条）`);
-                    } catch (e) {
-                      toast.error(`存入失败: ${errText(e)}`);
-                    }
-                  }}
-                >
-                  <Brain className="h-4 w-4" />
-                </Button>
-                <Button variant="ghost" size="icon" title="会话统计" onClick={openStats}>
-                  <BarChart3 className="h-4 w-4" />
-                </Button>
-                <Button variant="ghost" size="icon" title="导出为 Markdown" onClick={exportSession}>
-                  <Download className="h-4 w-4" />
-                </Button>
+                {/* Export/memory/stats live in one overflow menu: six icon
+                    buttons crowded the header on narrow windows. */}
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="ghost" size="icon" title="更多操作" aria-label="更多操作">
+                      <MoreHorizontal className="h-4 w-4" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuItem onClick={copyConversation}>
+                      <ClipboardCopy className="h-4 w-4" /> 复制整段对话
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={exportSession}>
+                      <Download className="h-4 w-4" /> 导出为 Markdown
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={exportHTML}>
+                      <FileCode2 className="h-4 w-4" /> 导出为 HTML
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={openStats}>
+                      <BarChart3 className="h-4 w-4" /> 会话统计
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onClick={async () => {
+                        try {
+                          const n = await Chat.RememberSession(activeID);
+                          toast.success(`已存入长期记忆（共 ${n} 条）`);
+                        } catch (e) {
+                          toast.error(`存入失败: ${errText(e)}`);
+                        }
+                      }}
+                    >
+                      <Brain className="h-4 w-4" /> 存入长期记忆
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
                 <Button
                   variant={workspacePanelOpen ? "secondary" : "ghost"}
                   size="icon"
@@ -2234,6 +2277,7 @@ export function ChatPage({ isDark, onToggleTheme, onOpenHelp, onOpenSettings }: 
       )}
 
       {/* Session stats dialog */}
+      <ConfirmDialog request={confirmRequest} onClose={() => setConfirmRequest(null)} />
       <Dialog open={statsOpen} onOpenChange={setStatsOpen}>
         <DialogContent className="sm:max-w-sm">
           <DialogHeader>

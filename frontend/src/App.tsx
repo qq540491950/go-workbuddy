@@ -21,13 +21,28 @@ export default function App() {
 
   // Global shortcuts (documented in the help panel on every page): ⌘N starts
   // a chat; ⌘K focuses the composer; ⌘F toggles in-session search; ⌘, opens
-  // settings. ChatPage consumes the chat shortcuts via window events so they
-  // survive view switches.
+  // settings; ⌘⇧[ / ⌘⇧] cycle sessions. ChatPage consumes the chat shortcuts
+  // via window events so they survive view switches.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const mod = e.metaKey || e.ctrlKey;
+      if (!mod || e.repeat) return;
+      // ⌘⇧[ / ⌘⇧] move through the session list (US layouts report the key
+      // as { / }; compare by code so the shortcut survives layouts).
+      if (e.shiftKey && e.code === "BracketLeft") {
+        e.preventDefault();
+        setView("chat");
+        setTimeout(() => window.dispatchEvent(new CustomEvent("wb-prev-session")), 50);
+        return;
+      }
+      if (e.shiftKey && e.code === "BracketRight") {
+        e.preventDefault();
+        setView("chat");
+        setTimeout(() => window.dispatchEvent(new CustomEvent("wb-next-session")), 50);
+        return;
+      }
       const key = e.key.toLowerCase();
-      if (!mod || (key !== "n" && key !== "k" && key !== "f" && key !== "," && key !== "b")) return;
+      if (key !== "n" && key !== "k" && key !== "f" && key !== "," && key !== "b") return;
       e.preventDefault();
       if (key === "b") {
         setView("chat");
@@ -129,6 +144,9 @@ export default function App() {
                 ["⌘/Ctrl + F", "会话内搜索（全局）"],
                 ["⌘/Ctrl + ,", "打开设置（全局）"],
                 ["⌘/Ctrl + B", "折叠 / 展开对话列表"],
+                ["⌘/Ctrl + ⇧[ / ⇧]", "上一个 / 下一个会话"],
+                ["↑", "编辑最后一条消息（输入框为空时）"],
+                ["Esc", "取消编辑 → 停止生成 → 关闭搜索"],
                 ["/export", "导出会话 Markdown"],
                 ["/exporthtml", "导出会话 HTML"],
                 ["/stats", "会话统计"],
