@@ -3,6 +3,20 @@
 本文件按轮次记录每次功能迭代的依据、实现要点与测试证据。最新记录在最上方。
 
 ## 视觉测试与体验设计
+### 第一百七十七轮迭代：收官验证（07:10 ALL GREEN）
+
+第三次全量验证通过（verify 链：前端 vitest/tsc → go vet → 全量测试 → -race → wails3 build），无回归。
+
+**保活验证记录**：Beat 1（02:05）/-race 全绿；Beat 2（03:08）/-race 全绿；Beat 3（04:08）/-race 全绿 + tsc 干净；Beat 4（05:08）/-race 全绿；Beat 5（06:08）/-race 全绿；Beat 6（07:10）/race + vitest + tsc 全绿、工作树干净。
+
+**本次迭代会话总览**（第 154–177 轮，23 个提交，686911c..HEAD）：
+
+- **能力**：任务变更行级 diff（基线内容快照 + 有界 diff 引擎 + DiffView/复制 Patch/预览内切换）、批量清空归档会话、RevealWorkspaceFile 外部打开。
+- **体验**：消息操作解禁、↑ 编辑、Esc 优先级链、composer 自动增高、斜杠键盘导航、排队多条不覆盖、拖拽高亮、切换加载骨架屏、回到底部浮钮、过滤命中高亮、ConfirmDialog 化、按钮收敛、快捷键补全（⌘⇧[⇧]）、渲染截断翻页、空态统一。
+- **质量**：流式 delta 合并与索引惰性化（性能）、a11y（live region/listbox/focus-within）、浅色主题走查、macOS 测试可移植性、diff 引擎随机化不变量测试、双轴代码审查修复批。
+- **架构**：chatservice.go 2433 行拆六文件、ChatPage 尾部组件迁出、gofmt 全仓清零。
+- **验证基线**：`go test -race ./internal/... .` 本机首次可跑且持续全绿（约 225 用例）；wails3 build 产物 macOS 烟雾通过；桩走查覆盖全部新 UI。
+
 ### 第一百七十六轮迭代：会话内过滤命中高亮（已实施）
 
 依据：UX 盘点最后一个缓办项——⌘F 过滤只筛掉不匹配的行，命中关键词在行内什么位置仍需目扫。Markdown 内联高亮需 remark 插件链改造，本轮先覆盖明文渲染路径。
