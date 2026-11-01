@@ -1,4 +1,4 @@
-module changeme
+module go-workbuddy
 
 go 1.26.6
 

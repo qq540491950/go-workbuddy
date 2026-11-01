@@ -11,7 +11,7 @@ import (
 	"sync"
 	"time"
 
-	"changeme/internal/config"
+	"go-workbuddy/internal/config"
 )
 
 const taskSnapshotVersion = 1

@@ -11,12 +11,12 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"changeme/internal/memory"
+	"go-workbuddy/internal/memory"
 	adkmemory "google.golang.org/adk/v2/memory"
 
-	"changeme/internal/agentkit"
-	"changeme/internal/config"
-	"changeme/internal/mcpmgr"
+	"go-workbuddy/internal/agentkit"
+	"go-workbuddy/internal/config"
+	"go-workbuddy/internal/mcpmgr"
 )
 
 // newChatFixture spins up a fake OpenAI SSE server whose reply is controlled

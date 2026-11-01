@@ -28,8 +28,8 @@ import (
 	"github.com/gomarkdown/markdown"
 	htmlrenderer "github.com/gomarkdown/markdown/html"
 
-	"changeme/internal/agentkit"
-	"changeme/internal/config"
+	"go-workbuddy/internal/agentkit"
+	"go-workbuddy/internal/config"
 )
 
 // Event names emitted to the frontend (registered in main.go).

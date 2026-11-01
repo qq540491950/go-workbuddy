@@ -1,9 +1,9 @@
 // Thin re-export layer over the generated Wails bindings.
-import * as services from "../../bindings/changeme/internal/services";
-import * as configModels from "../../bindings/changeme/internal/config/models";
-import * as mcpModels from "../../bindings/changeme/internal/mcpmgr/models";
-import * as serviceModels from "../../bindings/changeme/internal/services/models";
-import * as agentkitModels from "../../bindings/changeme/internal/agentkit/models";
+import * as services from "../../bindings/go-workbuddy/internal/services";
+import * as configModels from "../../bindings/go-workbuddy/internal/config/models";
+import * as mcpModels from "../../bindings/go-workbuddy/internal/mcpmgr/models";
+import * as serviceModels from "../../bindings/go-workbuddy/internal/services/models";
+import * as agentkitModels from "../../bindings/go-workbuddy/internal/agentkit/models";
 
 export const App = services.AppService;
 export const A2A = services.A2AService;

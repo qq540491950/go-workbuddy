@@ -8,7 +8,7 @@ import (
 	"google.golang.org/adk/v2/agent"
 	remoteagentv2 "google.golang.org/adk/v2/agent/remoteagent/v2"
 
-	"changeme/internal/config"
+	"go-workbuddy/internal/config"
 )
 
 // BuildRemoteAgent creates an ADK agent that proxies a remote A2A agent

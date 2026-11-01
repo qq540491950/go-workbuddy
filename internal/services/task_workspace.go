@@ -11,7 +11,7 @@ import (
 
 	"google.golang.org/adk/v2/session"
 
-	"changeme/internal/config"
+	"go-workbuddy/internal/config"
 )
 
 // SetSessionWorkspace rebinds a task before its first event. The directory is

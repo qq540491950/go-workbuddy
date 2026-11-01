@@ -16,16 +16,16 @@ build/ios/xcode/gen/
 build/android/overlay.json
 frontend/public/__wb-mock.js
 
-# Go 编译产物（模块名 changeme 时 go build 的输出）。
-# 必须锚定到仓库根：裸 `changeme` 会连带匹配 frontend/bindings/changeme/，
+# Go 编译产物（模块名 go-workbuddy 时 go build 的输出）。
+# 必须锚定到仓库根：裸 `go-workbuddy` 会连带匹配 frontend/bindings/go-workbuddy/，
 # 让生成的绑定文件静默不入库，新克隆的 tsc 就会失败。
-/changeme
+/go-workbuddy
 
 # 本地安装的 ZCode skills（mattpocock/skills，不入库）与本地计划草稿
 .zcode/skills/
 .zcode/plans/
 
-# 绑定生成器的依赖包扫描产物（每次构建自动重建，仅 changeme 与 github.com 入库）
+# 绑定生成器的依赖包扫描产物（每次构建自动重建，仅 go-workbuddy 与 github.com 入库）
 frontend/bindings/context
 frontend/bindings/database
 frontend/bindings/gorm.io

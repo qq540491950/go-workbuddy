@@ -8,9 +8,9 @@ import (
 	"strings"
 	"testing"
 
-	"changeme/internal/agentkit"
-	"changeme/internal/config"
-	"changeme/internal/mcpmgr"
+	"go-workbuddy/internal/agentkit"
+	"go-workbuddy/internal/config"
+	"go-workbuddy/internal/mcpmgr"
 )
 
 // TestForkSession branches a conversation: the fork carries a full copy of

@@ -24,8 +24,8 @@ import (
 	"google.golang.org/adk/v2/tool/skilltoolset/skill"
 	"google.golang.org/genai"
 
-	"changeme/internal/config"
-	"changeme/internal/mcpmgr"
+	"go-workbuddy/internal/config"
+	"go-workbuddy/internal/mcpmgr"
 )
 
 // ModelFactory builds the model.LLM for a provider/model pair.

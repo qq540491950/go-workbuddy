@@ -175,27 +175,27 @@ const dialogMode = stubParams.get("dialogMode") === "cancel" ? "cancel" : "selec
 
 const handlers: Record<string, (args: any[]) => any> = {
   // GetConfig
-  "362021961": () => seedConfig,
+  "2830209267": () => seedConfig,
   // ListSessions
-  "1516353476": () => {
+  "2944653350": () => {
     (window as any).__lastList = JSON.parse(JSON.stringify(seedConfig.sessions));
     return seedConfig.sessions;
   },
   // GetSessionMessages(sessionID)
-  "3662319581": (args) => histories[args[0]] ?? [],
+  "252791171": (args) => histories[args[0]] ?? [],
   // IsRunning(sessionID)
-  "3574706456": () => false,
+  "2185013938": () => false,
   // SessionStats(sessionID)
-  "568481502": () => ({ messages: 1, toolCalls: 1, toolFailures: 0, assistantTurns: 0, tokensIn: 120, tokensOut: 80, tokensTotal: 200 }),
+  "4163807688": () => ({ messages: 1, toolCalls: 1, toolFailures: 0, assistantTurns: 0, tokensIn: 120, tokensOut: 80, tokensTotal: 200 }),
   // SetSessionModel(sessionID, modelID)
-  "1164146246": (args) => {
+  "359717012": (args) => {
     for (const sess of seedConfig.sessions) {
       if (sess.id === args[0]) sess.modelOverride = args[1] || "";
     }
     return null;
   },
   // NewSessionWithWorkspace(targetType, targetID, title, workspaceDir)
-  "2938112124": (args) => {
+  "1384618270": (args) => {
     if (workspaceMockMode === "conflict") throw new Error("工作区已被任务「需要确认的写入」使用，请选择其他目录");
     if (workspaceMockMode === "error") throw new Error("工作区不可写");
     const id = `sess_stub_${seedConfig.sessions.length + 1}`;
@@ -213,7 +213,7 @@ const handlers: Record<string, (args: any[]) => any> = {
     return sess;
   },
   // SetSessionWorkspace(sessionID, workspaceDir)
-  "3910017842": (args) => {
+  "185468012": (args) => {
     if (workspaceMockMode === "conflict") throw new Error("工作区已被任务「需要确认的写入」使用，请选择其他目录");
     if (workspaceMockMode === "error") throw new Error("工作区不可写");
     const sess = seedConfig.sessions.find((s) => s.id === args[0]);
@@ -221,7 +221,7 @@ const handlers: Record<string, (args: any[]) => any> = {
     return null;
   },
   // SessionWorkspace(sessionID)
-  "2695952392": (args) => {
+  "3713305274": (args) => {
     const sess = seedConfig.sessions.find((s) => s.id === args[0]);
     if (!sess) throw new Error("会话不存在");
     return sess.workspaceDir || seedConfig.settings.workspaceDir;
@@ -284,7 +284,7 @@ const handlers: Record<string, (args: any[]) => any> = {
     };
   },
   // ArtifactService.OpenForSession(sessionID, path)
-  "4168803584": (args) => ({
+  "3670798310": (args) => ({
     name: String(args[1]).split("/").pop(),
     path: args[1],
     kind: args[1].endsWith(".png") ? "image" : "markdown",
@@ -293,9 +293,9 @@ const handlers: Record<string, (args: any[]) => any> = {
     text: args[1].endsWith(".png") ? undefined : "# 周报\n\n任务文件预览。",
   }),
   // AppInfo
-  "2350821288": () => ({ name: "WorkBuddy Agent", version: "stub", adk: "google adk-go v2" }),
+  "2925845021": () => ({ name: "WorkBuddy Agent", version: "stub", adk: "google adk-go v2" }),
   // ConfirmToolCall(sessionID, callID, approved)
-  "3936177345": (args) => {
+  "3242111371": (args) => {
     pendingAnswer++;
     const approved = args[2] === true;
     histories[args[0]] = [
@@ -315,18 +315,18 @@ const handlers: Record<string, (args: any[]) => any> = {
     return null;
   },
   // ListProviderModels
-  "2350675726": () => ["gpt-5-mini", "gpt-5"],
+  "729587208": () => ["gpt-5-mini", "gpt-5"],
   // ConfigService.KnowledgeIndexStats
-  "1223381284": () => ({ files: 3, chunks: 12, model: "text-embedding-3-small" }),
+  "2250008310": () => ({ files: 3, chunks: 12, model: "text-embedding-3-small" }),
   // ConfigService.ListKnowledgeFiles
-  "1900178754": () => [
+  "3858202904": () => [
     { name: "k8s.md", sizeBytes: 4096, modTime: "2026-09-18 01:00" },
     { name: "weekly.md", sizeBytes: 2048, modTime: "2026-09-17 18:30" },
   ],
   // AppService.StorageStats
-  "2975759144": () => ({ sessionsDbBytes: 524288, knowledgeDbBytes: 65536 }),
+  "1091222926": () => ({ sessionsDbBytes: 524288, knowledgeDbBytes: 65536 }),
   // AppService.MemoryStats
-  "308347158": () => ({ count: 7 }),
+  "1364444048": () => ({ count: 7 }),
 };
 
 (window as any).__lastCalls = [];

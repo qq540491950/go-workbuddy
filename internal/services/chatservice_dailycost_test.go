@@ -7,9 +7,9 @@ import (
 	"strings"
 	"testing"
 
-	"changeme/internal/agentkit"
-	"changeme/internal/config"
-	"changeme/internal/mcpmgr"
+	"go-workbuddy/internal/agentkit"
+	"go-workbuddy/internal/config"
+	"go-workbuddy/internal/mcpmgr"
 )
 
 // TestSessionStatsDailyCost verifies the per-day token breakdown and the

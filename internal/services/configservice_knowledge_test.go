@@ -7,7 +7,7 @@ import (
 	"time"
 	"testing"
 
-	"changeme/internal/config"
+	"go-workbuddy/internal/config"
 )
 
 // TestKnowledgeFileManagement covers listing, traversal guarding and deletion

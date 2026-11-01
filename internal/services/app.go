@@ -10,8 +10,8 @@ import (
 
 	"gorm.io/gorm"
 
-	"changeme/internal/config"
-	"changeme/internal/mcpmgr"
+	"go-workbuddy/internal/config"
+	"go-workbuddy/internal/mcpmgr"
 )
 
 func nowUTC() time.Time { return time.Now().UTC().Truncate(time.Second) }

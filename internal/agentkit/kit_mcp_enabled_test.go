@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"changeme/internal/config"
+	"go-workbuddy/internal/config"
 )
 
 // TestBuildAgentInjectsEnabledMCPServers: the per-server 启用 switch is the

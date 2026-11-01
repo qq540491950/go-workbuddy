@@ -13,9 +13,9 @@ import (
 	adka2av2 "google.golang.org/adk/v2/server/adka2a/v2"
 	"google.golang.org/adk/v2/runner"
 
-	"changeme/internal/agentkit"
-	"changeme/internal/config"
-	"changeme/internal/mcpmgr"
+	"go-workbuddy/internal/agentkit"
+	"go-workbuddy/internal/config"
+	"go-workbuddy/internal/mcpmgr"
 )
 
 // TestTeamRemoteMemberE2E builds a team whose only member is a remote A2A

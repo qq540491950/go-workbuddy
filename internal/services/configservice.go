@@ -14,14 +14,14 @@ import (
 	"strings"
 	"time"
 
-	"changeme/internal/memory"
+	"go-workbuddy/internal/memory"
 
 	adkmodel "google.golang.org/adk/v2/model"
 	"google.golang.org/genai"
 
-	"changeme/internal/agentkit"
-	"changeme/internal/config"
-	"changeme/internal/mcpmgr"
+	"go-workbuddy/internal/agentkit"
+	"go-workbuddy/internal/config"
+	"go-workbuddy/internal/mcpmgr"
 )
 
 // Services bundles the shared dependencies for all Wails services.

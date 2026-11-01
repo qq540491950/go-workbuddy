@@ -17,7 +17,7 @@ import (
 	"google.golang.org/adk/v2/tool/mcptoolset"
 	"google.golang.org/genai"
 
-	"changeme/internal/config"
+	"go-workbuddy/internal/config"
 )
 
 // ToolInfo describes a tool exposed by a connected MCP server.

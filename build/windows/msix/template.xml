@@ -8,7 +8,7 @@
         AllowPromptForPassword="false">
     </Settings>
     <Installer
-        Path="go-wails-react-tpl"
+        Path="go-workbuddy"
         Arguments=""
         InstallLocation="C:\Program Files\My Company\My Product">
     </Installer>
@@ -18,17 +18,17 @@
         PublisherName="CN=My Company"
         PublisherDisplayName="My Company"
         Version="0.1.0.0"
-        PackageDescription="A go-wails-react-tpl application">
+        PackageDescription="WorkBuddy Agent application">
         <Capabilities>
             <Capability Name="runFullTrust" />
             
         </Capabilities>
         <Applications>
             <Application
-                Id="com.example.gowailsreacttpl"
-                Description="A go-wails-react-tpl application"
+                Id="com.workbuddy.agent"
+                Description="WorkBuddy Agent application"
                 DisplayName="My Product"
-                ExecutableName="go-wails-react-tpl"
+                ExecutableName="go-workbuddy"
                 EntryPoint="Windows.FullTrustApplication">
                 
             </Application>
@@ -43,11 +43,11 @@
             <Framework>false</Framework>
             <DisplayName>My Product</DisplayName>
             <PublisherDisplayName>My Company</PublisherDisplayName>
-            <Description>A go-wails-react-tpl application</Description>
+            <Description>WorkBuddy Agent application</Description>
             <Logo>Assets\AppIcon.png</Logo>
         </Properties>
     </PackageInformation>
-    <SaveLocation PackagePath="go-wails-react-tpl.msix" />
+    <SaveLocation PackagePath="go-workbuddy.msix" />
     <PackageIntegrity>
         <CertificatePath></CertificatePath>
     </PackageIntegrity>

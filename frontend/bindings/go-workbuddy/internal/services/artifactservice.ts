@@ -18,21 +18,21 @@ import * as $models from "./models.js";
  * List returns previewable files under the workspace (newest first, capped).
  */
 export function List(): $CancellablePromise<$models.ArtifactInfo[] | null> {
-    return $Call.ByID(2323643321);
+    return $Call.ByID(2133326259);
 }
 
 /**
  * Open reads a workspace file for preview. Path is relative to the workspace.
  */
 export function Open(relPath: string): $CancellablePromise<$models.Artifact | null> {
-    return $Call.ByID(2472935809, relPath);
+    return $Call.ByID(2457957399, relPath);
 }
 
 /**
  * OpenForSession previews a file inside the task workspace bound to sessionID.
  */
 export function OpenForSession(sessionID: string, relPath: string): $CancellablePromise<$models.Artifact | null> {
-    return $Call.ByID(4168803584, sessionID, relPath);
+    return $Call.ByID(3670798310, sessionID, relPath);
 }
 
 /**
@@ -41,12 +41,12 @@ export function OpenForSession(sessionID: string, relPath: string): $Cancellable
  * still returns the complete task view without blocking on baseline state.
  */
 export function TaskWorkspaceSnapshot(sessionID: string): $CancellablePromise<$models.TaskWorkspaceSnapshot | null> {
-    return $Call.ByID(57605569, sessionID);
+    return $Call.ByID(2781372891, sessionID);
 }
 
 /**
  * Workspace returns the configured workspace directory (for UI display).
  */
 export function Workspace(): $CancellablePromise<string> {
-    return $Call.ByID(3216171198);
+    return $Call.ByID(1776296288);
 }

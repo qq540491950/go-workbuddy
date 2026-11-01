@@ -18,7 +18,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/modelcontextprotocol/go-sdk/oauthex"
 
-	"changeme/internal/config"
+	"go-workbuddy/internal/config"
 )
 
 const (

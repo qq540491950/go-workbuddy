@@ -15,8 +15,8 @@ import (
 	adka2av2 "google.golang.org/adk/v2/server/adka2a/v2"
 	"google.golang.org/adk/v2/session"
 
-	"changeme/internal/agentkit"
-	"changeme/internal/config"
+	"go-workbuddy/internal/agentkit"
+	"go-workbuddy/internal/config"
 )
 
 // A2AService exposes the app's local agents over the A2A protocol so OTHER

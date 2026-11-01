@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"changeme/internal/config"
+	"go-workbuddy/internal/config"
 )
 
 // TestAgentShareRoundTrip exports an agent and re-imports it (twice) to

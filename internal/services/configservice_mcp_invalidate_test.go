@@ -3,9 +3,9 @@ package services
 import (
 	"testing"
 
-	"changeme/internal/agentkit"
-	"changeme/internal/config"
-	"changeme/internal/mcpmgr"
+	"go-workbuddy/internal/agentkit"
+	"go-workbuddy/internal/config"
+	"go-workbuddy/internal/mcpmgr"
 )
 
 // TestSaveMCPServerInvalidatesStaleConnection: editing a server's settings

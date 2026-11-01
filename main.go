@@ -16,11 +16,11 @@ import (
 	"google.golang.org/adk/v2/tool/loadmemorytool"
 	"gorm.io/gorm"
 
-	"changeme/internal/agentkit"
-	"changeme/internal/config"
-	"changeme/internal/mcpmgr"
-	"changeme/internal/memory"
-	"changeme/internal/services"
+	"go-workbuddy/internal/agentkit"
+	"go-workbuddy/internal/config"
+	"go-workbuddy/internal/mcpmgr"
+	"go-workbuddy/internal/memory"
+	"go-workbuddy/internal/services"
 )
 
 // Wails uses Go's `embed` package to embed the frontend files into the binary.

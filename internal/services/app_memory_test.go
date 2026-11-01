@@ -7,10 +7,10 @@ import (
 	"strings"
 	"testing"
 
-	"changeme/internal/agentkit"
-	"changeme/internal/config"
-	"changeme/internal/memory"
-	"changeme/internal/mcpmgr"
+	"go-workbuddy/internal/agentkit"
+	"go-workbuddy/internal/config"
+	"go-workbuddy/internal/memory"
+	"go-workbuddy/internal/mcpmgr"
 )
 
 // TestMemoryStatsAndClear: the remember flow feeds the store, stats report

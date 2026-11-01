@@ -71,10 +71,10 @@ wails3 dev
 
 ```bash
 # 生产构建（生成绑定 → 构建前端 → 编译 Go）
-wails3 build          # 产物: bin/go-wails-react-tpl
+wails3 build          # 产物: bin/go-workbuddy
 
 # 打包 macOS .app
-wails3 package        # 产物: bin/go-wails-react-tpl.app（重命名为 WorkBuddy Agent.app）
+wails3 package        # 产物: bin/go-workbuddy.app（重命名为 WorkBuddy Agent.app）
 ```
 
 ### 自测

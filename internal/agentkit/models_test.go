@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"changeme/internal/config"
+	"go-workbuddy/internal/config"
 )
 
 func TestListOpenAIModels(t *testing.T) {

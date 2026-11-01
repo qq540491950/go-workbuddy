@@ -10,8 +10,8 @@ import (
 	"os"
 	"path/filepath"
 
-	"changeme/internal/config"
-	"changeme/internal/mcpmgr"
+	"go-workbuddy/internal/config"
+	"go-workbuddy/internal/mcpmgr"
 )
 
 func main() {

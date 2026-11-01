@@ -14,7 +14,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/oauthex"
 	"golang.org/x/oauth2"
 
-	"changeme/internal/config"
+	"go-workbuddy/internal/config"
 )
 
 // URLOpener opens the authorization URL in the user's default browser.

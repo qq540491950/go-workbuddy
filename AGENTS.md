@@ -24,7 +24,7 @@ cd frontend && npm run stub                # 浏览器视觉回归桩（端口 9
 
 注意：`wails3 build` 的绑定生成带 `-clean=true`，会**重建**绑定文件 —— 手工改绑定会被覆盖。改 Go 服务后直接跑再生成即可（前端 import 用生成产物）。
 
-- **`wails3 generate bindings` 必须在仓库根目录执行**：在子目录（如 frontend/）执行会扫描到 Go 标准库与依赖包，生成 `bindings/time/`、`bindings/gorm.io/`、`bindings/context/` 等垃圾目录（可删除；正确产物为 `bindings/changeme/` 与 `bindings/github.com/`——后者含 wails-typed-events 插件必需的 eventcreate/eventdata，勿删）。
+- **`wails3 generate bindings` 必须在仓库根目录执行**：在子目录（如 frontend/）执行会扫描到 Go 标准库与依赖包，生成 `bindings/time/`、`bindings/gorm.io/`、`bindings/context/` 等垃圾目录（可删除；正确产物为 `bindings/go-workbuddy/` 与 `bindings/github.com/`——后者含 wails-typed-events 插件必需的 eventcreate/eventdata，勿删）。
 - **依赖包绑定产物不入库**：`.gitignore` 已排除 `bindings/{context,database,gorm.io,reflect,strings,sync,time,google.golang.org}`——每次 `wails3 build` 自动重建，git status 不会显示。
 
 ## 目录地图
@@ -59,7 +59,7 @@ frontend/stub/               # 浏览器视觉回归：setTransport 数据桩 + 
 - **对话引擎**：`ChatService.runTurn` 是 Send / Regenerate / EditAndResend / ConfirmToolCall 的共享引擎。改事件流（`ChatStreamEvent`）时同步改前端 `ChatPage.tsx` 的 switch 与历史渲染 `renderEvent`。
 - **HITL 确认协议**：ADK 以 `adk_request_confirmation` FunctionCall（带 `LongRunningToolIDs`）暂停运行；应答 = 发送 `{ID, Name: "adk_request_confirmation", Response: {"confirmed": bool}}` 的 FunctionResponse 作为下一轮消息。ADK 在恢复后对模型隐藏确认往返。
 - **会话库并发**：`sessions.db` 使用 WAL + busy_timeout(5000) + **单连接**（`SetMaxOpenConns(1)`）。WAL 下延迟事务的快照冲突会绕过 busy_timeout —— 不要移除单连接限制，否则并行会话写库触发 SQLITE_BUSY。
-- **绑定哈希**：方法 ID = FNV-1a32(`changeme/internal/services.<Service>.<Method>`)（生成器自动处理；手工计算仅用于应急）。
+- **绑定哈希**：方法 ID = FNV-1a32(`go-workbuddy/internal/services.<Service>.<Method>`)（生成器自动处理；手工计算仅用于应急）。
 - **全局代理**：`agentkit.ApplyGlobalProxy` 在启动时改写 `http.DefaultTransport.Proxy`——模型适配器、embeddings、MCP、gemini SDK、a2a-go 的出站流量统一生效；新增直连客户端时务必走 DefaultTransport 或在代理测试中钉住覆盖。
 - **A2A 双向**：客户端 = `agentkit.BuildRemoteAgent`（remoteagent v2，AgentCardProvider 每次调用重解析）；服务端 = `a2aservice.go` / 测试中 `a2asrv.NewHandler + adka2a(v2).NewExecutor`（与 ADK launcher 同配方）。Agent Card 必须含 `SupportedInterfaces`（JSONRPC 绑定），否则客户端报 "no supported interfaces"。
 - **假模型服务器**：OpenAI 兼容桩必须同时处理 `"stream":false`（返回普通 chat.completion JSON）与 SSE（A2A executor 以非流式调用模型）。

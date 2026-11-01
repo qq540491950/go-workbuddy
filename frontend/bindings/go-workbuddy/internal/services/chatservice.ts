@@ -23,14 +23,14 @@ import * as $models from "./models.js";
  * are hidden from the default sidebar list but never deleted).
  */
 export function ArchiveSession(id: string, archived: boolean): $CancellablePromise<void> {
-    return $Call.ByID(621651531, id, archived);
+    return $Call.ByID(2286215193, id, archived);
 }
 
 /**
  * Cancel aborts the in-flight run of a session, if any.
  */
 export function Cancel(sessionID: string): $CancellablePromise<void> {
-    return $Call.ByID(3046108191, sessionID);
+    return $Call.ByID(2677860025, sessionID);
 }
 
 /**
@@ -39,7 +39,7 @@ export function Cancel(sessionID: string): $CancellablePromise<void> {
  * sees the rejection and can adjust.
  */
 export function ConfirmToolCall(sessionID: string, callID: string, approved: boolean): $CancellablePromise<void> {
-    return $Call.ByID(3936177345, sessionID, callID, approved);
+    return $Call.ByID(3242111371, sessionID, callID, approved);
 }
 
 /**
@@ -51,7 +51,7 @@ export function ConfirmToolCall(sessionID: string, callID: string, approved: boo
  * deleted session until its timeout.
  */
 export function DeleteSession(id: string): $CancellablePromise<void> {
-    return $Call.ByID(2720233066, id);
+    return $Call.ByID(2756846968, id);
 }
 
 /**
@@ -59,7 +59,7 @@ export function DeleteSession(id: string): $CancellablePromise<void> {
  * keeping the turn's original attachments.
  */
 export function EditAndResend(sessionID: string, newText: string): $CancellablePromise<void> {
-    return $Call.ByID(4065508909, sessionID, newText);
+    return $Call.ByID(2423925711, sessionID, newText);
 }
 
 /**
@@ -67,7 +67,7 @@ export function EditAndResend(sessionID: string, newText: string): $CancellableP
  * exports directory and returns the number of exported sessions.
  */
 export function ExportAllSessions(): $CancellablePromise<number> {
-    return $Call.ByID(3188107487);
+    return $Call.ByID(754476113);
 }
 
 /**
@@ -75,7 +75,7 @@ export function ExportAllSessions(): $CancellablePromise<number> {
  * directory and returns the file path.
  */
 export function ExportSession(sessionID: string): $CancellablePromise<string> {
-    return $Call.ByID(3243786305, sessionID);
+    return $Call.ByID(1209328767, sessionID);
 }
 
 /**
@@ -83,7 +83,7 @@ export function ExportSession(sessionID: string): $CancellablePromise<string> {
  * file (Markdown pipeline via gomarkdown) and returns the file path.
  */
 export function ExportSessionHTML(sessionID: string): $CancellablePromise<string> {
-    return $Call.ByID(1629366468, sessionID);
+    return $Call.ByID(2216986690, sessionID);
 }
 
 /**
@@ -92,35 +92,35 @@ export function ExportSessionHTML(sessionID: string): $CancellablePromise<string
  * without touching the original timeline.
  */
 export function ForkSession(sessionID: string): $CancellablePromise<config$0.ChatSession> {
-    return $Call.ByID(3983579855, sessionID);
+    return $Call.ByID(2896494109, sessionID);
 }
 
 /**
  * GetSessionMessages renders the stored ADK events for a session.
  */
 export function GetSessionMessages(sessionID: string): $CancellablePromise<$models.ChatMessage[] | null> {
-    return $Call.ByID(3662319581, sessionID);
+    return $Call.ByID(252791171, sessionID);
 }
 
 /**
  * IsRunning reports whether a session currently has an in-flight run.
  */
 export function IsRunning(sessionID: string): $CancellablePromise<boolean> {
-    return $Call.ByID(3574706456, sessionID);
+    return $Call.ByID(2185013938, sessionID);
 }
 
 /**
  * ListSessions returns all chat sessions, pinned first, then newest first.
  */
 export function ListSessions(): $CancellablePromise<config$0.ChatSession[] | null> {
-    return $Call.ByID(1516353476);
+    return $Call.ByID(2944653350);
 }
 
 /**
  * NewSession creates a task session with an automatically isolated workspace.
  */
 export function NewSession(targetType: string, targetID: string, title: string): $CancellablePromise<config$0.ChatSession> {
-    return $Call.ByID(3793260767, targetType, targetID, title);
+    return $Call.ByID(2521642057, targetType, targetID, title);
 }
 
 /**
@@ -128,14 +128,14 @@ export function NewSession(targetType: string, targetID: string, title: string):
  * the backend to create a unique directory under the global workspace.
  */
 export function NewSessionWithWorkspace(targetType: string, targetID: string, title: string, workspaceDir: string): $CancellablePromise<config$0.ChatSession> {
-    return $Call.ByID(2938112124, targetType, targetID, title, workspaceDir);
+    return $Call.ByID(1384618270, targetType, targetID, title, workspaceDir);
 }
 
 /**
  * PinSession toggles the pinned flag of a session.
  */
 export function PinSession(id: string, pinned: boolean): $CancellablePromise<void> {
-    return $Call.ByID(3339634620, id, pinned);
+    return $Call.ByID(3144528906, id, pinned);
 }
 
 /**
@@ -144,7 +144,7 @@ export function PinSession(id: string, pinned: boolean): $CancellablePromise<voi
  * with its original attachments.
  */
 export function Regenerate(sessionID: string): $CancellablePromise<void> {
-    return $Call.ByID(368507619, sessionID);
+    return $Call.ByID(2174579433, sessionID);
 }
 
 /**
@@ -152,7 +152,7 @@ export function Regenerate(sessionID: string): $CancellablePromise<void> {
  * other sessions (with the memory tool) can recall it later.
  */
 export function RememberSession(sessionID: string): $CancellablePromise<number> {
-    return $Call.ByID(2174160522, sessionID);
+    return $Call.ByID(3337271148, sessionID);
 }
 
 /**
@@ -161,7 +161,7 @@ export function RememberSession(sessionID: string): $CancellablePromise<number> 
  * false "renamed" entry behind.
  */
 export function RenameSession(id: string, title: string): $CancellablePromise<void> {
-    return $Call.ByID(3416606985, id, title);
+    return $Call.ByID(3235807879, id, title);
 }
 
 /**
@@ -170,7 +170,7 @@ export function RenameSession(id: string, title: string): $CancellablePromise<vo
  * (pinned first, then most recently active).
  */
 export function SearchSessions(query: string): $CancellablePromise<config$0.ChatSession[] | null> {
-    return $Call.ByID(4198233812, query);
+    return $Call.ByID(330853022, query);
 }
 
 /**
@@ -178,14 +178,14 @@ export function SearchSessions(query: string): $CancellablePromise<config$0.Chat
  * until the run completes and streams progress via chat:stream events.
  */
 export function Send(sessionID: string, text: string, attachments: $models.AttachmentIn[] | null): $CancellablePromise<void> {
-    return $Call.ByID(1748553651, sessionID, text, attachments);
+    return $Call.ByID(179271769, sessionID, text, attachments);
 }
 
 /**
  * SessionStats computes aggregate metrics from the stored ADK events.
  */
 export function SessionStats(sessionID: string): $CancellablePromise<$models.SessionStats | null> {
-    return $Call.ByID(568481502, sessionID);
+    return $Call.ByID(4163807688, sessionID);
 }
 
 /**
@@ -194,7 +194,7 @@ export function SessionStats(sessionID: string): $CancellablePromise<$models.Ses
  * legacy fallback rule.
  */
 export function SessionWorkspace(sessionID: string): $CancellablePromise<string> {
-    return $Call.ByID(2695952392, sessionID);
+    return $Call.ByID(3713305274, sessionID);
 }
 
 /**
@@ -202,7 +202,7 @@ export function SessionWorkspace(sessionID: string): $CancellablePromise<string>
  * provider (per-session model override); empty clears the override.
  */
 export function SetSessionModel(sessionID: string, modelID: string): $CancellablePromise<void> {
-    return $Call.ByID(1164146246, sessionID, modelID);
+    return $Call.ByID(359717012, sessionID, modelID);
 }
 
 /**
@@ -210,12 +210,12 @@ export function SetSessionModel(sessionID: string, modelID: string): $Cancellabl
  * canonicalized and checked for writability and active-session conflicts.
  */
 export function SetSessionWorkspace(sessionID: string, workspaceDir: string): $CancellablePromise<void> {
-    return $Call.ByID(3910017842, sessionID, workspaceDir);
+    return $Call.ByID(185468012, sessionID, workspaceDir);
 }
 
 /**
  * SetToolAuditPath enables the JSONL tool-call audit trail at path.
  */
 export function SetToolAuditPath(path: string): $CancellablePromise<void> {
-    return $Call.ByID(790566707, path);
+    return $Call.ByID(782279333, path);
 }

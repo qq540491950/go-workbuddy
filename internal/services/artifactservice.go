@@ -11,7 +11,7 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"changeme/internal/agentkit"
+	"go-workbuddy/internal/agentkit"
 )
 
 const (

@@ -4,6 +4,20 @@
 
 ## 视觉测试与体验设计
 
+### 第一百五十一轮迭代：模块重命名 changeme → go-workbuddy（已实施）
+
+依据：用户指出 `go.mod` 模块名仍是 Wails 模板默认的 `changeme`，与项目名 go-workbuddy 不符，要求整体审核并执行重命名。审计确认模块名贯穿 go.mod、47 个 Go 文件 import、前端生成绑定目录、`api.ts` 手写 import、视觉桩硬编码方法 ID、`.gitignore`/`AGENTS.md`/`README.md`；另发现第二处模板遗留 `go-wails-react-tpl`（Taskfile `APP_NAME` 与 macOS/iOS/Windows/Linux 打包资产）。
+
+实现要点：
+
+- `go.mod` 模块名改为 `go-workbuddy`，47 个 Go 文件 import 同步替换（含 `debug/mcp_probe`）。
+- 重新生成绑定：产物目录由 `frontend/bindings/changeme/` 变为 `frontend/bindings/go-workbuddy/`，全部方法 ID 随模块路径变化；`api.ts` 五处 import 同步。
+- 视觉桩 `frontend/stub/main.tsx` 的 17 个硬编码方法 ID 全部换算为新 ID；顺带修复陈旧的 AppInfo 键（旧值 2350821288 不对应任何现存方法，属潜伏死代码，现已指向真实的 `appservice.AppInfo`）。
+- 方法 ID 公式确认为 FNV-1a32(`包路径.类型名.方法名`)（wails v3.0.0 `internal/hash/fnv.go` + `internal/generator/collect/service.go`），`AGENTS.md` 同步模块名。
+- Taskfile `APP_NAME` 改为 `go-workbuddy`；macOS/iOS plist、Windows NSIS/MSIX、Linux desktop/nfpm 打包资产中的模板名全部替换；`docs/iteration-log.md` 历史轮次记录保留原名不动。
+
+测试证据：rg 全仓 `changeme` 零残留（含生成绑定）；`go vet` + `go test ./internal/... .` 全绿；vitest 16/16、`tsc --noEmit`、`npm run build` 通过；`wails3 build` 端到端成功并产出 `bin/go-workbuddy.exe`。`go test -race` 本机无 C 工具链（CGO）无法执行，由 CI ubuntu 任务覆盖。
+
 ### 第一百五十轮迭代：对话优先外壳与设置中心（已实施）
 
 依据：用户提出对齐 ChatGPT / Claude / Codex 桌面端的导航模型——最左列直接是对话列表、对话按目录分组、全部配置收进设置。设计固化为 `docs/specs/chat-first-shell.md` 并拆为六张票据（设置中心骨架、对话优先外壳、侧栏折叠、时间分组、项目分组、快捷入口）全部实施。关键设计澄清：目录分组的键是工作区根而非会话任务目录——每个会话都自动创建独立任务目录，逐目录分组会碎片化。
