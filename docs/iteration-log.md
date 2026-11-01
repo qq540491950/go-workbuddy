@@ -4,6 +4,23 @@
 
 ## 视觉测试与体验设计
 
+### 第一百六十一轮迭代：chatservice.go 拆分——按职责分文件（已实施）
+
+依据：`chatservice.go` 单文件 2433 行，会话 CRUD、事件渲染、导出、运行引擎、统计、生命周期全部混在一起，新改动定位成本高。UX 盘点同时给出了按自然边界拆分的映射（纯机械搬移、同包内进行、零行为变更）。
+
+实现要点：
+
+- 拆为六个职责文件（包路径、类型、方法集全部不变，仅物理搬移）：
+  - `chatservice.go`（393 行）：包头/导入、流事件与会话消息类型、`ChatService` 结构与构造、审计（audit）与杂项助手、运行生命周期（recoverRun/Cancel/IsRunning/registerRun/cancelAndWaitBounded）。
+  - `chatservice_sessions.go`（671 行）：会话创建/项目/CRUD/改绑守卫/GetSessionMessages/ForkSession。
+  - `chatservice_turn.go`（666 行）：Send/trimLastTurn/Regenerate/EditAndResend、sendTurn/ConfirmToolCall/runTurn/autoTitle、usage 累计。
+  - `chatservice_render.go`（290 行）：renderEvent、确认中断识别、目标与 @ 路由解析、renderTodoList/displayNameOf。
+  - `chatservice_export.go`（277 行）：ExportSession/ExportAllSessions/ExportSessionHTML 及 HTML 工具。
+  - `chatservice_stats.go`（200 行）：RememberSession、SessionStats 类型与方法。
+- 搬移脚本按顶层声明块切分（声明行向上吞并注释行），每个新文件先复制全量 import 再按编译错误逐轮裁剪；`gofmt -w` 仅限本轮涉及文件（误触的两个存量测试文件已还原——仓库本就存在未 gofmt 的历史文件，另行处理不属本轮）。
+
+测试证据：`go build ./internal/...` 通过；`go vet ./internal/... .` 干净；`go test ./internal/... . -count=1` 全绿（services 包 8.7s，无行为变化）。`go build ./...` 下 `build/ios` 报 `function main is undeclared` 为模板遗留的 iOS 构建目录问题（iOS 无 main 文件），非本轮引入、与 internal 无关。
+
 ### 第一百六十轮迭代：无障碍补齐——live region、listbox 语义与 aria 标注（已实施）
 
 依据：无障碍专项盘点：流式输出对屏幕阅读器完全静默（消息区无 live 语义）；@ 提及弹层无 listbox/option 语义（斜杠建议已在第 157 轮补齐）；侧栏折叠按钮无 `aria-expanded`；过滤输入框、消息输入框、消息列表无 aria 标注。
