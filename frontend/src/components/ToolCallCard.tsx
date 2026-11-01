@@ -8,6 +8,7 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
 import { CopyButton, MessageMarkdown } from "@/components/MessageMarkdown";
+import { DiffView } from "@/components/TaskWorkspacePanel";
 import { Artifact, errText, type Artifact as ArtifactData } from "@/lib/api";
 
 /** extractArtifactPaths finds workspace-relative file references in tool
@@ -154,13 +155,17 @@ export function ArtifactOpenButton({ path, label, sessionID }: { path: string; l
 const kindIcon = (kind: string) =>
   kind === "image" ? <FileImage className="h-4 w-4" /> : <FileText className="h-4 w-4" />;
 
-/** ArtifactPreview shows workspace files: images, PDF, markdown and text. */
+/** ArtifactPreview shows workspace files: images, PDF, markdown and text.
+ *  Session-scoped text files can switch to the line-level diff against the
+ *  task baseline (Codex-style review) without leaving the dialog. */
 export function ArtifactPreview({ path, sessionID, onClose }: { path: string | null | undefined; sessionID?: string; onClose: () => void }) {
   const [art, setArt] = useState<ArtifactData | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [showDiff, setShowDiff] = useState(false);
 
   useEffect(() => {
+    setShowDiff(false);
     if (!path) {
       setArt(null);
       setError("");
@@ -207,6 +212,10 @@ export function ArtifactPreview({ path, sessionID, onClose }: { path: string | n
           </DialogTitle>
         </DialogHeader>
         <div className="min-h-0 flex-1 overflow-auto rounded-lg border bg-background p-3">
+          {showDiff && sessionID && path ? (
+            <DiffView sessionID={sessionID} path={path} />
+          ) : (
+          <>
           {loading && (
             <div className="flex h-40 items-center justify-center text-sm text-muted-foreground">
               <Loader2 className="mr-2 h-4 w-4 animate-spin" /> 加载中…
@@ -229,12 +238,27 @@ export function ArtifactPreview({ path, sessionID, onClose }: { path: string | n
           {!loading && !error && art?.kind === "text" && (
             <pre className="whitespace-pre-wrap font-mono text-xs leading-relaxed">{art.text}</pre>
           )}
+          </>
+          )}
         </div>
-        {art && (
-          <div className="pt-2 text-right text-xs text-muted-foreground">
-            工作区路径: {art.path} · {(art.size / 1024).toFixed(1)} KB
-          </div>
-        )}
+        <div className="flex items-center justify-between gap-2 pt-2">
+          {art && sessionID && (art.kind === "text" || art.kind === "markdown") ? (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 px-2 text-xs"
+              aria-pressed={showDiff}
+              onClick={() => setShowDiff((v) => !v)}
+            >
+              {showDiff ? "返回预览" : "与任务基线对比"}
+            </Button>
+          ) : <span />}
+          {art && (
+            <div className="text-right text-xs text-muted-foreground">
+              工作区路径: {art.path} · {(art.size / 1024).toFixed(1)} KB
+            </div>
+          )}
+        </div>
       </DialogContent>
     </Dialog>
   );

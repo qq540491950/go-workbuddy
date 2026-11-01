@@ -123,7 +123,7 @@ function FileRow({ file, sessionID, onPreview }: {
 // baseline. Unsupported files (binary/oversize/missing baseline content) show
 // the backend reason inline instead of a toast, matching the result pane's
 // inline state style.
-function DiffView({ sessionID, path }: { sessionID: string; path: string }) {
+export function DiffView({ sessionID, path }: { sessionID: string; path: string }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [result, setResult] = useState<FileDiffResult | null>(null);
