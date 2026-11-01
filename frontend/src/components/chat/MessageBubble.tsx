@@ -11,6 +11,7 @@ import { MessageMarkdown, CopyButton } from "@/components/MessageMarkdown";
 import { ToolCallCard } from "@/components/ToolCallCard";
 import { TodoListCard } from "@/components/chat/TodoCards";
 import { dayLabel, fmtTime, type UIMessage } from "@/lib/chatUtils";
+import { highlightText } from "@/components/chat/highlightText";
 import type { UsageInfo } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
@@ -82,9 +83,10 @@ export function DaySeparator({ ts }: { ts: string | undefined }) {
 // last bubble each token, and every other bubble must keep the same props to
 // skip re-rendering. Callers therefore pass stable callbacks and precomputed
 // flags instead of per-row closures.
-export const MessageBubble = memo(function MessageBubble({ m, isLastAssistant, onRegenerate, canRegenerate, toolRunning, onSpeak, costOf, onEdit, canEdit, onConfirm, durationMs, sessionID }: {
+export const MessageBubble = memo(function MessageBubble({ m, isLastAssistant, onRegenerate, canRegenerate, toolRunning, onSpeak, costOf, onEdit, canEdit, onConfirm, durationMs, sessionID, filterQ }: {
   m: UIMessage;
   isLastAssistant: boolean;
+  filterQ: string;
   onRegenerate: () => void;
   canRegenerate: boolean;
   toolRunning: boolean;
@@ -140,7 +142,7 @@ export const MessageBubble = memo(function MessageBubble({ m, isLastAssistant, o
             className="whitespace-pre-wrap break-words rounded-2xl rounded-br-md bg-primary px-4 py-2.5 text-sm text-primary-foreground"
             title={fmtTime(m.timestamp)}
           >
-            {m.text}
+            {highlightText(m.text, filterQ, "bg-primary-foreground/30 text-primary-foreground rounded-sm")}
           </div>
           </div>
           )}
@@ -159,7 +161,7 @@ export const MessageBubble = memo(function MessageBubble({ m, isLastAssistant, o
   if (m.kind === "error") {
     return (
       <div className="rounded-lg border border-destructive/40 bg-destructive/10 px-4 py-2.5 text-sm text-destructive">
-        {m.text}
+        {highlightText(m.text, filterQ, "bg-destructive/25 text-destructive rounded-sm")}
         {canRegenerate && (
           <div className="mt-2">
             <Button

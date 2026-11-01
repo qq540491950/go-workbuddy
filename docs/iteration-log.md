@@ -3,6 +3,18 @@
 本文件按轮次记录每次功能迭代的依据、实现要点与测试证据。最新记录在最上方。
 
 ## 视觉测试与体验设计
+### 第一百七十六轮迭代：会话内过滤命中高亮（已实施）
+
+依据：UX 盘点最后一个缓办项——⌘F 过滤只筛掉不匹配的行，命中关键词在行内什么位置仍需目扫。Markdown 内联高亮需 remark 插件链改造，本轮先覆盖明文渲染路径。
+
+实现要点：
+
+- 新增 `highlightText`：大小写不敏感切分文本并包 `<mark>`，空查询原样返回（调用点无需条件化）。
+- 应用三处明文路径：用户气泡（主色前景内的 30% 反白 mark）、错误气泡（destructive 25%）、工具卡展开区 JSON pre。助手 Markdown 内联高亮列为已知边界（markdown 语法树注入需 remark 插件，收益/复杂度比暂不划算）。
+- MessageBubble/ToolCallCard 以 `filterQ` prop 传入（memo 属性变化在过滤输入时本就整列表重渲，无额外成本）。
+
+测试证据：`tsc --noEmit`、vitest 17/17、`npm run build` 通过。浏览器桩走查：⌘F → 输入 weekly → 4/4 计数与用户气泡内 `<mark>weekly</mark>` 渲染确认。
+
 ### 第一百七十五轮迭代：生产构建烟雾（macOS 首验，已实施）
 
 依据：发布就绪检查项「wails3 build 产物启动存活 + 优雅退出」此前只在 Windows 实测过；本仓库迁至 macOS 开发后生产链路（bindings → 前端构建 → Go 编译 → 启动）未验过。

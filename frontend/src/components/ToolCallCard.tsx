@@ -9,6 +9,7 @@ import {
 } from "@/components/ui/dialog";
 import { CopyButton, MessageMarkdown } from "@/components/MessageMarkdown";
 import { DiffView } from "@/components/TaskWorkspacePanel";
+import { highlightText } from "@/components/chat/highlightText";
 import { Artifact, errText, type Artifact as ArtifactData } from "@/lib/api";
 
 /** extractArtifactPaths finds workspace-relative file references in tool
@@ -32,6 +33,7 @@ type ToolCallProps = {
   resp?: { [k: string]: any } | null;
   running: boolean;
   durationMs?: number;
+  filterQ?: string;
 };
 
 /**
@@ -50,7 +52,7 @@ export function formatDuration(ms: number): string {
 /** ToolCallCard renders one tool invocation with live status visualization.
  *  Memoized because extractArtifactPaths JSON-stringifies args/results and
  *  would otherwise run for every visible tool on each streamed token. */
-export const ToolCallCard = memo(function ToolCallCard({ name, sessionID, args, resp, running, durationMs }: ToolCallProps) {
+export const ToolCallCard = memo(function ToolCallCard({ name, sessionID, args, resp, running, durationMs, filterQ }: ToolCallProps) {
   const [open, setOpen] = useState(false);
   const failed = useMemo(() => {
     if (!resp) return false;
@@ -114,7 +116,7 @@ export const ToolCallCard = memo(function ToolCallCard({ name, sessionID, args, 
             className="absolute right-2 top-2 z-10 opacity-50 transition-opacity hover:opacity-100"
           />
           <pre className="max-h-44 overflow-auto px-3 py-2 text-xs text-muted-foreground">
-            {JSON.stringify(running ? args : (resp ?? args), null, 2)}
+            {highlightText(JSON.stringify(running ? args : (resp ?? args), null, 2), filterQ ?? "", "bg-primary/25 text-foreground rounded-sm")}
           </pre>
         </div>
       )}

@@ -2022,6 +2022,7 @@ export function ChatPage({ isDark, onToggleTheme, onOpenHelp, onOpenSettings }: 
                   canEdit={editFlags.get(m.id) === true && !running && !!activeID}
                   onConfirm={answerConfirm}
                   sessionID={activeID}
+                  filterQ={filterQ}
                   />
                 </Fragment>
               );
