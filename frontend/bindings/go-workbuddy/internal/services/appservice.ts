@@ -111,6 +111,15 @@ export function RecentToolAudit(tail: number): $CancellablePromise<string[] | nu
 }
 
 /**
+ * RevealWorkspaceFile shows one session workspace file in the system file
+ * manager (Finder/Explorer). The path rules match ArtifactService previews:
+ * resolved against the session's effective workspace, traversal blocked.
+ */
+export function RevealWorkspaceFile(sessionID: string, relPath: string): $CancellablePromise<void> {
+    return $Call.ByID(2394507974, sessionID, relPath);
+}
+
+/**
  * SetLogPath points the diagnostics log reader at the app log file.
  */
 export function SetLogPath(path: string): $CancellablePromise<void> {

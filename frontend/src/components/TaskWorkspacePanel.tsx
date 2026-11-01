@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { toast } from "sonner";
 import {
-  AlertTriangle, FileDiff, FileImage, FileText, FolderOpen, Loader2, RefreshCw, Search, X,
+  AlertTriangle, ExternalLink, FileDiff, FileImage, FileText, FolderOpen, Loader2, RefreshCw, Search, X,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { ArtifactPreview } from "@/components/ToolCallCard";
 import {
-  Artifact, errText, WorkspaceChangeStatus,
+  App, Artifact, errText, WorkspaceChangeStatus,
   WorkspaceFileKind,
   type FileDiffResult, type TaskWorkspaceSnapshot, type WorkspaceFileInfo,
 } from "@/lib/api";
@@ -77,25 +77,44 @@ function FileRowBody({ file }: { file: WorkspaceFileInfo }) {
   );
 }
 
-function FileRow({ file, onPreview }: {
+function FileRow({ file, sessionID, onPreview }: {
   file: WorkspaceFileInfo;
+  sessionID: string;
   onPreview: (path: string) => void;
 }) {
   const canPreview = file.previewable && file.status !== WorkspaceChangeStatus.ChangeDeleted;
   return (
-    <button
-      type="button"
+    <div
       className={cn(
-        "flex w-full items-start gap-2 rounded-lg border bg-card/40 px-2.5 py-2 text-left transition-colors",
-        canPreview ? "hover:border-primary/40 hover:bg-accent/40" : "cursor-default",
+        "flex items-stretch rounded-lg border bg-card/40",
+        canPreview && "transition-colors hover:border-primary/40 hover:bg-accent/40",
       )}
-      disabled={!canPreview}
-      onClick={() => canPreview && onPreview(file.path)}
-      title={canPreview ? `预览 ${file.path}` : `${file.path}（不支持内嵌预览）`}
       data-file-path={file.path}
     >
-      <FileRowBody file={file} />
-    </button>
+      <button
+        type="button"
+        className="flex min-w-0 flex-1 items-start gap-2 px-2.5 py-2 text-left"
+        disabled={!canPreview}
+        onClick={() => canPreview && onPreview(file.path)}
+        title={canPreview ? `预览 ${file.path}` : `${file.path}（不支持内嵌预览）`}
+      >
+        <FileRowBody file={file} />
+      </button>
+      {!canPreview && (
+        <button
+          type="button"
+          className="flex shrink-0 items-center gap-1 border-l px-2.5 text-[11px] text-muted-foreground transition-colors hover:text-foreground"
+          aria-label={`在文件管理器中显示 ${file.name}`}
+          title="在文件管理器中显示"
+          onClick={() => {
+            App.RevealWorkspaceFile(sessionID, file.path).catch((e) => toast.error(`打开失败: ${errText(e)}`));
+          }}
+        >
+          <ExternalLink className="h-3.5 w-3.5" />
+          显示
+        </button>
+      )}
+    </div>
   );
 }
 
@@ -452,7 +471,7 @@ export function TaskWorkspacePanel({ sessionID, workspace, open, running, refres
                 tab === "changes" ? (
                   <ChangeRow key={file.path} file={file} sessionID={sessionID} onPreview={setPreviewPath} />
                 ) : (
-                  <FileRow key={file.path} file={file} onPreview={setPreviewPath} />
+                  <FileRow key={file.path} file={file} sessionID={sessionID} onPreview={setPreviewPath} />
                 ),
               )}
             </div>

@@ -435,6 +435,11 @@ const handlers: Record<string, (args: any[]) => any> = {
   },
   // AppInfo
   "2925845021": () => ({ name: "WorkBuddy Agent", version: "stub", adk: "google adk-go v2" }),
+  // AppService.RevealWorkspaceFile(sessionID, relPath) — 桩仅记录调用
+  "2394507974": (args) => {
+    (window).__revealed = ((window).__revealed ?? []).concat(args[1]);
+    return null;
+  },
   // ConfirmToolCall(sessionID, callID, approved)
   "3242111371": (args) => {
     pendingAnswer++;

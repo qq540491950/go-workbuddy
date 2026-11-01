@@ -783,13 +783,21 @@ export function ChatPage({ isDark, onToggleTheme, onOpenHelp, onOpenSettings }: 
     rec.lang = "zh-CN";
     rec.interimResults = true;
     rec.continuous = false;
-    const base = input;
+    // Interim results REPLACE the previously inserted segment of the CURRENT
+    // input (not a snapshot taken at start): typing while recording must not
+    // be clobbered by the recognizer.
+    let recognized = "";
     rec.onresult = (e: any) => {
       let text = "";
       for (let i = e.resultIndex; i < e.results.length; i++) {
         text += e.results[i][0].transcript;
       }
-      setInput((base + " " + text).trim());
+      setInput((cur) => {
+        const base = recognized && cur.endsWith(recognized) ? cur.slice(0, cur.length - recognized.length) : cur;
+        const sep = base && !/\s$/.test(base) ? " " : "";
+        recognized = text;
+        return (base + sep + text).trim();
+      });
     };
     rec.onend = () => setListening(false);
     rec.onerror = () => setListening(false);
@@ -1096,12 +1104,21 @@ export function ChatPage({ isDark, onToggleTheme, onOpenHelp, onOpenSettings }: 
   // multimodal gating.
   const target = useMemo(() => {
     if (!active) return { provider: null as ModelProvider | null, model: null as ModelInfo | null };
+    // 会话级模型覆盖与后端 EffectiveModel 同口径：覆盖 ID 必须在解析出的
+    // 供应商模型列表内，否则回落默认解析（直聊=默认供应商第一个模型）。
+    const override = active.modelOverride;
+    const withOverride = (provider: ModelProvider | null, fallback: ModelInfo | null): ModelInfo | null => {
+      if (override && provider?.models) {
+        const hit = provider.models.find((m) => m.id === override);
+        if (hit) return hit;
+      }
+      return fallback;
+    };
     if (active.targetType === "") {
       // Direct chat: default provider's first model (the same resolution the
       // backend uses for target-less sessions).
       const provider = providerList.find((p) => p.isDefault) ?? providerList[0] ?? null;
-      const model = provider?.models?.[0] ?? null;
-      return { provider, model };
+      return { provider, model: withOverride(provider, provider?.models?.[0] ?? null) };
     }
     let providerId = "";
     let modelId = "";
@@ -1121,7 +1138,7 @@ export function ChatPage({ isDark, onToggleTheme, onOpenHelp, onOpenSettings }: 
       modelId = agent?.model ?? "";
     }
     const provider = providerList.find((p) => p.id === providerId) ?? null;
-    const model = provider?.models?.find((m) => m.id === modelId) ?? null;
+    const model = withOverride(provider, provider?.models?.find((m) => m.id === modelId) ?? null);
     return { provider, model };
   }, [active, agents, teams, providerList]);
 

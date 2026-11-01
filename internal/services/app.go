@@ -4,12 +4,15 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 
 	"gorm.io/gorm"
 
+	"go-workbuddy/internal/agentkit"
 	"go-workbuddy/internal/config"
 	"go-workbuddy/internal/mcpmgr"
 )
@@ -517,4 +520,45 @@ func (m *MCPService) Connect(id string) (mcpmgr.ServerStatus, error) {
 // Disconnect drops the connection state of one MCP server.
 func (m *MCPService) Disconnect(id string) {
 	m.S.MCP.Disconnect(id)
+}
+
+// revealCommand builds the OS command that shows path in the system file
+// manager: Finder selects the file, Explorer selects it, other platforms open
+// the containing directory (no selection API).
+func revealCommand(goos, path string) *exec.Cmd {
+	switch goos {
+	case "darwin":
+		return exec.Command("open", "-R", path)
+	case "windows":
+		return exec.Command("explorer", "/select,"+path)
+	default:
+		return exec.Command("xdg-open", filepath.Dir(path))
+	}
+}
+
+// RevealWorkspaceFile shows one session workspace file in the system file
+// manager (Finder/Explorer). The path rules match ArtifactService previews:
+// resolved against the session's effective workspace, traversal blocked.
+func (a *AppService) RevealWorkspaceFile(sessionID, relPath string) error {
+	ws := ""
+	for _, session := range a.S.Store.Get().Sessions {
+		if session.ID == sessionID {
+			ws = session.EffectiveWorkspaceFor(a.S.Store.Get())
+			break
+		}
+	}
+	if ws == "" {
+		return fmt.Errorf("会话 %q 不存在", sessionID)
+	}
+	if strings.TrimSpace(ws) == "" {
+		return fmt.Errorf("工作区目录未配置")
+	}
+	abs, err := agentkit.SafeWorkspacePath(ws, relPath)
+	if err != nil {
+		return err
+	}
+	if _, err := os.Stat(abs); err != nil {
+		return fmt.Errorf("文件不存在: %w", err)
+	}
+	return revealCommand(runtime.GOOS, abs).Start()
 }
