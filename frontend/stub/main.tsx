@@ -91,6 +91,7 @@ const seedConfig = {
     { id: "sess_archived", title: "旧版方案讨论", targetType: "", targetId: "", createdAt: iso(-30, 9), updatedAt: iso(-30, 10), archived: true },
     { id: "sess_project", title: "跨目录：独立项目任务", targetType: "agent", targetId: "agent_1", createdAt: iso(0, 8), updatedAt: iso(0, 9), workspaceDir: "/tmp/proj-alpha" },
     { id: "sess_projchat", title: "项目内对话：绑定 proj-beta", targetType: "", targetId: "", createdAt: iso(0, 7), updatedAt: iso(0, 7), projectId: "proj_beta" },
+    { id: "sess_adhoc", title: "临时目录：未注册工作区", targetType: "", targetId: "", createdAt: iso(0, 6), updatedAt: iso(0, 6), workspaceDir: "/tmp/independent-tools" },
   ],
 };
 
@@ -192,6 +193,26 @@ const handlers: Record<string, (args: any[]) => any> = {
   "2185013938": () => false,
   // SessionStats(sessionID)
   "4163807688": () => ({ messages: 1, toolCalls: 1, toolFailures: 0, assistantTurns: 0, tokensIn: 120, tokensOut: 80, tokensTotal: 200 }),
+  // ArchiveSession(sessionID, archived)
+  "2286215193": (args) => {
+    const sess = seedConfig.sessions.find((s) => s.id === args[0]);
+    if (!sess) throw new Error("会话不存在");
+    (sess as any).archived = !!args[1];
+    return null;
+  },
+  // PinSession(sessionID, pinned)
+  "3144528906": (args) => {
+    const sess = seedConfig.sessions.find((s) => s.id === args[0]);
+    if (!sess) throw new Error("会话不存在");
+    (sess as any).pinned = !!args[1];
+    return null;
+  },
+  // DeleteSession(sessionID)
+  "2756846968": (args) => {
+    seedConfig.sessions = seedConfig.sessions.filter((s) => s.id !== args[0]);
+    delete histories[args[0]];
+    return null;
+  },
   // SetSessionModel(sessionID, modelID)
   "359717012": (args) => {
     for (const sess of seedConfig.sessions) {
@@ -201,7 +222,7 @@ const handlers: Record<string, (args: any[]) => any> = {
   },
   // NewSessionWithWorkspace(targetType, targetID, title, workspaceDir)
   "1384618270": (args) => {
-    if (workspaceMockMode === "conflict") throw new Error("工作区已被任务「需要确认的写入」使用，请选择其他目录");
+    if (workspaceMockMode === "conflict") throw new Error("工作区已被任务「需要确认的写入」使用：归档或删除该任务即可释放目录，也可以选择其他目录");
     if (workspaceMockMode === "error") throw new Error("工作区不可写");
     const id = `sess_stub_${seedConfig.sessions.length + 1}`;
     const sess = {
@@ -219,7 +240,7 @@ const handlers: Record<string, (args: any[]) => any> = {
   },
   // SetSessionWorkspace(sessionID, workspaceDir)
   "185468012": (args) => {
-    if (workspaceMockMode === "conflict") throw new Error("工作区已被任务「需要确认的写入」使用，请选择其他目录");
+    if (workspaceMockMode === "conflict") throw new Error("工作区已被任务「需要确认的写入」使用：归档或删除该任务即可释放目录，也可以选择其他目录");
     if (workspaceMockMode === "error") throw new Error("工作区不可写");
     const sess = seedConfig.sessions.find((s) => s.id === args[0]);
     if (sess) sess.workspaceDir = args[1];
@@ -403,7 +424,11 @@ setTransport({
     const h = handlers[String(opt.methodID)];
     if (!h) return null;
     const list = Array.isArray(opt.args) ? opt.args : opt.args == null ? [] : [opt.args];
-    return h(list);
+    // Deep-copy results like real IPC serialization does: returning shared
+    // references lets in-place stub mutations slip past React state updates
+    // (same-reference setSessions bails out) and shows stale lists.
+    const result = h(list);
+    return result == null ? result : structuredClone(result);
   },
 });
 

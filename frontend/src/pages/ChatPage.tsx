@@ -9,8 +9,8 @@ import {
   ChevronRight, ChevronDown,
   Settings as SettingsIcon, CircleHelp, Sun, Moon,
   Boxes,
-  PanelLeftClose, PanelLeftOpen, Clock,
-  FolderPlus, FolderInput, MoreHorizontal,
+  PanelLeftClose, PanelLeftOpen,
+  FolderPlus, FolderInput, MoreHorizontal, SquarePen,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -119,7 +119,9 @@ export function ChatPage({ isDark, onToggleTheme, onOpenHelp, onOpenSettings }: 
   const [autoSpeak, setAutoSpeak] = useState(false);
   const [globalWorkspace, setGlobalWorkspace] = useState("");
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-  const [sidebarGrouping, setSidebarGrouping] = useState<"time" | "project">("time");
+  const [projectsOpen, setProjectsOpen] = useState(true);
+  const [recentOpen, setRecentOpen] = useState(true);
+  const [expandedFolderKey, setExpandedFolderKey] = useState<string | null>(null);
   const [resolvedWorkspace, setResolvedWorkspace] = useState("");
   const [workspaceError, setWorkspaceError] = useState("");
   const [workspacePanelOpen, setWorkspacePanelOpen] = useState(false);
@@ -227,7 +229,6 @@ export function ChatPage({ isDark, onToggleTheme, onOpenHelp, onOpenSettings }: 
         setAutoSpeak(!!c.settings?.autoSpeak);
         setGlobalWorkspace(c.settings?.workspaceDir ?? "");
         setSidebarCollapsed(!!c.settings?.sidebarCollapsed);
-        setSidebarGrouping(c.settings?.sidebarGrouping === "project" ? "project" : "time");
       })
       .catch((e) => toast.error(`加载配置失败: ${errText(e)}`));
   }, [reloadSessions]);
@@ -911,21 +912,18 @@ export function ChatPage({ isDark, onToggleTheme, onOpenHelp, onOpenSettings }: 
     return sessions.filter((s) => matches(s));
   }, [sessions, search, contentMatches]);
 
-  const persistSidebarPrefs = (patch: { sidebarCollapsed?: boolean; sidebarGrouping?: "time" | "project" }) => {
-    if (patch.sidebarCollapsed !== undefined) setSidebarCollapsed(patch.sidebarCollapsed);
-    if (patch.sidebarGrouping !== undefined) setSidebarGrouping(patch.sidebarGrouping);
+  const persistSidebarPrefs = (collapsed: boolean) => {
+    setSidebarCollapsed(collapsed);
     Config.GetConfig()
       .then((c) => {
-        if (patch.sidebarCollapsed !== undefined) c.settings.sidebarCollapsed = patch.sidebarCollapsed;
-        if (patch.sidebarGrouping !== undefined) c.settings.sidebarGrouping = patch.sidebarGrouping;
+        c.settings.sidebarCollapsed = collapsed;
         return Config.SaveSettings(c.settings);
       })
       .catch(() => { /* offline: keep the UI state, retry on next toggle */ });
   };
   const toggleSidebar = useCallback(() => {
     const next = !sidebarCollapsed;
-    setSidebarCollapsed(next);
-    persistSidebarPrefs({ sidebarCollapsed: next });
+    persistSidebarPrefs(next);
   }, [sidebarCollapsed]);
   // ⌘B is a shell-level shortcut like ⌘N: App dispatches the custom event so
   // it keeps working across view switches.
@@ -935,14 +933,59 @@ export function ChatPage({ isDark, onToggleTheme, onOpenHelp, onOpenSettings }: 
     return () => window.removeEventListener("wb-toggle-sidebar", onToggle);
   }, [toggleSidebar]);
 
+  // Sidebar sections: 「项目」 folders derive from chat workspaces —
+  // registered projects first, then ad-hoc explicit directories (basename
+  // labels). Chats filed into a folder leave the 「最近」 recency list, the
+  // way chat apps tuck project chats away; auto task dirs under the global
+  // workspace stay in 最近. Archived trails last. With a search query the
+  // sections collapse into one flat result list.
+  const searching = search.trim().length > 0;
+  const folderGroups = useMemo(() => {
+    const groups = groupSessionsByProject(filteredSessions, projects, globalWorkspace)
+      .filter((g) => g.key !== "default" && g.key !== "archived");
+    // Registered projects with no chats yet still deserve a row (expanded it
+    // shows empty; the row menu is the way to start its first chat).
+    const seen = new Set(groups.map((g) => g.projectId));
+    for (const p of projects) {
+      if (!seen.has(p.id)) groups.push({ key: `proj:${p.id}`, label: p.name, path: p.rootDir, projectId: p.id, sessions: [] });
+    }
+    return groups;
+  }, [filteredSessions, projects, globalWorkspace]);
+  const folderSessionIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const g of folderGroups) for (const s of g.sessions) ids.add(s.id);
+    return ids;
+  }, [folderGroups]);
+  const folderKeyBySession = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const g of folderGroups) for (const s of g.sessions) map.set(s.id, g.key);
+    return map;
+  }, [folderGroups]);
   // `now` is captured per render: time buckets age with the wall clock across
   // long-lived windows without needing a timer.
-  const visibleGroups = useMemo(
-    () => (sidebarGrouping === "project"
-      ? groupSessionsByProject(filteredSessions, projects, globalWorkspace)
-      : groupSessionsByTime(filteredSessions, new Date())),
-    [filteredSessions, sidebarGrouping, projects, globalWorkspace],
+  const timeGroups = useMemo(
+    () => groupSessionsByTime(
+      filteredSessions.filter((s) => !s.archived && !folderSessionIds.has(s.id)),
+      new Date(),
+    ),
+    [filteredSessions, folderSessionIds],
   );
+  const archivedSessions = useMemo(() => filteredSessions.filter((s) => s.archived), [filteredSessions]);
+  const searchResults = useMemo(
+    () => [...filteredSessions].sort((a, b) => (b.updatedAt ?? "").localeCompare(a.updatedAt ?? "")),
+    [filteredSessions],
+  );
+  const folderKeyRef = useRef<Map<string, string>>(new Map());
+  // Opening a chat auto-expands the folder that owns it so the row is visible
+  // inside the accordion. The map flows through a ref so only chat switches
+  // trigger this; unrelated session reloads must not re-expand.
+  useEffect(() => {
+    folderKeyRef.current = folderKeyBySession;
+  }, [folderKeyBySession]);
+  useEffect(() => {
+    const key = folderKeyRef.current.get(activeID);
+    if (key) setExpandedFolderKey(key);
+  }, [activeID]);
 
   // Provider + model of the active target (agent → its model; team →
   // coordinator when auto, lead agent otherwise) for cost estimation and
@@ -1153,57 +1196,140 @@ export function ChatPage({ isDark, onToggleTheme, onOpenHelp, onOpenSettings }: 
     [stats, costOf],
   );
 
+  // Composer context chip (Codex-style): which project/directory this chat
+  // will work in. Auto task dirs under the global workspace count as the
+  // default project; explicit dirs outside it surface by folder name. The
+  // binding stays switchable until the first turn locks the workspace.
+  const workspaceContext = useMemo(() => {
+    if (!active) return null;
+    const project = active.projectId ? projects.find((p) => p.id === active.projectId) : undefined;
+    if (project) return { label: project.name, path: project.rootDir };
+    const norm = (p: string) => p.replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
+    const ws = norm(active.workspaceDir || "");
+    const root = norm(globalWorkspace);
+    const underGlobal = root !== "" && (ws === root || ws.startsWith(root + "/"));
+    if (ws && !underGlobal) {
+      const parts = ws.split("/").filter(Boolean);
+      return { label: parts[parts.length - 1] ?? active.workspaceDir, path: active.workspaceDir };
+    }
+    return { label: "默认项目", path: "" };
+  }, [active, projects, globalWorkspace]);
+
+  // renderSessionRow draws one chat list row; shared by the project accordion,
+  // the 最近 list and search results so hover actions stay identical.
+  const renderSessionRow = (s: ChatSession) => (
+    <div
+      key={s.id}
+      role="button"
+      tabIndex={0}
+      title={s.title}
+      className={cn(
+        "group flex cursor-pointer items-center gap-2 rounded-md px-2.5 py-2 text-sm",
+        s.id === activeID ? "bg-accent text-accent-foreground" : "hover:bg-accent/50",
+      )}
+      onClick={() => setActiveID(s.id)}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          setActiveID(s.id);
+        }
+      }}
+    >
+      {s.targetType === "team" ? <Users className="h-3.5 w-3.5 shrink-0 text-primary" />
+        : s.targetType === "remote" ? <Network className="h-3.5 w-3.5 shrink-0 text-primary" />
+          : s.targetType === "" ? <MessageSquare className="h-3.5 w-3.5 shrink-0 text-primary" />
+            : <Bot className="h-3.5 w-3.5 shrink-0 text-primary" />}
+      <span className="min-w-0 flex-1">
+        <span className="block truncate" title={s.forkedFrom ? `分叉自「${sessions.find((x) => x.id === s.forkedFrom)?.title ?? s.forkedFrom}」` : s.title}>
+          {s.forkedFrom && <GitFork className="mr-1 inline h-3 w-3 text-muted-foreground" />}
+          {s.title}
+        </span>
+        {s.preview && <span className="block truncate text-[11px] text-muted-foreground">{s.preview}</span>}
+      </span>
+      {s.pinned && <Pin className="h-3 w-3 shrink-0 text-primary" aria-label="已置顶" />}
+      {s.archived && <Badge variant="outline" className="shrink-0 px-1 py-0 text-[10px] text-muted-foreground">归档</Badge>}
+      {runningMap[s.id] && <Loader2 className="h-3 w-3 shrink-0 animate-spin text-primary" aria-label="生成中" />}
+      {!runningMap[s.id] && unread[s.id] && <span className="h-2 w-2 shrink-0 rounded-full bg-primary" aria-label="有新回复未查看" />}
+      <span className="hidden shrink-0 items-center gap-0.5 group-hover:flex">
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button
+              className="rounded p-0.5 hover:bg-background"
+              title="移动到项目（首轮前生效）"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <FolderInput className="h-3 w-3" />
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
+            <DropdownMenuItem onClick={() => switchSessionProject(s, "")}>默认项目</DropdownMenuItem>
+            {projects.map((p) => (
+              <DropdownMenuItem key={p.id} title={p.rootDir} onClick={() => switchSessionProject(s, p.id)}>
+                {p.name}
+              </DropdownMenuItem>
+            ))}
+          </DropdownMenuContent>
+        </DropdownMenu>
+        <button
+          className="rounded p-0.5 hover:bg-background"
+          title={s.archived ? "取消归档" : "归档此会话"}
+          onClick={(e) => {
+            e.stopPropagation();
+            Chat.ArchiveSession(s.id, !s.archived).then(reloadSessions).catch((e2) => toast.error(`归档失败: ${errText(e2)}`));
+          }}
+        >
+          <Archive className="h-3 w-3" />
+        </button>
+        <button
+          className="rounded p-0.5 hover:bg-background"
+          title={s.pinned ? "取消置顶" : "置顶此会话"}
+          onClick={(e) => {
+            e.stopPropagation();
+            Chat.PinSession(s.id, !s.pinned).then(reloadSessions).catch((e2) => toast.error(`置顶失败: ${errText(e2)}`));
+          }}
+        >
+          {s.pinned ? <PinOff className="h-3 w-3" /> : <Pin className="h-3 w-3" />}
+        </button>
+        <button
+          className="rounded p-0.5 hover:bg-background"
+          title="分叉此会话（复制完整历史为独立新会话）"
+          onClick={(e) => { e.stopPropagation(); forkSession(s); }}
+        >
+          <GitFork className="h-3 w-3" />
+        </button>
+        <button
+          className="rounded p-0.5 hover:bg-background"
+          onClick={(e) => { e.stopPropagation(); setRenaming(s); setRenameText(s.title); }}
+        >
+          <Pencil className="h-3 w-3" />
+        </button>
+        <button
+          className="rounded p-0.5 hover:bg-background"
+          onClick={(e) => { e.stopPropagation(); removeSession(s); }}
+        >
+          <Trash2 className="h-3 w-3" />
+        </button>
+      </span>
+    </div>
+  );
+
   return (
     <div className="flex h-full">
       {/* Sessions */}
       {!sidebarCollapsed && (
       <div className="flex w-60 shrink-0 flex-col border-r">
         <div className="grid gap-2 p-3">
-          <div className="flex items-center justify-between">
-            <span className="text-sm font-semibold">对话</span>
-            <span className="flex items-center">
-              <button
-                title="添加项目（选择一个目录）"
-                onClick={addProject}
-                className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
-              >
-                <FolderPlus className="h-4 w-4" />
-              </button>
-              <button
-                title="折叠对话列表（⌘B）"
-                onClick={toggleSidebar}
-                className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
-              >
-                <PanelLeftClose className="h-4 w-4" />
-              </button>
-            </span>
-          </div>
-          <div className="flex w-full gap-1">
-            <Button className="min-w-0 flex-1" size="sm" onClick={createDirectSession}>
-              <Plus className="mr-1 h-4 w-4" /> 新对话
+          <div className="flex items-center gap-1">
+            <Button className="min-w-0 flex-1 justify-start" size="sm" variant="secondary" onClick={createDirectSession}>
+              <SquarePen className="mr-1 h-4 w-4" /> 新聊天
             </Button>
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button size="sm" variant="outline" className="px-1.5" title="在指定项目中新建对话">
-                  <ChevronDown className="h-4 w-4" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-56">
-                <DropdownMenuItem onClick={() => createDirectSession()}>
-                  <MessageSquare className="mr-2 h-3.5 w-3.5" /> 默认对话（自动任务目录）
-                </DropdownMenuItem>
-                {projects.length > 0 && <DropdownMenuSeparator />}
-                {projects.map((p) => (
-                  <DropdownMenuItem key={p.id} title={p.rootDir} onClick={() => createProjectSession(p.id)}>
-                    <FolderOpen className="mr-2 h-3.5 w-3.5" /> {p.name}
-                  </DropdownMenuItem>
-                ))}
-                <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={addProject}>
-                  <FolderPlus className="mr-2 h-3.5 w-3.5" /> 添加新项目…
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
+            <button
+              title="折叠对话列表（⌘B）"
+              onClick={toggleSidebar}
+              className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
+            >
+              <PanelLeftClose className="h-4 w-4" />
+            </button>
           </div>
           <div className="relative">
             <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
@@ -1214,194 +1340,170 @@ export function ChatPage({ isDark, onToggleTheme, onOpenHelp, onOpenSettings }: 
               onChange={(e) => setSearch(e.target.value)}
             />
           </div>
-          <div className="flex items-center justify-end gap-1">
-            <button
-              title="按时间分组"
-              onClick={() => persistSidebarPrefs({ sidebarGrouping: "time" })}
-              className={cn(
-                "flex items-center gap-1 rounded-md px-2 py-1 text-[11px] transition-colors",
-                sidebarGrouping === "time" ? "bg-accent text-accent-foreground" : "text-muted-foreground hover:bg-accent/50 hover:text-foreground",
-              )}
-            >
-              <Clock className="h-3 w-3" /> 时间
-            </button>
-            <button
-              title="按项目分组（工作区目录）"
-              onClick={() => persistSidebarPrefs({ sidebarGrouping: "project" })}
-              className={cn(
-                "flex items-center gap-1 rounded-md px-2 py-1 text-[11px] transition-colors",
-                sidebarGrouping === "project" ? "bg-accent text-accent-foreground" : "text-muted-foreground hover:bg-accent/50 hover:text-foreground",
-              )}
-            >
-              <FolderOpen className="h-3 w-3" /> 项目
-            </button>
-          </div>
         </div>
         <ScrollArea className="flex-1 px-2">
           <div className="grid gap-1 pb-3">
-            {visibleGroups.map((group) => (
-              <div key={group.key}>
-                {group.key === "archived" && !showArchived ? (
-                  <button
-                    className="mt-1 flex w-full items-center gap-1 rounded-md px-2 py-1 text-left text-xs text-muted-foreground hover:bg-accent/50 hover:text-foreground"
-                    onClick={() => setShowArchived(true)}
-                  >
-                    <ChevronRight className="h-3 w-3" /> 已归档会话（{group.sessions.length}）
-                  </button>
-                ) : (
-                  <>
-                    <div className="flex items-center justify-between px-2 pb-0.5 pt-2 text-[11px] font-medium text-muted-foreground">
-                      <span title={"path" in group ? group.path : undefined}>{group.label}</span>
-                      <span className="flex shrink-0 items-center">
-                        {"projectId" in group && group.projectId && (
-                          <>
-                            <button
-                              title="在此项目中新建对话"
-                              onClick={() => createProjectSession(group.projectId!)}
-                              className="rounded p-0.5 hover:text-foreground"
-                            >
-                              <Plus className="h-3 w-3" />
-                            </button>
-                            <DropdownMenu>
-                              <DropdownMenuTrigger asChild>
-                                <button title="管理项目" onClick={(e) => e.stopPropagation()} className="rounded p-0.5 hover:text-foreground">
-                                  <MoreHorizontal className="h-3 w-3" />
-                                </button>
-                              </DropdownMenuTrigger>
-                              <DropdownMenuContent align="end">
-                                <DropdownMenuItem onClick={() => { setRenamingProject(projects.find((p) => p.id === group.projectId) ?? null); setRenameProjectText(group.label); }}>
-                                  重命名项目
-                                </DropdownMenuItem>
-                                <DropdownMenuItem onClick={async () => {
-                                  const picked = await pickWorkspace();
-                                  if (picked) await Chat.SaveProject(group.projectId!, "", picked).then(reloadProjects).catch((e) => toast.error(`更改目录失败: ${errText(e)}`));
-                                }}>
-                                  更改项目目录…
-                                </DropdownMenuItem>
-                                <DropdownMenuSeparator />
-                                <DropdownMenuItem className="text-destructive" onClick={() => {
-                                  const p = projects.find((x) => x.id === group.projectId);
-                                  if (p) deleteProject(p);
-                                }}>
-                                  删除项目（保留对话与文件）
-                                </DropdownMenuItem>
-                              </DropdownMenuContent>
-                            </DropdownMenu>
-                          </>
-                        )}
-                        {group.key === "archived" && (
-                          <button title="收起已归档" onClick={() => setShowArchived(false)} className="rounded p-0.5 hover:text-foreground">
-                            <ChevronDown className="h-3 w-3" />
-                          </button>
-                        )}
-                      </span>
-                    </div>
-                    {group.sessions.map((s) => (
-              <div
-                key={s.id}
-                role="button"
-                tabIndex={0}
-                title={s.title}
-                className={cn(
-                  "group flex cursor-pointer items-center gap-2 rounded-md px-2.5 py-2 text-sm",
-                  s.id === activeID ? "bg-accent text-accent-foreground" : "hover:bg-accent/50",
+            {searching ? (
+              <>
+                <div className="px-2 pb-0.5 pt-2 text-[11px] font-medium text-muted-foreground">搜索结果（{searchResults.length}）</div>
+                {searchResults.map(renderSessionRow)}
+                {searchResults.length === 0 && (
+                  <div className="px-2 py-6 text-center text-xs text-muted-foreground">没有匹配的对话</div>
                 )}
-                onClick={() => setActiveID(s.id)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" || e.key === " ") {
-                    e.preventDefault();
-                    setActiveID(s.id);
-                  }
-                }}
-              >
-                {s.targetType === "team" ? <Users className="h-3.5 w-3.5 shrink-0 text-primary" />
-                  : s.targetType === "remote" ? <Network className="h-3.5 w-3.5 shrink-0 text-primary" />
-                    : s.targetType === "" ? <MessageSquare className="h-3.5 w-3.5 shrink-0 text-primary" />
-                      : <Bot className="h-3.5 w-3.5 shrink-0 text-primary" />}
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate" title={s.forkedFrom ? `分叉自「${sessions.find((x) => x.id === s.forkedFrom)?.title ?? s.forkedFrom}」` : s.title}>
-                    {s.forkedFrom && <GitFork className="mr-1 inline h-3 w-3 text-muted-foreground" />}
-                    {s.title}
-                  </span>
-                  {s.preview && <span className="block truncate text-[11px] text-muted-foreground">{s.preview}</span>}
-                </span>
-                {s.pinned && <Pin className="h-3 w-3 shrink-0 text-primary" aria-label="已置顶" />}
-                {s.archived && <Badge variant="outline" className="shrink-0 px-1 py-0 text-[10px] text-muted-foreground">归档</Badge>}
-                {runningMap[s.id] && <Loader2 className="h-3 w-3 shrink-0 animate-spin text-primary" aria-label="生成中" />}
-                {!runningMap[s.id] && unread[s.id] && <span className="h-2 w-2 shrink-0 rounded-full bg-primary" aria-label="有新回复未查看" />}
-                <span className="hidden shrink-0 items-center gap-0.5 group-hover:flex">
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
+              </>
+            ) : (
+              <>
+                <div className="flex items-center justify-between px-2 pb-0.5 pt-1 text-[11px] font-medium text-muted-foreground">
+                  <button
+                    className="flex items-center gap-1 rounded px-1 py-0.5 hover:text-foreground"
+                    onClick={() => setProjectsOpen((o) => !o)}
+                  >
+                    {projectsOpen ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />} 项目
+                  </button>
+                  <button
+                    title="添加项目（选择一个目录）"
+                    onClick={addProject}
+                    className="rounded p-0.5 hover:text-foreground"
+                  >
+                    <FolderPlus className="h-3 w-3" />
+                  </button>
+                </div>
+                {projectsOpen && (
+                  <div className="grid gap-0.5">
+                    {folderGroups.map((g) => {
+                      const expanded = expandedFolderKey === g.key;
+                      const project = g.projectId ? projects.find((p) => p.id === g.projectId) : undefined;
+                      return (
+                        <div key={g.key}>
+                          <div
+                            role="button"
+                            tabIndex={0}
+                            title={g.path ?? g.label}
+                            className={cn(
+                              "group flex cursor-pointer items-center gap-2 rounded-md px-2.5 py-1.5 text-sm",
+                              expanded ? "bg-accent/60 text-accent-foreground" : "hover:bg-accent/50",
+                            )}
+                            onClick={() => setExpandedFolderKey(expanded ? null : g.key)}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter" || e.key === " ") {
+                                e.preventDefault();
+                                setExpandedFolderKey(expanded ? null : g.key);
+                              }
+                            }}
+                          >
+                            {expanded
+                              ? <ChevronDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                              : <FolderOpen className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />}
+                            <span className="min-w-0 flex-1 truncate">{g.label}</span>
+                            <span className="hidden shrink-0 items-center gap-0.5 group-hover:flex">
+                              {project && (
+                                <>
+                                  <button
+                                    className="rounded p-0.5 hover:bg-background"
+                                    title="在此项目中新建对话"
+                                    onClick={(e) => { e.stopPropagation(); createProjectSession(project.id); }}
+                                  >
+                                    <Plus className="h-3 w-3" />
+                                  </button>
+                                  <button
+                                    className="rounded p-0.5 hover:bg-background"
+                                    title="重命名项目"
+                                    onClick={(e) => { e.stopPropagation(); setRenamingProject(project); setRenameProjectText(g.label); }}
+                                  >
+                                    <Pencil className="h-3 w-3" />
+                                  </button>
+                                </>
+                              )}
+                              <DropdownMenu>
+                                <DropdownMenuTrigger asChild>
+                                  <button title={project ? "管理项目" : "目录操作"} onClick={(e) => e.stopPropagation()} className="rounded p-0.5 hover:bg-background">
+                                    <MoreHorizontal className="h-3 w-3" />
+                                  </button>
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
+                                  {project ? (
+                                    <>
+                                      <DropdownMenuItem onClick={() => createProjectSession(project.id)}>在此项目中新建对话</DropdownMenuItem>
+                                      <DropdownMenuItem onClick={() => { setRenamingProject(project); setRenameProjectText(g.label); }}>重命名项目</DropdownMenuItem>
+                                      <DropdownMenuItem onClick={async () => {
+                                        const picked = await pickWorkspace();
+                                        if (picked) await Chat.SaveProject(project.id, "", picked).then(reloadProjects).catch((e) => toast.error(`更改目录失败: ${errText(e)}`));
+                                      }}>
+                                        更改项目目录…
+                                      </DropdownMenuItem>
+                                      <DropdownMenuSeparator />
+                                      <DropdownMenuItem className="text-destructive" onClick={() => deleteProject(project)}>
+                                        删除项目（保留对话与文件）
+                                      </DropdownMenuItem>
+                                    </>
+                                  ) : (
+                                    <DropdownMenuItem onClick={async () => {
+                                      try {
+                                        const p = await Chat.SaveProject("", "", g.path ?? "");
+                                        reloadProjects();
+                                        toast.success(`已添加项目「${p.name}」`);
+                                      } catch (e) {
+                                        toast.error(`添加项目失败: ${errText(e)}`);
+                                      }
+                                    }}>
+                                      注册为项目
+                                    </DropdownMenuItem>
+                                  )}
+                                </DropdownMenuContent>
+                              </DropdownMenu>
+                            </span>
+                          </div>
+                          {expanded && (
+                            <div className="ml-3 grid gap-0.5 border-l pl-1">
+                              {g.sessions.map(renderSessionRow)}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                    {folderGroups.length === 0 && (
+                      <div className="px-2 py-1 text-[11px] leading-relaxed text-muted-foreground">
+                        暂无项目：对话绑定到工作区目录后自动归类到这里，也可点右上角 + 添加
+                      </div>
+                    )}
+                  </div>
+                )}
+                <button
+                  className="flex items-center gap-1 rounded px-2 pb-0.5 pt-2 text-[11px] font-medium text-muted-foreground hover:text-foreground"
+                  onClick={() => setRecentOpen((o) => !o)}
+                >
+                  {recentOpen ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />} 最近
+                </button>
+                {recentOpen && timeGroups.map((group) => (
+                  <div key={group.key}>
+                    <div className="px-2 pb-0.5 pt-1.5 text-[11px] text-muted-foreground/80">{group.label}</div>
+                    {group.sessions.map(renderSessionRow)}
+                  </div>
+                ))}
+                {recentOpen && sessions.length > 0 && timeGroups.length === 0 && archivedSessions.length === 0 && (
+                  <div className="px-2 py-4 text-center text-xs text-muted-foreground">还没有对话，点击上方「新聊天」开始</div>
+                )}
+                {archivedSessions.length > 0 && (
+                  showArchived ? (
+                    <>
                       <button
-                        className="rounded p-0.5 hover:bg-background"
-                        title="移动到项目（首轮前生效）"
-                        onClick={(e) => e.stopPropagation()}
+                        className="mt-1 flex w-full items-center gap-1 rounded-md px-2 py-1 text-left text-xs text-muted-foreground hover:bg-accent/50 hover:text-foreground"
+                        onClick={() => setShowArchived(false)}
                       >
-                        <FolderInput className="h-3 w-3" />
+                        <ChevronDown className="h-3 w-3" /> 已归档会话（{archivedSessions.length}）
                       </button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
-                      <DropdownMenuItem onClick={() => switchSessionProject(s, "")}>默认项目</DropdownMenuItem>
-                      {projects.map((p) => (
-                        <DropdownMenuItem key={p.id} title={p.rootDir} onClick={() => switchSessionProject(s, p.id)}>
-                          {p.name}
-                        </DropdownMenuItem>
-                      ))}
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                  <button
-                    className="rounded p-0.5 hover:bg-background"
-                    title={s.archived ? "取消归档" : "归档此会话"}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      Chat.ArchiveSession(s.id, !s.archived).then(reloadSessions).catch((e2) => toast.error(`归档失败: ${errText(e2)}`));
-                    }}
-                  >
-                    <Archive className="h-3 w-3" />
-                  </button>
-                  <button
-                    className="rounded p-0.5 hover:bg-background"
-                    title={s.pinned ? "取消置顶" : "置顶此会话"}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      Chat.PinSession(s.id, !s.pinned).then(reloadSessions).catch((e2) => toast.error(`置顶失败: ${errText(e2)}`));
-                    }}
-                  >
-                    {s.pinned ? <PinOff className="h-3 w-3" /> : <Pin className="h-3 w-3" />}
-                  </button>
-                  <button
-                    className="rounded p-0.5 hover:bg-background"
-                    title="分叉此会话（复制完整历史为独立新会话）"
-                    onClick={(e) => { e.stopPropagation(); forkSession(s); }}
-                  >
-                    <GitFork className="h-3 w-3" />
-                  </button>
-                  <button
-                    className="rounded p-0.5 hover:bg-background"
-                    onClick={(e) => { e.stopPropagation(); setRenaming(s); setRenameText(s.title); }}
-                  >
-                    <Pencil className="h-3 w-3" />
-                  </button>
-                  <button
-                    className="rounded p-0.5 hover:bg-background"
-                    onClick={(e) => { e.stopPropagation(); removeSession(s); }}
-                  >
-                    <Trash2 className="h-3 w-3" />
-                  </button>
-                </span>
-              </div>
-            ))}
-                  </>
+                      {archivedSessions.map(renderSessionRow)}
+                    </>
+                  ) : (
+                    <button
+                      className="mt-1 flex w-full items-center gap-1 rounded-md px-2 py-1 text-left text-xs text-muted-foreground hover:bg-accent/50 hover:text-foreground"
+                      onClick={() => setShowArchived(true)}
+                    >
+                      <ChevronRight className="h-3 w-3" /> 已归档会话（{archivedSessions.length}）
+                    </button>
+                  )
                 )}
-              </div>
-            ))}
-            {sessions.length > 0 && filteredSessions.length === 0 && (
-              <div className="px-2 py-6 text-center text-xs text-muted-foreground">没有匹配的对话</div>
-            )}
-            {sessions.length === 0 && (
-              <div className="px-2 py-8 text-center text-xs text-muted-foreground">
-                还没有对话，点击上方「新对话」开始
-              </div>
+              </>
             )}
           </div>
         </ScrollArea>
@@ -1762,6 +1864,35 @@ export function ChatPage({ isDark, onToggleTheme, onOpenHelp, onOpenSettings }: 
               </div>
             )}
           </div>
+          {active && messages.length === 0 && workspaceContext && (
+            <div className="mx-auto mb-1.5 flex max-w-3xl items-center">
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <button
+                    className="flex items-center gap-1.5 rounded-lg border bg-background px-2.5 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                    title={workspaceContext.path || "自动任务目录（全局工作区）"}
+                  >
+                    <FolderOpen className="h-3.5 w-3.5 shrink-0" />
+                    <span className="max-w-[240px] truncate">{workspaceContext.label}</span>
+                    <ChevronDown className="h-3 w-3 shrink-0 opacity-60" />
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="start" className="w-64">
+                  <DropdownMenuItem onClick={() => switchSessionProject(active, "")}>
+                    默认项目（自动任务目录）
+                  </DropdownMenuItem>
+                  {projects.map((p) => (
+                    <DropdownMenuItem key={p.id} title={p.rootDir} onClick={() => switchSessionProject(active, p.id)}>
+                      {p.name}
+                    </DropdownMenuItem>
+                  ))}
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onClick={changeSessionWorkspace}>选择其他目录…</DropdownMenuItem>
+                  <DropdownMenuItem onClick={addProject}>添加新项目…</DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
+          )}
           <div
             className="mx-auto flex max-w-3xl items-end gap-2"
             onDragOver={(e) => e.preventDefault()}

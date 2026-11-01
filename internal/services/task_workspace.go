@@ -202,7 +202,7 @@ func workspaceConflict(cfg config.Config, workspace, excludeSessionID string) er
 			continue
 		}
 		if samePath(s.WorkspaceDir, workspace) {
-			return fmt.Errorf("工作区已被任务「%s」使用，请选择其他目录", s.Title)
+			return fmt.Errorf("工作区已被任务「%s」使用：归档或删除该任务即可释放目录，也可以选择其他目录", s.Title)
 		}
 	}
 	return nil
@@ -220,7 +220,7 @@ func workspaceConflictForUnarchive(cfg config.Config, target config.ChatSession)
 		if !samePath(s.WorkspaceDir, target.WorkspaceDir) || forkRootID(cfg, s.ID) == targetRoot {
 			continue
 		}
-		return fmt.Errorf("工作区已被任务「%s」使用，请选择其他目录", s.Title)
+		return fmt.Errorf("工作区已被任务「%s」使用：归档或删除该任务即可释放目录，也可以选择其他目录", s.Title)
 	}
 	return nil
 }
