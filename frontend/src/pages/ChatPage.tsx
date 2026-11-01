@@ -1413,7 +1413,7 @@ export function ChatPage({ isDark, onToggleTheme, onOpenHelp, onOpenSettings }: 
       {s.archived && <Badge variant="outline" className="shrink-0 px-1 py-0 text-[10px] text-muted-foreground">归档</Badge>}
       {runningMap[s.id] && <Loader2 className="h-3 w-3 shrink-0 animate-spin text-primary" aria-label="生成中" />}
       {!runningMap[s.id] && unread[s.id] && <span className="h-2 w-2 shrink-0 rounded-full bg-primary" aria-label="有新回复未查看" />}
-      <span className="hidden shrink-0 items-center gap-0.5 group-hover:flex">
+      <span className="hidden shrink-0 items-center gap-0.5 group-hover:flex group-focus-within:flex">
         {/* Frequent state toggles stay one click; the rest collapse into one
             menu so the row keeps four controls instead of six. */}
         <button
@@ -1563,7 +1563,7 @@ export function ChatPage({ isDark, onToggleTheme, onOpenHelp, onOpenSettings }: 
                               ? <ChevronDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                               : <FolderOpen className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />}
                             <span className="min-w-0 flex-1 truncate">{g.label}</span>
-                            <span className="hidden shrink-0 items-center gap-0.5 group-hover:flex">
+                            <span className="hidden shrink-0 items-center gap-0.5 group-hover:flex group-focus-within:flex">
                               {project && (
                                 <>
                                   <button
