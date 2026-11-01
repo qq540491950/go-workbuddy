@@ -14,11 +14,18 @@ import (
 	"go-workbuddy/internal/config"
 )
 
-const taskSnapshotVersion = 1
+// taskSnapshotVersion v2 adds per-file baseline content snapshots (see
+// taskBaselineFile.Content). A stored v1 baseline is treated as stale and
+// rebuilt so line-level diff works immediately after upgrade.
+const taskSnapshotVersion = 2
 
 type taskBaselineFile struct {
 	Size    int64     `json:"size"`
 	ModTime time.Time `json:"modTime"`
+	// Content is the file name (inside the session's content dir) of the
+	// baseline content snapshot, empty when the file was not snapshotable
+	// (binary, empty, or over the per-file/budget caps).
+	Content string `json:"content,omitempty"`
 }
 
 type taskBaseline struct {
@@ -57,6 +64,7 @@ func removeTaskBaseline(store *config.Store, sessionID string) {
 	taskSnapshotMu.Lock()
 	defer taskSnapshotMu.Unlock()
 	_ = os.Remove(taskSnapshotPath(store, sessionID))
+	removeTaskContent(store, sessionID)
 }
 
 func loadTaskBaselineLocked(store *config.Store, sessionID, workspace string) (*taskBaseline, bool, error) {
@@ -86,6 +94,9 @@ func loadTaskBaselineLocked(store *config.Store, sessionID, workspace string) (*
 }
 
 func createTaskBaselineLocked(store *config.Store, sessionID, workspace string) (*taskBaseline, error) {
+	// A fresh baseline invalidates any content snapshots left by a previous
+	// (stale, corrupt or reset) baseline for this session.
+	removeTaskContent(store, sessionID)
 	files, _, _, err := scanTaskFiles(workspace)
 	if err != nil {
 		return nil, fmt.Errorf("建立任务快照基线失败: %w", err)
@@ -100,10 +111,40 @@ func createTaskBaselineLocked(store *config.Store, sessionID, workspace string) 
 	for _, f := range files {
 		baseline.Files[f.Path] = taskBaselineFile{Size: f.Size, ModTime: f.ModTime}
 	}
+	snapshotBaselineContent(store, sessionID, workspace, files, baseline)
 	if err := writeTaskBaselineLocked(store, baseline); err != nil {
 		return nil, err
 	}
 	return baseline, nil
+}
+
+// snapshotBaselineContent stores the text of small files so later diffs can
+// compare against the task baseline. Best-effort: read or write failures only
+// skip the file (its diff will report missing baseline content).
+func snapshotBaselineContent(store *config.Store, sessionID, workspace string, files []WorkspaceFileInfo, baseline *taskBaseline) {
+	budget := int64(diffContentBudget)
+	stored := 0
+	for _, f := range files {
+		if stored >= diffContentFileCap || budget < f.Size {
+			break
+		}
+		if f.Size == 0 || f.Size > diffContentFileMax {
+			continue
+		}
+		data, err := os.ReadFile(filepath.Join(workspace, filepath.FromSlash(f.Path)))
+		if err != nil || !looksTextual(data) {
+			continue
+		}
+		name, err := writeTaskContent(store, sessionID, f.Path, data)
+		if err != nil {
+			continue
+		}
+		entry := baseline.Files[f.Path]
+		entry.Content = name
+		baseline.Files[f.Path] = entry
+		budget -= int64(len(data))
+		stored++
+	}
 }
 
 func writeTaskBaselineLocked(store *config.Store, baseline *taskBaseline) error {

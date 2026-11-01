@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { toast } from "sonner";
 import {
-  AlertTriangle, FileImage, FileText, FolderOpen, Loader2, RefreshCw, Search, X,
+  AlertTriangle, FileDiff, FileImage, FileText, FolderOpen, Loader2, RefreshCw, Search, X,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -11,7 +11,7 @@ import { ArtifactPreview } from "@/components/ToolCallCard";
 import {
   Artifact, errText, WorkspaceChangeStatus,
   WorkspaceFileKind,
-  type TaskWorkspaceSnapshot, type WorkspaceFileInfo,
+  type FileDiffResult, type TaskWorkspaceSnapshot, type WorkspaceFileInfo,
 } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
@@ -48,29 +48,12 @@ const statusMeta: Record<WorkspaceChangeStatus, { label: string; className: stri
   [WorkspaceChangeStatus.ChangeDeleted]: { label: "删除", className: "text-destructive" },
 };
 
-function FileRow({ file, onPreview }: {
-  file: WorkspaceFileInfo;
-  onPreview: (path: string) => void;
-}) {
+function FileRowBody({ file }: { file: WorkspaceFileInfo }) {
   const icon = file.kind === WorkspaceFileKind.FileKindImage || file.kind === WorkspaceFileKind.FileKindPDF
     ? <FileImage className="h-4 w-4" />
     : <FileText className="h-4 w-4" />;
   return (
-    <button
-      type="button"
-      className={cn(
-        "flex w-full items-start gap-2 rounded-lg border bg-card/40 px-2.5 py-2 text-left transition-colors",
-        file.previewable && file.status !== WorkspaceChangeStatus.ChangeDeleted
-          ? "hover:border-primary/40 hover:bg-accent/40"
-          : "cursor-default",
-      )}
-      disabled={!file.previewable || file.status === WorkspaceChangeStatus.ChangeDeleted}
-      onClick={() => file.previewable && file.status !== WorkspaceChangeStatus.ChangeDeleted && onPreview(file.path)}
-      title={file.previewable && file.status !== WorkspaceChangeStatus.ChangeDeleted
-        ? `预览 ${file.path}`
-        : `${file.path}（不支持内嵌预览）`}
-      data-file-path={file.path}
-    >
+    <>
       <span className="mt-0.5 shrink-0 text-muted-foreground">{icon}</span>
       <span className="min-w-0 flex-1">
         <span className="flex items-center gap-1.5">
@@ -90,7 +73,162 @@ function FileRow({ file, onPreview }: {
           {!file.previewable && " · 需外部打开"}
         </span>
       </span>
+    </>
+  );
+}
+
+function FileRow({ file, onPreview }: {
+  file: WorkspaceFileInfo;
+  onPreview: (path: string) => void;
+}) {
+  const canPreview = file.previewable && file.status !== WorkspaceChangeStatus.ChangeDeleted;
+  return (
+    <button
+      type="button"
+      className={cn(
+        "flex w-full items-start gap-2 rounded-lg border bg-card/40 px-2.5 py-2 text-left transition-colors",
+        canPreview ? "hover:border-primary/40 hover:bg-accent/40" : "cursor-default",
+      )}
+      disabled={!canPreview}
+      onClick={() => canPreview && onPreview(file.path)}
+      title={canPreview ? `预览 ${file.path}` : `${file.path}（不支持内嵌预览）`}
+      data-file-path={file.path}
+    >
+      <FileRowBody file={file} />
     </button>
+  );
+}
+
+// DiffView loads and renders one file's line-level diff against the task
+// baseline. Unsupported files (binary/oversize/missing baseline content) show
+// the backend reason inline instead of a toast, matching the result pane's
+// inline state style.
+function DiffView({ sessionID, path }: { sessionID: string; path: string }) {
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [result, setResult] = useState<FileDiffResult | null>(null);
+  useEffect(() => {
+    let alive = true;
+    setLoading(true);
+    setError("");
+    setResult(null);
+    Artifact.FileDiff(sessionID, path)
+      .then((res) => {
+        if (alive) setResult(res ?? null);
+      })
+      .catch((e) => {
+        if (alive) setError(errText(e));
+      })
+      .finally(() => {
+        if (alive) setLoading(false);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [sessionID, path]);
+
+  if (loading) {
+    return (
+      <div className="flex items-center gap-2 border-t px-3 py-3 text-xs text-muted-foreground">
+        <Loader2 className="h-3.5 w-3.5 animate-spin" /> 正在计算 diff…
+      </div>
+    );
+  }
+  if (error) {
+    return <div className="break-words border-t px-3 py-2 text-xs text-destructive">{error}</div>;
+  }
+  if (!result) return null;
+  if (result.unsupported) {
+    return (
+      <div className="border-t bg-muted/30 px-3 py-2 text-[11px] text-muted-foreground">{result.unsupported}</div>
+    );
+  }
+  if (!result.hunks?.length) {
+    return (
+      <div className="border-t bg-muted/30 px-3 py-2 text-[11px] text-muted-foreground">与任务基线一致，无行级变更。</div>
+    );
+  }
+  return (
+    <div className="border-t bg-muted/20">
+      <div className="max-h-80 overflow-auto font-mono text-[11px] leading-4">
+        {result.hunks.map((h, hi) => (
+          <div key={hi}>
+            <div className="sticky top-0 z-10 bg-muted/90 px-2 py-0.5 text-[10px] text-muted-foreground">
+              @@ -{h.oldStart},{h.oldLines} +{h.newStart},{h.newLines} @@
+            </div>
+            {(h.lines ?? []).map((l, li) => (
+              <div
+                key={li}
+                className={cn(
+                  "flex",
+                  l.type === "add" && "bg-emerald-500/10",
+                  l.type === "del" && "bg-red-500/10",
+                )}
+              >
+                <span className="w-9 shrink-0 select-none pr-1 text-right text-muted-foreground/50">{l.oldNo || ""}</span>
+                <span className="w-9 shrink-0 select-none pr-1 text-right text-muted-foreground/50">{l.newNo || ""}</span>
+                <span
+                  className={cn(
+                    "min-w-0 flex-1 whitespace-pre-wrap break-all pr-2",
+                    l.type === "add" && "text-emerald-700 dark:text-emerald-300",
+                    l.type === "del" && "text-red-700 dark:text-red-300",
+                  )}
+                >
+                  {l.text}
+                </span>
+              </div>
+            ))}
+          </div>
+        ))}
+      </div>
+      <div className="flex items-center gap-3 border-t px-3 py-1.5 font-mono text-[10px] text-muted-foreground">
+        <span className="text-emerald-600 dark:text-emerald-400">+{result.addedLines}</span>
+        <span className="text-red-600 dark:text-red-400">-{result.removedLines}</span>
+        {result.truncated && <span className="font-sans">内容过长已截断</span>}
+      </div>
+    </div>
+  );
+}
+
+// ChangeRow is the changes-tab variant of FileRow: the row itself keeps the
+// preview affordance, and a trailing Diff toggle expands the line-level diff
+// against the task baseline (deleted files diff their baseline content).
+function ChangeRow({ file, sessionID, onPreview }: {
+  file: WorkspaceFileInfo;
+  sessionID: string;
+  onPreview: (path: string) => void;
+}) {
+  const [diffOpen, setDiffOpen] = useState(false);
+  const canPreview = file.previewable && file.status !== WorkspaceChangeStatus.ChangeDeleted;
+  return (
+    <div className={cn("rounded-lg border bg-card/40", diffOpen && "border-primary/50")} data-file-path={file.path}>
+      <div className="flex items-stretch">
+        <button
+          type="button"
+          className={cn(
+            "flex min-w-0 flex-1 items-start gap-2 px-2.5 py-2 text-left",
+            canPreview && "hover:bg-accent/40",
+          )}
+          disabled={!canPreview}
+          onClick={() => canPreview && onPreview(file.path)}
+          title={canPreview ? `预览 ${file.path}` : `${file.path}（不支持内嵌预览）`}
+        >
+          <FileRowBody file={file} />
+        </button>
+        <button
+          type="button"
+          className="flex shrink-0 items-center gap-1 border-l px-2.5 text-[11px] text-muted-foreground transition-colors hover:text-foreground"
+          aria-expanded={diffOpen}
+          aria-label={diffOpen ? `收起 ${file.name} 的行级 diff` : `查看 ${file.name} 的行级 diff`}
+          title={file.status === WorkspaceChangeStatus.ChangeDeleted ? "查看被删除的内容" : "与任务基线对比"}
+          onClick={() => setDiffOpen((v) => !v)}
+        >
+          <FileDiff className={cn("h-3.5 w-3.5", diffOpen && "text-primary")} />
+          Diff
+        </button>
+      </div>
+      {diffOpen && <DiffView sessionID={sessionID} path={file.path} />}
+    </div>
   );
 }
 
@@ -310,13 +448,13 @@ export function TaskWorkspacePanel({ sessionID, workspace, open, running, refres
               {!loading && !error && current.length === 0 && (
                 <div className="py-16 text-center text-xs text-muted-foreground">{emptyText}</div>
               )}
-              {!error && current.map((file) => (
-                <FileRow
-                  key={file.path}
-                  file={file}
-                  onPreview={setPreviewPath}
-                />
-              ))}
+              {!error && current.map((file) =>
+                tab === "changes" ? (
+                  <ChangeRow key={file.path} file={file} sessionID={sessionID} onPreview={setPreviewPath} />
+                ) : (
+                  <FileRow key={file.path} file={file} onPreview={setPreviewPath} />
+                ),
+              )}
             </div>
           </ScrollArea>
 

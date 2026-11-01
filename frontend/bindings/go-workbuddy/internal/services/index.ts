@@ -17,6 +17,7 @@ export {
 };
 
 export {
+    FileDiffLineType,
     WorkspaceChangeStatus,
     WorkspaceFileKind
 } from "./models.js";
@@ -30,6 +31,9 @@ export type {
     AuthorStat,
     ChatMessage,
     ChatStreamEvent,
+    FileDiffHunk,
+    FileDiffLine,
+    FileDiffResult,
     ImportAgentResult,
     KnowledgeFile,
     MemoryInfo,

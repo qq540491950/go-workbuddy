@@ -88,4 +88,4 @@ frontend/stub/               # 浏览器视觉回归：setTransport 数据桩 + 
 - 长会话渲染上限 200 条（完整历史持久化，可导出查看）
 - MCP OAuth 令牌缓存在 config.json（0600）；脱敏导出不带令牌
 - 团队负责人必须为本地 Agent（远程 A2A 成员仅作为可转移的子代理）
-- 任务结果区不支持行级 diff、Office 在线预览或网页运行预览
+- 任务结果区支持行级 diff（基线内容快照存于 `task-snapshots/content/<sessionID>/`，文本 ≤256KB、每会话 32MB 预算）；仍不支持 Office 在线预览或网页运行预览

@@ -4,6 +4,20 @@
 
 ## 视觉测试与体验设计
 
+### 第一百五十五轮迭代：任务变更行级 diff——Codex 式代码审查视图（已实施）
+
+依据：对标 Codex 桌面端的变更审查体验，任务结果区「变更」标签此前只有文件级 新增/修改/删除 徽标，看不到改了哪些行——这也是 README 已知边界里明确记录的最大能力缺口。行级 diff 的前提是「改之前的内容」，而任务基线（`task-snapshots/<sessionID>.json`）只存 size+mtime，因此在基线侧引入内容快照是本轮的架构前提。
+
+实现要点：
+
+- **基线内容快照**：`taskBaselineFile` 新增 `Content` 字段（内容文件名，`omitempty`），快照目录 `task-snapshots/content/<base(sessionID)>/`，文件名为 `sha256(相对路径)`。建立基线时对每个扫描到的普通文件尽力快照：UTF-8 文本（NUL 嗅探 + utf8.Valid，与 diff 时同款 `looksTextual` 判定）、≤256KB、每会话 2000 个文件 / 32MB 预算上限，读失败静默跳过。`taskSnapshotVersion` 1→2——旧 v1 基线按既有「陈旧即重建」路径升级，升级后首个基线自带内容；重建/删除基线同步清空内容目录（`createTaskBaselineLocked` 统一负责）。
+- **有界 diff 引擎**（`internal/services/filediff.go`，无第三方依赖）：`lineDiff` 先裁剪公共前缀/后缀；中段 ≤3000 行走 LCS 动态规划（uint16 表 ≤18MB），否则进入分块路径——200 行一块按块内容 LCS 对齐，失配区递归下钻（深度 3 兜底整段替换），保证大文件局部修改仍产生局部 hunk 而非整段替换。`groupHunks` 生成统一 diff hunk（3 行上下文、相邻变更合并），渲染行数 12000 封顶（超出截断标记）。
+- **FileDiff RPC**（ArtifactService）：解析会话有效工作区（项目会话贯通）→ `SafeWorkspacePath` 防穿越 → 新增=空侧对比、删除=基线内容对比、修改=双侧对比、与基线一致=空 hunk；二进制/超 2MB/基线未存内容（建基线时为二进制、空文件或超快照上限）返回带 `Unsupported` 原因的结果而非错误，前端内联展示。状态字段与 `buildTaskSnapshot` 同口径，未变更文件状态为空。
+- **前端**：变更标签的每行改为 `ChangeRow`——行本体保留预览能力，尾部新增「Diff」开关（aria-expanded），展开内嵌 `DiffView`：hunk 头吸顶、双列行号、加行绿/删行红、底部 ±行数与截断提示，长 diff 内部滚动（max-h-80）。删除的文件现在也能打开（查看被删除的内容），不可预览文件有了新的检视路径。`api.ts` 导出 FileDiff 类型族。
+- **视觉桩修复（两个潜伏 bug 互相掩护）**：TaskWorkspaceSnapshot 的桩方法 ID（57605569）自绑定再生成起就不对应任何现役方法（AGENTS「手工计算仅应急」的又一例证），面板一直在错误态，而近几轮走查未触达该面板故未暴露；修正为生成产物标注的 2781372891 后，又暴露第 153 轮引入的 `structuredClone` 深拷贝无法克隆 async 处理器的 Promise——transport 先 `await` 再克隆。桩新增 `FileDiff`（1773899386）夹具，与种子变更列表一一对应（新增/修改/删除各一）。
+
+测试证据：新增 `filediff_test.go` 八组用例——行拆分边界（尾换行/CRLF/空串）、九场景表驱动（相同/插入/删除/追加/前插/空侧/远距双 hunk，断言 hunk 数、±行数、上下文行数与行号-文本对齐不变量）、8000 行文件两处孤立修改经分块路径产出两个局部 hunk（非 4000 行整段替换，回归钉住「分块必须递归下钻」）、渲染上限截断、FileDiff 增删改未变四态端到端（含删除内容逐行还原）、四种 Unsupported（基线未存/二进制/删除详情缺失/超上限）、路径穿越与未知会话拒绝、基线内容快照-重建-清理生命周期。调试中修复分块递归 depth 被 `middleDiff` 重置导致的无限递归（168s 挂死→0.01s）。`go test ./internal/... .` 全绿、`go vet` 干净；绑定再生成后 `tsc --noEmit`、vitest 17/17、生产构建通过；`wails3 build` 产出二进制。浏览器桩走查：变更列表三行 Diff 按钮（aria-expanded 正确）、修改文件 hunk 头 `@@ -3,7 +3,9 @@` 与红绿行、删除文件纯删除行、新增文件纯新增行，截图确认配色与行号布局。顺带清理：`-clean` 再生成删除了无引用的旧版 CLI 遗留 `frontend/bindings/events/index.ts`。
+
 ### 第一百五十四轮迭代：macOS 测试可移植性——临时目录符号链接归一化（已实施）
 
 依据：代码库从 Windows 迁到 macOS 开发后，`go test ./internal/services` 有 3 个用例失败：`TestNewSessionWorkspaceIsolatesParallelWrites`、`TestExplicitWorkspaceValidationAndConflict`、`TestSetSessionWorkspaceBeforeFirstTurnOnly`。根因是平台差异而非产品缺陷——macOS 的 `$TMPDIR`（`/var/folders/...`）本身是指向 `/private/var/folders/...` 的符号链接，生产代码 `validateTaskWorkspace` 按设计做 `filepath.EvalSymlinks` 归一化后存储工作区路径，而测试断言仍拿未解析的 `t.TempDir()` 原始路径做字符串比较，Windows 上没有这类符号链接所以从未暴露。

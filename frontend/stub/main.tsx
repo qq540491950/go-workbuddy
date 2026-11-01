@@ -307,7 +307,7 @@ const handlers: Record<string, (args: any[]) => any> = {
     return null;
   },
   // ArtifactService.TaskWorkspaceSnapshot(sessionID)
-  "57605569": async (args) => {
+  "2781372891": async (args) => {
     if (taskSnapshotMode === "slow") {
       await new Promise((resolve) => setTimeout(resolve, 700));
     }
@@ -372,6 +372,67 @@ const handlers: Record<string, (args: any[]) => any> = {
     size: 2048,
     text: args[1].endsWith(".png") ? undefined : "# 周报\n\n任务文件预览。",
   }),
+  // ArtifactService.FileDiff(sessionID, relPath) — 与种子变更列表对应的夹具。
+  "1773899386": (args) => {
+    const path = String(args[1]);
+    if (path === "archive.zip") {
+      return { sessionId: args[0], path, status: "modified", unsupported: "二进制文件不支持 diff", hunks: [] };
+    }
+    if (path === "notes/old.txt") {
+      return {
+        sessionId: args[0], path, status: "deleted", oldSize: 512,
+        addedLines: 0, removedLines: 6, hunks: [{
+          oldStart: 1, oldLines: 6, newStart: 0, newLines: 0,
+          lines: [
+            { type: "del", oldNo: 1, text: "周报（旧版，已被 weekly.md 取代）" },
+            { type: "del", oldNo: 2, text: "" },
+            { type: "del", oldNo: 3, text: "## 本周进展" },
+            { type: "del", oldNo: 4, text: "- 完成初稿" },
+            { type: "del", oldNo: 5, text: "- 收集反馈" },
+            { type: "del", oldNo: 6, text: "- 待评审" },
+          ],
+        }],
+      };
+    }
+    if (path === "notes/weekly.md") {
+      return {
+        sessionId: args[0], path, status: "modified", oldSize: 2048, newSize: 2184,
+        addedLines: 3, removedLines: 1, hunks: [{
+          oldStart: 3, oldLines: 7, newStart: 3, newLines: 9,
+          lines: [
+            { type: "context", oldNo: 3, newNo: 3, text: "## 本周进展" },
+            { type: "del", oldNo: 4, text: "- 完成知识库检索联调" },
+            { type: "add", newNo: 4, text: "- 完成知识库检索联调（含混合排序回归）" },
+            { type: "add", newNo: 5, text: "- 任务结果区新增行级 diff 视图" },
+            { type: "add", newNo: 6, text: "- 基线内容快照与清理链路打通" },
+            { type: "context", oldNo: 5, newNo: 7, text: "- 修复切会话闪烁" },
+            { type: "context", oldNo: 6, newNo: 8, text: "" },
+            { type: "context", oldNo: 7, newNo: 9, text: "## 下周计划" },
+          ],
+        }],
+      };
+    }
+    return {
+      sessionId: args[0], path, status: "added", newSize: 7168,
+      addedLines: 12, removedLines: 0, hunks: [{
+        oldStart: 0, oldLines: 0, newStart: 1, newLines: 12,
+        lines: [
+          { type: "add", newNo: 1, text: "# 项目周报" },
+          { type: "add", newNo: 2, text: "" },
+          { type: "add", newNo: 3, text: "## 概要" },
+          { type: "add", newNo: 4, text: "本周完成侧栏重排与项目分类，结果区支持行级 diff。" },
+          { type: "add", newNo: 5, text: "" },
+          { type: "add", newNo: 6, text: "## 明细" },
+          { type: "add", newNo: 7, text: "- 新聊天按钮与项目手风琴" },
+          { type: "add", newNo: 8, text: "- 最近列表时间分组" },
+          { type: "add", newNo: 9, text: "- 输入区上下文标签" },
+          { type: "add", newNo: 10, text: "- 变更视图 diff（本文件即为新增示例）" },
+          { type: "add", newNo: 11, text: "" },
+          { type: "add", newNo: 12, text: "## 风险" },
+        ],
+      }],
+    };
+  },
   // AppInfo
   "2925845021": () => ({ name: "WorkBuddy Agent", version: "stub", adk: "google adk-go v2" }),
   // ConfirmToolCall(sessionID, callID, approved)
@@ -426,8 +487,9 @@ setTransport({
     const list = Array.isArray(opt.args) ? opt.args : opt.args == null ? [] : [opt.args];
     // Deep-copy results like real IPC serialization does: returning shared
     // references lets in-place stub mutations slip past React state updates
-    // (same-reference setSessions bails out) and shows stale lists.
-    const result = h(list);
+    // (same-reference setSessions bails out) and shows stale lists. Async
+    // handlers must settle first — structuredClone cannot clone a Promise.
+    const result = await h(list);
     return result == null ? result : structuredClone(result);
   },
 });

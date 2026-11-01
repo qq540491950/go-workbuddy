@@ -15,6 +15,16 @@ import { Call as $Call, CancellablePromise as $CancellablePromise } from "@wails
 import * as $models from "./models.js";
 
 /**
+ * FileDiff returns the line-level diff of one workspace file against the task
+ * baseline. Added files diff from empty, deleted files diff the baseline
+ * content, and unsupported cases (binary/oversize/missing baseline content)
+ * come back as a result with an Unsupported reason rather than an error.
+ */
+export function FileDiff(sessionID: string, relPath: string): $CancellablePromise<$models.FileDiffResult | null> {
+    return $Call.ByID(1773899386, sessionID, relPath);
+}
+
+/**
  * List returns previewable files under the workspace (newest first, capped).
  */
 export function List(): $CancellablePromise<$models.ArtifactInfo[] | null> {

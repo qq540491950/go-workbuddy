@@ -155,6 +155,59 @@ export interface ChatStreamEvent {
 }
 
 /**
+ * FileDiffHunk is a unified-diff hunk: @@ -oldStart,oldLines +newStart,newLines @@.
+ */
+export interface FileDiffHunk {
+    "oldStart": number;
+    "oldLines": number;
+    "newStart": number;
+    "newLines": number;
+    "lines": FileDiffLine[] | null;
+}
+
+/**
+ * FileDiffLine is one rendered diff row with its 1-based source line numbers.
+ */
+export interface FileDiffLine {
+    "type": FileDiffLineType;
+    "oldNo"?: number;
+    "newNo"?: number;
+    "text": string;
+}
+
+/**
+ * FileDiffLineType distinguishes diff lines for the result pane renderer.
+ */
+export enum FileDiffLineType {
+    /**
+     * The Go zero value for the underlying type of the enum.
+     */
+    $zero = "",
+
+    DiffLineAdd = "add",
+    DiffLineDel = "del",
+    DiffLineContext = "context",
+};
+
+/**
+ * FileDiffResult is the FileDiff RPC contract. A non-empty Unsupported means
+ * the request was valid but the file cannot be diffed (binary / oversize /
+ * baseline content missing); the pane shows the reason inline instead.
+ */
+export interface FileDiffResult {
+    "sessionId": string;
+    "path": string;
+    "status"?: WorkspaceChangeStatus;
+    "oldSize"?: number;
+    "newSize"?: number;
+    "addedLines": number;
+    "removedLines": number;
+    "hunks": FileDiffHunk[] | null;
+    "truncated": boolean;
+    "unsupported"?: string;
+}
+
+/**
  * ImportAgentResult is the import outcome: the stored agent plus any
  * machine-local fixes applied during import (stripped dangling refs), so the
  * UI can surface what was adjusted.
