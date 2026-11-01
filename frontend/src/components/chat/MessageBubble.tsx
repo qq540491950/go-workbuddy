@@ -1,5 +1,8 @@
 import { memo, useState } from "react";
 import {
+  Dialog, DialogContent, DialogTitle,
+} from "@/components/ui/dialog";
+import {
   Check, Copy, Loader2, Pencil, RefreshCw, ShieldAlert, Volume2, X,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
@@ -94,6 +97,7 @@ export const MessageBubble = memo(function MessageBubble({ m, isLastAssistant, o
   sessionID: string;
 }) {
   const [copied, setCopied] = useState(false);
+  const [lightbox, setLightbox] = useState<string | null>(null);
   const copyMsg = async () => {
     try {
       await navigator.clipboard.writeText(m.text);
@@ -108,7 +112,14 @@ export const MessageBubble = memo(function MessageBubble({ m, isLastAssistant, o
           {(m.attachments?.length ?? 0) > 0 && (
             <div className="flex flex-wrap justify-end gap-1.5">
               {m.attachments!.map((a, i) => (
-                <img key={i} src={a.dataUrl} alt={a.name} className="h-20 rounded-lg border object-cover" />
+                <button
+                  key={i}
+                  type="button"
+                  title={`查看 ${a.name} 大图`}
+                  onClick={() => setLightbox(a.dataUrl)}
+                >
+                  <img src={a.dataUrl} alt={a.name} className="h-20 cursor-zoom-in rounded-lg border object-cover" />
+                </button>
               ))}
             </div>
           )}
@@ -134,6 +145,14 @@ export const MessageBubble = memo(function MessageBubble({ m, isLastAssistant, o
           </div>
           )}
         </div>
+        <Dialog open={!!lightbox} onOpenChange={(v) => !v && setLightbox(null)}>
+          <DialogContent className="sm:max-w-4xl">
+            <DialogTitle className="sr-only">附件图片</DialogTitle>
+            {lightbox && (
+              <img src={lightbox} alt="附件大图" className="max-h-[80vh] w-full rounded object-contain" />
+            )}
+          </DialogContent>
+        </Dialog>
       </div>
     );
   }

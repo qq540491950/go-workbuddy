@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
-import { MessageMarkdown } from "@/components/MessageMarkdown";
+import { CopyButton, MessageMarkdown } from "@/components/MessageMarkdown";
 import { Artifact, errText, type Artifact as ArtifactData } from "@/lib/api";
 
 /** extractArtifactPaths finds workspace-relative file references in tool
@@ -107,7 +107,11 @@ export const ToolCallCard = memo(function ToolCallCard({ name, sessionID, args, 
         <ChevronRight className={`ml-auto h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform ${open ? "rotate-90" : ""}`} />
       </button>
       {open && (
-        <div className="border-t">
+        <div className="relative border-t">
+          <CopyButton
+            text={JSON.stringify(running ? args : (resp ?? args), null, 2)}
+            className="absolute right-2 top-2 z-10 opacity-50 transition-opacity hover:opacity-100"
+          />
           <pre className="max-h-44 overflow-auto px-3 py-2 text-xs text-muted-foreground">
             {JSON.stringify(running ? args : (resp ?? args), null, 2)}
           </pre>

@@ -551,6 +551,17 @@ export function ChatPage({ isDark, onToggleTheme, onOpenHelp, onOpenSettings }: 
   // Unread flags: a background session that finished (or errored) while the
   // user was elsewhere gets a sidebar dot until they open it.
   const [unread, setUnread] = useState<Record<string, boolean>>({});
+  // Reader position: off-bottom state drives the「回到底部」floater.
+  const [atBottom, setAtBottom] = useState(true);
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const onScroll = () => {
+      setAtBottom(el.scrollHeight - el.scrollTop - el.clientHeight < 120);
+    };
+    el.addEventListener("scroll", onScroll, { passive: true });
+    return () => el.removeEventListener("scroll", onScroll);
+  }, []);
   // History fetch in flight after a session switch: render skeletons instead
   // of an empty-looking conversation.
   const [historyLoading, setHistoryLoading] = useState(false);
@@ -1652,7 +1663,7 @@ export function ChatPage({ isDark, onToggleTheme, onOpenHelp, onOpenSettings }: 
       )}
 
       {/* Chat area */}
-      <div className="flex min-w-0 flex-1 flex-col">
+      <div className="relative flex min-w-0 flex-1 flex-col">
         <div className="flex items-center justify-between border-b px-4 py-2.5">
           <div className="flex items-center gap-2 text-sm">
             {sidebarCollapsed && (
@@ -1881,6 +1892,14 @@ export function ChatPage({ isDark, onToggleTheme, onOpenHelp, onOpenSettings }: 
               <X className="h-3.5 w-3.5" />
             </button>
           </div>
+        )}
+        {!atBottom && messages.length > 0 && (
+          <button
+            className="absolute bottom-32 right-6 z-20 flex h-8 items-center gap-1 rounded-full border bg-popover px-3 text-xs shadow-md transition-colors hover:bg-accent"
+            onClick={() => bottomRef.current?.scrollIntoView({ block: "end" })}
+          >
+            <ChevronDown className="h-3.5 w-3.5" /> 回到底部
+          </button>
         )}
         <ScrollArea className="flex-1" viewportRef={scrollRef} aria-label="会话消息">
           <div className="mx-auto max-w-3xl space-y-3 p-4">
