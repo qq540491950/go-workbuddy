@@ -4,6 +4,18 @@
 
 ## 视觉测试与体验设计
 
+### 第一百五十八轮迭代：流式渲染性能——delta 合并与搜索索引惰性化（已实施）
+
+依据：UX 盘点确认长会话 + 高速流式的主线程压力：每个 delta token 触发一次 `setMessages`（ChatPage 整体重渲 + 消息列表全量 diff），且以 `messages` 为依赖的 `searchIndex` useMemo 对每条消息做 `JSON.stringify(toolResp/toolArgs)` 每 token 全量重算——200 条会话上每个 token 都是 O(n) 序列化。Markdown 每 token 重解析在 memo 已覆盖的前提下，主要瓶颈是 setState 频率与索引重算。
+
+实现要点：
+
+- **delta 合并**：流式 `delta` 事件不再直接 setState，先累积到 `streamBufRef`（按作者分桶，团队顺序流切换作者时先 flush 旧桶），定时 60ms 统一 flush 到最后一条流式气泡；任何非 delta 事件（message 终态/tool_call/done/error…）在处理前同步 flush 保证轮内顺序；首个 delta 仍立即创建占位气泡（「思考中…」不延迟）。切换会话丢弃缓冲（其完整文本由终态事件/持久化历史承载），后台会话的 delta 本就不进缓冲（会话守卫在先）。
+- **searchIndex 惰性化**：索引只在过滤条打开时构建（`filterOpen` 进入依赖并在关闭时返回空 map），流式期间不再做每 token 全量序列化；`filteredMessages` 仅在 `filterQ` 非空（必然处于打开态）时消费索引，语义不变。
+- 修正一处结构问题：delta 分支必须在 setMessages 更新器之外处理（更新器内嵌套 setState 会在 StrictMode 下双次执行缓冲）。
+
+测试证据：`tsc --noEmit`、vitest 17/17、`npm run build` 通过。浏览器桩走查：向活动会话同步连发 100 个 delta（缓冲耗时 0ms，无逐 token 渲染），流式气泡仅创建一次；终态 `message` 事件先 flush 后替换，最终文本与 usage 徽标正确、流式光标消失、无重复气泡。
+
 ### 第一百五十七轮迭代：composer 手感——自动增高、斜杠键盘导航、排队不覆盖、拖拽高亮（已实施）
 
 依据：UX 盘点的输入区四项缺口：textarea 固定 `rows={2}` 多行输入体验落后；斜杠建议条只能鼠标点击（与 @ 提及弹层的完整键盘导航不一致）；排队输入只存一条、第二条静默覆盖第一条（真实丢消息）；拖文件到 composer 无任何视觉反馈，用户不知道松手会发生什么。

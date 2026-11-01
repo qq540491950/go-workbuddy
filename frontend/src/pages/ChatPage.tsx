@@ -283,6 +283,13 @@ export function ChatPage({ isDark, onToggleTheme, onOpenHelp, onOpenSettings }: 
     let cancelled = false;
     setSessionUsage(null);
     setCtxBannerDismissed(false);
+    // Drop any pending streamed text — it belongs to the previous session;
+    // its full content arrives via the final message event / persisted history.
+    const buf = streamBufRef.current;
+    if (buf.timer != null) clearTimeout(buf.timer);
+    buf.author = null;
+    buf.text = "";
+    buf.timer = null;
     // Clear immediately: showing the previous session's messages while the
     // next history loads is a correctness-level wrongness (stale flash).
     setMessages([]);
@@ -349,11 +356,40 @@ export function ChatPage({ isDark, onToggleTheme, onOpenHelp, onOpenSettings }: 
     return off;
   }, [reloadSessions]);
 
+  // Streamed text is coalesced: delta events accumulate in a ref and flush to
+  // state at most once per interval, so a fast token stream costs one render
+  // per interval instead of one per token. Any non-delta event flushes first
+  // to preserve ordering within a turn; switching sessions drops the buffer
+  // (the final message event / persisted history carries the full text).
+  const STREAM_FLUSH_MS = 60;
+  const streamBufRef = useRef<{ author: string | null; text: string; timer: number | null }>({
+    author: null, text: "", timer: null,
+  });
+  const flushStreamBuf = useCallback(() => {
+    const buf = streamBufRef.current;
+    if (buf.timer != null) {
+      clearTimeout(buf.timer);
+      buf.timer = null;
+    }
+    const { author, text } = buf;
+    if (!author || !text) return;
+    buf.author = null;
+    buf.text = "";
+    setMessages((prev) => {
+      const last = prev[prev.length - 1];
+      if (!last || !last.streaming || last.author !== author) return prev;
+      const copy = [...prev];
+      copy[copy.length - 1] = { ...last, text: last.text + text };
+      return copy;
+    });
+  }, []);
+
   // Stream events.
   useEffect(() => {
     const off = Events.On("chat:stream", (e: any) => {
       const ev = Array.isArray(e?.data) ? e.data[0] : e?.data;
       if (!ev) return;
+      if (ev.kind !== "delta") flushStreamBuf();
       // Completion bookkeeping runs for EVERY session: background runs must
       // clear their spinner and toast even while the user is in another chat.
       // (This block used to sit after the active-session filter below, which
@@ -380,19 +416,27 @@ export function ChatPage({ isDark, onToggleTheme, onOpenHelp, onOpenSettings }: 
       if (ev.sessionId !== activeID) return;
       if (ev.kind === "user") turnStartedRef.current = true;
       if (ev.kind === "tool_result") setWorkspaceRefresh((n) => n + 1);
+      if (ev.kind === "delta") {
+        // Coalesce: buffer the text and make sure a streaming bubble exists
+        // for this author; the buffered text lands on the flush tick.
+        const buf = streamBufRef.current;
+        if (buf.author && buf.author !== ev.author) flushStreamBuf();
+        buf.author = ev.author;
+        buf.text += ev.text ?? "";
+        if (buf.timer == null) {
+          buf.timer = setTimeout(flushStreamBuf, STREAM_FLUSH_MS) as unknown as number;
+        }
+        setMessages((prev) => {
+          const last = prev[prev.length - 1];
+          if (last && last.streaming && last.author === ev.author) return prev;
+          return [...prev, { id: nextId(), kind: "assistant", author: ev.author, text: "", streaming: true, timestamp: new Date().toISOString() }];
+        });
+        return;
+      }
       setMessages((prev) => {
         switch (ev.kind) {
           case "user":
             return [...prev, { id: nextId(), kind: "user", author: "user", text: ev.text, timestamp: new Date().toISOString(), attachments: ev.attachments ?? null }];
-          case "delta": {
-            const last = prev[prev.length - 1];
-            if (last && last.streaming && last.author === ev.author) {
-              const copy = [...prev];
-              copy[copy.length - 1] = { ...last, text: last.text + ev.text };
-              return copy;
-            }
-            return [...prev, { id: nextId(), kind: "assistant", author: ev.author, text: ev.text, streaming: true, timestamp: new Date().toISOString() }];
-          }
           case "message": {
             const idx = [...prev].reverse().findIndex((m) => m.streaming && m.author === ev.author);
             if (idx >= 0) {
@@ -1126,6 +1170,9 @@ export function ChatPage({ isDark, onToggleTheme, onOpenHelp, onOpenSettings }: 
   // must not re-JSON.stringify large tool payloads for the whole history.
   const searchIndex = useMemo(() => {
     const map = new Map<string, string>();
+    // Only consulted while the filter bar is open: skip the per-message
+    // JSON.stringify pass on every token of a streaming reply.
+    if (!filterOpen) return map;
     for (const m of messages) {
       const parts = [m.text, m.hint, m.toolName];
       if (m.toolResp) parts.push(JSON.stringify(m.toolResp));
@@ -1133,7 +1180,7 @@ export function ChatPage({ isDark, onToggleTheme, onOpenHelp, onOpenSettings }: 
       map.set(m.id, parts.filter(Boolean).join("\n").toLowerCase());
     }
     return map;
-  }, [messages]);
+  }, [messages, filterOpen]);
   const filteredMessages = useMemo(() => {
     if (!filterQ) return messages;
     return messages.filter((m) => (searchIndex.get(m.id) ?? "").includes(filterQ));
