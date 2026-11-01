@@ -4,6 +4,18 @@
 
 ## 视觉测试与体验设计
 
+### 第一百六十轮迭代：无障碍补齐——live region、listbox 语义与 aria 标注（已实施）
+
+依据：无障碍专项盘点：流式输出对屏幕阅读器完全静默（消息区无 live 语义）；@ 提及弹层无 listbox/option 语义（斜杠建议已在第 157 轮补齐）；侧栏折叠按钮无 `aria-expanded`；过滤输入框、消息输入框、消息列表无 aria 标注。
+
+实现要点：
+
+- **回合状态 live region**：composer 上方新增 `sr-only` 的 `role="status" aria-live="polite"` 区域，只播报阶段切换（生成中 / 本轮出错），不播报每个 token（避免读屏噪音）。
+- **mention 弹层**：容器 `role="listbox"` + `aria-label="@ 助手候选"`，候选项 `role="option"` + `aria-selected`（与斜杠建议同款）。
+- **标注补齐**：侧栏折叠/展开按钮 `aria-label` + `aria-expanded`；过滤输入框 `aria-label`；消息输入框 `aria-label`；消息列表 ScrollArea `aria-label="会话消息"`。
+
+测试证据：`tsc --noEmit`、vitest 17/17、`npm run build` 通过。浏览器桩走查 DOM 断言：live region 存在、折叠按钮 `aria-expanded=true`、输入 `@写` 后 listbox/option/aria-selected 全部就位、textarea 与消息列表 aria-label 生效。
+
 ### 第一百五十九轮迭代：ConfirmDialog 化 + 按钮收敛 + 会话切换快捷键（已实施）
 
 依据：UX 盘点三处一致性问题：删除项目/会话用原生 `window.confirm`（焦点抢占、与应用主题割裂、不可样式化）；会话头部六个图标按钮与会话行悬停六个按钮在窄窗口拥挤、危险操作（删除）与高频操作（复制）并列无层次；快捷键缺会话切换且全局 ⌘ 系处理未防按住重复触发。

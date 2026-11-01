@@ -1449,6 +1449,8 @@ export function ChatPage({ isDark, onToggleTheme, onOpenHelp, onOpenSettings }: 
             </Button>
             <button
               title="折叠对话列表（⌘B）"
+              aria-label="折叠对话列表"
+              aria-expanded={!sidebarCollapsed}
               onClick={toggleSidebar}
               className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
             >
@@ -1655,6 +1657,8 @@ export function ChatPage({ isDark, onToggleTheme, onOpenHelp, onOpenSettings }: 
             {sidebarCollapsed && (
               <button
                 title="展开对话列表（⌘B）"
+                aria-label="展开对话列表"
+                aria-expanded={false}
                 onClick={toggleSidebar}
                 className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
               >
@@ -1862,6 +1866,7 @@ export function ChatPage({ isDark, onToggleTheme, onOpenHelp, onOpenSettings }: 
               value={msgFilter}
               onChange={(e) => setMsgFilter(e.target.value)}
               placeholder="过滤当前会话的消息（匹配文本/工具名/参数/结果）"
+              aria-label="过滤当前会话的消息"
               className="h-7 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
             />
             {filterQ && (
@@ -1876,7 +1881,7 @@ export function ChatPage({ isDark, onToggleTheme, onOpenHelp, onOpenSettings }: 
             </button>
           </div>
         )}
-        <ScrollArea className="flex-1" viewportRef={scrollRef}>
+        <ScrollArea className="flex-1" viewportRef={scrollRef} aria-label="会话消息">
           <div className="mx-auto max-w-3xl space-y-3 p-4">
             {(() => {
               if (omitted <= 0) return null;
@@ -1958,6 +1963,11 @@ export function ChatPage({ isDark, onToggleTheme, onOpenHelp, onOpenSettings }: 
           </div>
         </ScrollArea>
 
+        {/* Screen-reader status for turn state: announcing every streamed
+            token would be noise, so only the phase transitions speak. */}
+        <div className="sr-only" role="status" aria-live="polite">
+          {running ? "助手正在回复…" : messages[messages.length - 1]?.kind === "error" ? "本轮回复出错，可点击重试本轮" : ""}
+        </div>
         <div className="shrink-0 border-t p-3">
           {activePlan && (
             <div className="mx-auto mb-2 max-w-3xl">
@@ -2055,11 +2065,13 @@ export function ChatPage({ isDark, onToggleTheme, onOpenHelp, onOpenSettings }: 
           >
             <div className="relative flex-1">
               {mentionOpen && (
-                <div className="absolute bottom-full left-0 right-0 z-10 mb-2 overflow-hidden rounded-lg border bg-popover shadow-md">
+                <div className="absolute bottom-full left-0 right-0 z-10 mb-2 overflow-hidden rounded-lg border bg-popover shadow-md" role="listbox" aria-label="@ 助手候选">
                   {mentionCandidates.map((c, i) => (
                     <button
                       key={`${c.type}-${c.id}`}
                       type="button"
+                      role="option"
+                      aria-selected={i === mentionIdx}
                       className={cn(
                         "flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs",
                         i === mentionIdx ? "bg-accent text-accent-foreground" : "hover:bg-accent/60",
@@ -2204,6 +2216,7 @@ export function ChatPage({ isDark, onToggleTheme, onOpenHelp, onOpenSettings }: 
                   addFiles(files);
                 }}
                 placeholder={active ? "输入消息，Enter 发送，Shift+Enter 换行（⌘K 聚焦）" : "输入消息开始新对话；@ 可指定助手"}
+                aria-label="消息输入框"
                 // Typing stays available while a reply streams (matching the
                 // desktops this app mirrors); send() guards the running state.
                 disabled={!active && providerCount === 0}
