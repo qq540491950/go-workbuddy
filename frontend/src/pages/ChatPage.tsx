@@ -1660,6 +1660,26 @@ export function ChatPage({ isDark, onToggleTheme, onOpenHelp, onOpenSettings }: 
                       >
                         <ChevronDown className="h-3 w-3" /> 已归档会话（{archivedSessions.length}）
                       </button>
+                      <button
+                        className="ml-auto shrink-0 rounded px-1.5 py-0.5 text-[10px] text-muted-foreground hover:bg-accent/60 hover:text-destructive"
+                        title="删除全部已归档会话（任务文件保留）"
+                        onClick={() => setConfirmRequest({
+                          title: `清空全部已归档会话（${archivedSessions.length} 条）？`,
+                          description: "会话与消息将不可恢复，任务工作区中的文件会保留。",
+                          confirmText: "清空",
+                          action: async () => {
+                            try {
+                              const n = await Chat.DeleteArchivedSessions();
+                              toast.success(`已清空 ${n} 条归档会话`);
+                              reloadSessions();
+                            } catch (e) {
+                              toast.error(`清空失败: ${errText(e)}`);
+                            }
+                          },
+                        })}
+                      >
+                        清空
+                      </button>
                       {archivedSessions.map(renderSessionRow)}
                     </>
                   ) : (

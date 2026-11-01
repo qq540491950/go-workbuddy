@@ -509,6 +509,29 @@ func (c *ChatService) RenameSession(id, title string) error {
 // orphaned turn would keep burning tokens and re-create events for the
 // deleted session until its timeout.
 func (c *ChatService) DeleteSession(id string) error {
+	return c.deleteSessionInternal(id)
+}
+
+// DeleteArchivedSessions deletes every archived session (cancel-first, events
+// included) and returns how many were removed.
+func (c *ChatService) DeleteArchivedSessions() (int, error) {
+	var ids []string
+	for _, s := range c.S.Store.Get().Sessions {
+		if s.Archived {
+			ids = append(ids, s.ID)
+		}
+	}
+	deleted := 0
+	for _, id := range ids {
+		if err := c.deleteSessionInternal(id); err != nil {
+			return deleted, fmt.Errorf("删除会话 %q 失败: %w", id, err)
+		}
+		deleted++
+	}
+	return deleted, nil
+}
+
+func (c *ChatService) deleteSessionInternal(id string) error {
 	c.cancelAndWaitBounded(id)
 	c.workspaceMu.Lock()
 	defer c.workspaceMu.Unlock()

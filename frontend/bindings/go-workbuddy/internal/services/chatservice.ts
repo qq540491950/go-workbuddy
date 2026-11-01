@@ -43,6 +43,14 @@ export function ConfirmToolCall(sessionID: string, callID: string, approved: boo
 }
 
 /**
+ * DeleteArchivedSessions deletes every archived session (cancel-first, events
+ * included) and returns how many were removed.
+ */
+export function DeleteArchivedSessions(): $CancellablePromise<number> {
+    return $Call.ByID(3028356991);
+}
+
+/**
  * DeleteProject unregisters a project. Its chats fall back to the default
  * workspace and their baselines reset to the new directory; task files are
  * never touched. Projects with running chats are refused.

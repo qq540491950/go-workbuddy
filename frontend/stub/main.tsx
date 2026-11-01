@@ -440,6 +440,12 @@ const handlers: Record<string, (args: any[]) => any> = {
     (window).__revealed = ((window).__revealed ?? []).concat(args[1]);
     return null;
   },
+  // ChatService.DeleteArchivedSessions() — 清空种子里的归档会话
+  "3028356991": () => {
+    const before = seedConfig.sessions.length;
+    seedConfig.sessions = seedConfig.sessions.filter((x: any) => !x.archived);
+    return before - seedConfig.sessions.length;
+  },
   // ConfirmToolCall(sessionID, callID, approved)
   "3242111371": (args) => {
     pendingAnswer++;
