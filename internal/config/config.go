@@ -252,6 +252,11 @@ type Config struct {
 	Agents       []AgentConfig       `json:"agents"`
 	RemoteAgents []RemoteAgentConfig `json:"remoteAgents,omitempty"`
 	Teams        []TeamConfig        `json:"teams"`
+	// Projects are named root directories chats can be attached to. A chat
+	// bound to a project resolves its workspace to the project root, so many
+	// sessions can share one directory without tripping the one-task-per-dir
+	// conflict that guards explicitly bound task workspaces.
+	Projects []Project `json:"projects,omitempty"`
 	// MCPTokens caches OAuth tokens for streamable-http MCP servers
 	// (server ID -> token). Secrets live in this 0600 file only.
 	MCPTokens  map[string]MCPOAuthToken `json:"mcpTokens,omitempty"`
@@ -285,6 +290,11 @@ type ChatSession struct {
 	// variables and artifact previews. Empty keeps legacy sessions on the
 	// global workspace.
 	WorkspaceDir string `json:"workspaceDir,omitempty"`
+	// ProjectID attaches this chat to a registered project. Project chats
+	// keep WorkspaceDir empty: their effective workspace is the project root
+	// (see EffectiveWorkspaceFor), resolved dynamically so renaming or
+	// re-rooting a project propagates to every chat in it.
+	ProjectID string `json:"projectId,omitempty"`
 }
 
 // EffectiveWorkspace resolves the directory a session should use. Explicit
@@ -294,6 +304,31 @@ func (s ChatSession) EffectiveWorkspace(global string) string {
 		return ws
 	}
 	return global
+}
+
+// Project is a named root directory chats can be attached to.
+type Project struct {
+	ID        string    `json:"id"`
+	Name      string    `json:"name"`
+	RootDir   string    `json:"rootDir"`
+	CreatedAt time.Time `json:"createdAt"`
+}
+
+// EffectiveWorkspaceFor is the project-aware workspace resolution: an
+// explicitly bound task dir wins, then the chat's project root, then the
+// global workspace.
+func (s ChatSession) EffectiveWorkspaceFor(cfg Config) string {
+	if ws := strings.TrimSpace(s.WorkspaceDir); ws != "" {
+		return ws
+	}
+	if s.ProjectID != "" {
+		for _, p := range cfg.Projects {
+			if p.ID == s.ProjectID {
+				return p.RootDir
+			}
+		}
+	}
+	return cfg.Settings.WorkspaceDir
 }
 
 // Clone returns an independent copy of the config. Slices, nested slices and
@@ -340,6 +375,7 @@ func (c Config) Clone() Config {
 	}
 	out.RemoteAgents = append([]RemoteAgentConfig(nil), c.RemoteAgents...)
 	out.Skills = append([]SkillConfig(nil), c.Skills...)
+	out.Projects = append([]Project(nil), c.Projects...)
 	out.Sessions = append([]ChatSession(nil), c.Sessions...)
 	out.MCPTokens = make(map[string]MCPOAuthToken, len(c.MCPTokens))
 	for k, v := range c.MCPTokens {

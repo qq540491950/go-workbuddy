@@ -50,6 +50,7 @@ export type MemoryInfo = serviceModels.MemoryInfo;
 export type KnowledgeFile = serviceModels.KnowledgeFile;
 export type Settings = configModels.Settings;
 export type ChatSession = configModels.ChatSession;
+export type Project = configModels.Project;
 
 
 /** errText extracts a human-readable message from any binding failure. */

@@ -4,6 +4,21 @@
 
 ## 视觉测试与体验设计
 
+### 第一百五十二轮迭代：会话项目分类——项目实体、新建选项目与项目管理（已实施）
+
+依据：用户指出对话框缺少项目分类，选择目录应有「添加」入口，且新对话时应可选择项目（附参考截图：侧栏项目清单与输入区项目徽标）。诊断确认这是功能缺口而非运行时缺陷：代码中不存在项目实体，侧栏「项目分组」只是前端按会话工作区根目录的隐式推导（`groupSessionsByProject`），而唯一建会话入口写死 `NewSessionWithWorkspace("","","","")`，所有会话必然落入自动任务目录与「默认项目」；选目录仅存在于「首轮前改绑任务工作区」一条路径。关键约束：`workspaceConflict` 规定一个显式目录只能绑定一个活动会话，因此「多会话共享一个项目目录」无法靠把目录塞进每个会话的 `WorkspaceDir` 实现，必须引入独立的项目实体。
+
+实现要点：
+
+- **项目实体**：`config.Project {ID, Name, RootDir, CreatedAt}` 挂到 `Config.Projects`，`ChatSession` 新增 `ProjectID`（`Clone` 深拷贝，导出/导入直接携带，无敏感字段）。会话三态：`ProjectID` 非空 = 项目会话（共享项目根目录、不占任务目录）；仅 `WorkspaceDir` = 独立任务目录（现状）；两者皆空 = 自动任务目录（现状）。旧数据零迁移。
+- **工作区解析**：`ChatSession.EffectiveWorkspaceFor(cfg)` 取代四处调用点（runTurn、ForkSession 基线、`SessionWorkspace` RPC、ArtifactService 预览），优先级 显式任务目录 > 项目根目录 > 全局工作区；项目会话 `WorkspaceDir` 保持为空，项目改名/换根即时传播。
+- **项目 RPC（ChatService）**：`ListProjects` / `SaveProject`（创建默认名取目录末段；`validateTaskWorkspace` 校验可写；`samePath` 查重）/ `DeleteProject`（运行中会话拒绝删除；其会话回落默认项目并把任务基线重置到新生效目录，避免快照把项目文件误报为批量删除）/ `NewSessionWithProject`（不创建 `tasks/<id>`、基线建在项目根）/ `SetSessionProject`（首轮前限定，取会话级工作区锁，加入项目即清空任务目录绑定并重置基线；基线失败回滚）。`ForkSession` 复制 `ProjectID`，分支保持项目会话。
+- **目录占用互斥**：`projectRootConflict` 拒绝把项目根目录绑定为显式任务目录（创建与改绑两处），提示「请在项目中新建对话」；项目会话本身不允许再单独指定工作区。
+- **前端**：`groupSessionsByProject(sessions, projects, globalWorkspace)` 改为真实项目分组（`proj:<id>` 键，projectId 或工作区根匹配皆入组；未注册目录保留临时文件夹分组；默认项目与已归档尾组不变）。新对话按钮改为分裂式：主按钮保持默认直聊，下拉可选「默认对话 / 各项目 / 添加新项目…」；侧栏标题行新增「添加项目」（目录选择器）；项目组头部提供「+ 新建对话」与「…」菜单（重命名 / 更改目录 / 删除项目保留对话与文件）；会话头部新增项目徽标（首轮前点击可切换项目，首轮后锁定并提示）；会话行悬停新增「移动到项目」（首轮前生效）。项目重命名使用独立对话框。
+- **视觉桩**：种子数据补 `projects` 与绑定项目会话；新 RPC 按生成绑定的方法 ID（ListProjects 2203540805 / SaveProject 2762009531 / DeleteProject 911459121 / NewSessionWithProject 3614387014 / SetSessionProject 3134520676）补桩，`SessionWorkspace` 桩支持项目根解析。
+
+测试证据：红→绿——先写 `internal/services/chatservice_project_test.go` 六个用例（SaveProject 校验与查重、NewSessionWithProject 不建任务目录且工作区解析到项目根、SetSessionProject 首轮锁与工作区移交、DeleteProject 回落与基线重置、项目根拒作任务目录、Fork 保留项目）与 `TestProjectsRoundTripAndCloneIndependent`，红（编译失败）后实现转绿；`go test ./internal/... .` 全绿、`go vet` 干净；`go test -race` 本机无 C 工具链（CGO）无法执行，由 CI ubuntu 任务覆盖；vitest 17/17（分组纯函数用例重写为项目感知）、`tsc --noEmit`、`npm run build` 通过；`wails3 build`（含绑定 `-clean` 再生成）端到端成功产出 `bin/go-workbuddy.exe`。生成绑定确认方法 ID 以生成产物为准（手算 FNV 与生成器不一致，印证 AGENTS「手工计算仅应急」的告诫）。
+
 ### 第一百五十一轮迭代：模块重命名 changeme → go-workbuddy（已实施）
 
 依据：用户指出 `go.mod` 模块名仍是 Wails 模板默认的 `changeme`，与项目名 go-workbuddy 不符，要求整体审核并执行重命名。审计确认模块名贯穿 go.mod、47 个 Go 文件 import、前端生成绑定目录、`api.ts` 手写 import、视觉桩硬编码方法 ID、`.gitignore`/`AGENTS.md`/`README.md`；另发现第二处模板遗留 `go-wails-react-tpl`（Taskfile `APP_NAME` 与 macOS/iOS/Windows/Linux 打包资产）。

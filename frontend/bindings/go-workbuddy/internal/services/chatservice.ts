@@ -43,6 +43,15 @@ export function ConfirmToolCall(sessionID: string, callID: string, approved: boo
 }
 
 /**
+ * DeleteProject unregisters a project. Its chats fall back to the default
+ * workspace and their baselines reset to the new directory; task files are
+ * never touched. Projects with running chats are refused.
+ */
+export function DeleteProject(id: string): $CancellablePromise<void> {
+    return $Call.ByID(911459121, id);
+}
+
+/**
  * DeleteSession removes a chat and its stored events. The config entry is
  * dropped only after the database delete succeeds; otherwise the session
  * would vanish from the sidebar while its rows stayed behind (and could be
@@ -110,6 +119,13 @@ export function IsRunning(sessionID: string): $CancellablePromise<boolean> {
 }
 
 /**
+ * ListProjects returns the registered projects in creation order.
+ */
+export function ListProjects(): $CancellablePromise<config$0.Project[] | null> {
+    return $Call.ByID(2203540805);
+}
+
+/**
  * ListSessions returns all chat sessions, pinned first, then newest first.
  */
 export function ListSessions(): $CancellablePromise<config$0.ChatSession[] | null> {
@@ -121,6 +137,15 @@ export function ListSessions(): $CancellablePromise<config$0.ChatSession[] | nul
  */
 export function NewSession(targetType: string, targetID: string, title: string): $CancellablePromise<config$0.ChatSession> {
     return $Call.ByID(2521642057, targetType, targetID, title);
+}
+
+/**
+ * NewSessionWithProject creates a chat bound to a registered project. Project
+ * chats share the project root as their workspace and own no task directory,
+ * so many sessions can work in one project side by side.
+ */
+export function NewSessionWithProject(targetType: string, targetID: string, title: string, projectID: string): $CancellablePromise<config$0.ChatSession> {
+    return $Call.ByID(3614387014, targetType, targetID, title, projectID);
 }
 
 /**
@@ -165,6 +190,15 @@ export function RenameSession(id: string, title: string): $CancellablePromise<vo
 }
 
 /**
+ * SaveProject creates a project (empty id) or updates name/root of an
+ * existing one (blank fields keep the stored value). The root must exist and
+ * be writable and may not be claimed by another project.
+ */
+export function SaveProject(id: string, name: string, rootDir: string): $CancellablePromise<config$0.Project> {
+    return $Call.ByID(2762009531, id, name, rootDir);
+}
+
+/**
  * SearchSessions filters sessions by title OR by message content (a LIKE
  * probe over the stored event payloads). Empty query = all sessions
  * (pinned first, then most recently active).
@@ -203,6 +237,15 @@ export function SessionWorkspace(sessionID: string): $CancellablePromise<string>
  */
 export function SetSessionModel(sessionID: string, modelID: string): $CancellablePromise<void> {
     return $Call.ByID(359717012, sessionID, modelID);
+}
+
+/**
+ * SetSessionProject moves a chat into (empty id = out of) a project before
+ * its first turn. Joining hands the workspace to the project root: the task
+ * dir binding is cleared and the baseline restarts from the project.
+ */
+export function SetSessionProject(sessionID: string, projectID: string): $CancellablePromise<void> {
+    return $Call.ByID(3134520676, sessionID, projectID);
 }
 
 /**

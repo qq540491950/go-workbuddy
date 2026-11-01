@@ -10,6 +10,7 @@ import {
   Settings as SettingsIcon, CircleHelp, Sun, Moon,
   Boxes,
   PanelLeftClose, PanelLeftOpen, Clock,
+  FolderPlus, FolderInput, MoreHorizontal,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -23,6 +24,9 @@ import {
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
+import {
+  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
 import { computeEditFlags, computeRunningTools, computeToolDurations, dayLabel, fmtTime, groupSessionsByProject, groupSessionsByTime, isDayChange, mdToSpeech, type UIMessage } from "@/lib/chatUtils";
 import { MessageMarkdown, CopyButton } from "@/components/MessageMarkdown";
@@ -33,6 +37,7 @@ import {
   Chat, Config, errText,
   type AgentConfig, type AttachmentIn, type ChatSession, type TeamConfig,
   type RemoteAgentConfig, type UsageInfo, type ModelProvider, type ModelInfo, type SessionStats,
+  type Project,
 } from "@/lib/api";
 
 let mid = 0;
@@ -100,6 +105,9 @@ export function ChatPage({ isDark, onToggleTheme, onOpenHelp, onOpenSettings }: 
   const [agents, setAgents] = useState<AgentConfig[]>([]);
   const [teams, setTeams] = useState<TeamConfig[]>([]);
   const [remotes, setRemotes] = useState<RemoteAgentConfig[]>([]);
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [renamingProject, setRenamingProject] = useState<Project | null>(null);
+  const [renameProjectText, setRenameProjectText] = useState("");
   const [providerCount, setProviderCount] = useState(0);
   const [providerList, setProviderList] = useState<ModelProvider[]>([]);
   const [search, setSearch] = useState("");
@@ -174,6 +182,11 @@ export function ChatPage({ isDark, onToggleTheme, onOpenHelp, onOpenSettings }: 
       .then((ss) => setSessions(ss ?? []))
       .catch((e) => toast.error(`加载会话失败: ${errText(e)}`));
   }, []);
+  const reloadProjects = useCallback(() => {
+    Chat.ListProjects()
+      .then((ps) => setProjects(ps ?? []))
+      .catch(() => { /* project list is auxiliary; the chat list still loads */ });
+  }, []);
   // Latest direct-session creator for the global ⌘N handler, whose listener
   // effect is registered before this definition exists in the render scope.
   const createDirectSessionRef = useRef<() => void>(() => {});
@@ -191,8 +204,19 @@ export function ChatPage({ isDark, onToggleTheme, onOpenHelp, onOpenSettings }: 
     }
   }, [reloadSessions]);
   createDirectSessionRef.current = createDirectSession;
+  const createProjectSession = useCallback(async (projectID: string) => {
+    try {
+      const s = await Chat.NewSessionWithProject("", "", "", projectID);
+      setMessages([]);
+      reloadSessions();
+      setActiveID(s.id);
+    } catch (e) {
+      toast.error(`创建会话失败: ${errText(e)}`);
+    }
+  }, [reloadSessions]);
   useEffect(() => {
     reloadSessions();
+    reloadProjects();
     Config.GetConfig()
       .then((c) => {
         setAgents(c.agents ?? []);
@@ -230,7 +254,7 @@ export function ChatPage({ isDark, onToggleTheme, onOpenHelp, onOpenSettings }: 
     return () => {
       cancelled = true;
     };
-  }, [activeID, active?.workspaceDir]);
+  }, [activeID, active?.workspaceDir, active?.projectId]);
 
   // Open the newest session on first load.
   useEffect(() => {
@@ -768,10 +792,44 @@ export function ChatPage({ isDark, onToggleTheme, onOpenHelp, onOpenSettings }: 
       CanChooseFiles: false,
       CanCreateDirectories: true,
       ResolvesAliases: true,
-      Title: "选择任务工作目录",
+      Title: "选择目录",
       ButtonText: "选择此文件夹",
     });
     return typeof picked === "string" ? picked : "";
+  };
+
+  const addProject = async () => {
+    const picked = await pickWorkspace();
+    if (!picked) return;
+    try {
+      const p = await Chat.SaveProject("", "", picked);
+      reloadProjects();
+      toast.success(`已添加项目「${p.name}」`);
+    } catch (e) {
+      toast.error(`添加项目失败: ${errText(e)}`);
+    }
+  };
+
+  const switchSessionProject = async (s: ChatSession, projectID: string) => {
+    try {
+      await Chat.SetSessionProject(s.id, projectID);
+      reloadSessions();
+      reloadProjects();
+    } catch (e) {
+      toast.error(`更改项目失败: ${errText(e)}`);
+    }
+  };
+
+  const deleteProject = async (p: Project) => {
+    if (!window.confirm(`确定删除项目「${p.name}」？其中的对话将回到默认项目，项目文件不会删除。`)) return;
+    try {
+      await Chat.DeleteProject(p.id);
+      reloadProjects();
+      reloadSessions();
+      toast.success(`已删除项目「${p.name}」`);
+    } catch (e) {
+      toast.error(`删除项目失败: ${errText(e)}`);
+    }
   };
 
   const changeSessionWorkspace = async () => {
@@ -881,9 +939,9 @@ export function ChatPage({ isDark, onToggleTheme, onOpenHelp, onOpenSettings }: 
   // long-lived windows without needing a timer.
   const visibleGroups = useMemo(
     () => (sidebarGrouping === "project"
-      ? groupSessionsByProject(filteredSessions, globalWorkspace)
+      ? groupSessionsByProject(filteredSessions, projects, globalWorkspace)
       : groupSessionsByTime(filteredSessions, new Date())),
-    [filteredSessions, sidebarGrouping, globalWorkspace],
+    [filteredSessions, sidebarGrouping, projects, globalWorkspace],
   );
 
   // Provider + model of the active target (agent → its model; team →
@@ -1103,17 +1161,50 @@ export function ChatPage({ isDark, onToggleTheme, onOpenHelp, onOpenSettings }: 
         <div className="grid gap-2 p-3">
           <div className="flex items-center justify-between">
             <span className="text-sm font-semibold">对话</span>
-            <button
-              title="折叠对话列表（⌘B）"
-              onClick={toggleSidebar}
-              className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
-            >
-              <PanelLeftClose className="h-4 w-4" />
-            </button>
+            <span className="flex items-center">
+              <button
+                title="添加项目（选择一个目录）"
+                onClick={addProject}
+                className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
+              >
+                <FolderPlus className="h-4 w-4" />
+              </button>
+              <button
+                title="折叠对话列表（⌘B）"
+                onClick={toggleSidebar}
+                className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
+              >
+                <PanelLeftClose className="h-4 w-4" />
+              </button>
+            </span>
           </div>
-          <Button className="w-full" size="sm" onClick={createDirectSession}>
-            <Plus className="mr-1 h-4 w-4" /> 新对话
-          </Button>
+          <div className="flex w-full gap-1">
+            <Button className="min-w-0 flex-1" size="sm" onClick={createDirectSession}>
+              <Plus className="mr-1 h-4 w-4" /> 新对话
+            </Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button size="sm" variant="outline" className="px-1.5" title="在指定项目中新建对话">
+                  <ChevronDown className="h-4 w-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-56">
+                <DropdownMenuItem onClick={() => createDirectSession()}>
+                  <MessageSquare className="mr-2 h-3.5 w-3.5" /> 默认对话（自动任务目录）
+                </DropdownMenuItem>
+                {projects.length > 0 && <DropdownMenuSeparator />}
+                {projects.map((p) => (
+                  <DropdownMenuItem key={p.id} title={p.rootDir} onClick={() => createProjectSession(p.id)}>
+                    <FolderOpen className="mr-2 h-3.5 w-3.5" /> {p.name}
+                  </DropdownMenuItem>
+                ))}
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={addProject}>
+                  <FolderPlus className="mr-2 h-3.5 w-3.5" /> 添加新项目…
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
           <div className="relative">
             <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
             <Input
@@ -1161,11 +1252,49 @@ export function ChatPage({ isDark, onToggleTheme, onOpenHelp, onOpenSettings }: 
                   <>
                     <div className="flex items-center justify-between px-2 pb-0.5 pt-2 text-[11px] font-medium text-muted-foreground">
                       <span title={"path" in group ? group.path : undefined}>{group.label}</span>
-                      {group.key === "archived" && (
-                        <button title="收起已归档" onClick={() => setShowArchived(false)} className="rounded p-0.5 hover:text-foreground">
-                          <ChevronDown className="h-3 w-3" />
-                        </button>
-                      )}
+                      <span className="flex shrink-0 items-center">
+                        {"projectId" in group && group.projectId && (
+                          <>
+                            <button
+                              title="在此项目中新建对话"
+                              onClick={() => createProjectSession(group.projectId!)}
+                              className="rounded p-0.5 hover:text-foreground"
+                            >
+                              <Plus className="h-3 w-3" />
+                            </button>
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <button title="管理项目" onClick={(e) => e.stopPropagation()} className="rounded p-0.5 hover:text-foreground">
+                                  <MoreHorizontal className="h-3 w-3" />
+                                </button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end">
+                                <DropdownMenuItem onClick={() => { setRenamingProject(projects.find((p) => p.id === group.projectId) ?? null); setRenameProjectText(group.label); }}>
+                                  重命名项目
+                                </DropdownMenuItem>
+                                <DropdownMenuItem onClick={async () => {
+                                  const picked = await pickWorkspace();
+                                  if (picked) await Chat.SaveProject(group.projectId!, "", picked).then(reloadProjects).catch((e) => toast.error(`更改目录失败: ${errText(e)}`));
+                                }}>
+                                  更改项目目录…
+                                </DropdownMenuItem>
+                                <DropdownMenuSeparator />
+                                <DropdownMenuItem className="text-destructive" onClick={() => {
+                                  const p = projects.find((x) => x.id === group.projectId);
+                                  if (p) deleteProject(p);
+                                }}>
+                                  删除项目（保留对话与文件）
+                                </DropdownMenuItem>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          </>
+                        )}
+                        {group.key === "archived" && (
+                          <button title="收起已归档" onClick={() => setShowArchived(false)} className="rounded p-0.5 hover:text-foreground">
+                            <ChevronDown className="h-3 w-3" />
+                          </button>
+                        )}
+                      </span>
                     </div>
                     {group.sessions.map((s) => (
               <div
@@ -1201,6 +1330,25 @@ export function ChatPage({ isDark, onToggleTheme, onOpenHelp, onOpenSettings }: 
                 {runningMap[s.id] && <Loader2 className="h-3 w-3 shrink-0 animate-spin text-primary" aria-label="生成中" />}
                 {!runningMap[s.id] && unread[s.id] && <span className="h-2 w-2 shrink-0 rounded-full bg-primary" aria-label="有新回复未查看" />}
                 <span className="hidden shrink-0 items-center gap-0.5 group-hover:flex">
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <button
+                        className="rounded p-0.5 hover:bg-background"
+                        title="移动到项目（首轮前生效）"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <FolderInput className="h-3 w-3" />
+                      </button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
+                      <DropdownMenuItem onClick={() => switchSessionProject(s, "")}>默认项目</DropdownMenuItem>
+                      {projects.map((p) => (
+                        <DropdownMenuItem key={p.id} title={p.rootDir} onClick={() => switchSessionProject(s, p.id)}>
+                          {p.name}
+                        </DropdownMenuItem>
+                      ))}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
                   <button
                     className="rounded p-0.5 hover:bg-background"
                     title={s.archived ? "取消归档" : "归档此会话"}
@@ -1307,6 +1455,36 @@ export function ChatPage({ isDark, onToggleTheme, onOpenHelp, onOpenSettings }: 
                   </Badge>
                 );
               })()
+            )}
+            {active && (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <button
+                    className="flex min-w-0 max-w-[160px] items-center gap-1 rounded-md px-1.5 py-1 text-[11px] text-muted-foreground hover:bg-accent hover:text-foreground"
+                    title={messages.length > 0
+                      ? `项目：${projects.find((p) => p.id === active.projectId)?.name ?? "默认项目"}（首轮已开始，不可更改）`
+                      : "点击切换此对话所属项目"}
+                    aria-label="当前项目"
+                    onClick={(e) => { if (messages.length > 0) e.preventDefault(); }}
+                  >
+                    <FolderOpen className="h-3 w-3 shrink-0" />
+                    <span className="truncate">
+                      {projects.find((p) => p.id === active.projectId)?.name ?? "默认项目"}
+                    </span>
+                    {messages.length === 0 && <ChevronDown className="h-3 w-3 shrink-0" />}
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="start" className="w-56">
+                  <DropdownMenuItem onClick={() => switchSessionProject(active, "")}>
+                    默认项目（自动任务目录）
+                  </DropdownMenuItem>
+                  {projects.map((p) => (
+                    <DropdownMenuItem key={p.id} title={p.rootDir} onClick={() => switchSessionProject(active, p.id)}>
+                      {p.name}
+                    </DropdownMenuItem>
+                  ))}
+                </DropdownMenuContent>
+              </DropdownMenu>
             )}
             {active && (
               <button
@@ -1841,6 +2019,32 @@ export function ChatPage({ isDark, onToggleTheme, onOpenHelp, onOpenSettings }: 
                 if (renaming) {
                   await Chat.RenameSession(renaming.id, renameText).catch((e) => toast.error(errText(e)));
                   setRenaming(null);
+                  reloadSessions();
+                }
+              }}
+            >
+              保存
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Project rename dialog */}
+      <Dialog open={!!renamingProject} onOpenChange={(v) => !v && setRenamingProject(null)}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>重命名项目</DialogTitle>
+          </DialogHeader>
+          <Input value={renameProjectText} onChange={(e) => setRenameProjectText(e.target.value)} />
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setRenamingProject(null)}>取消</Button>
+            <Button
+              onClick={async () => {
+                if (renamingProject) {
+                  await Chat.SaveProject(renamingProject.id, renameProjectText, "")
+                    .then(reloadProjects)
+                    .catch((e) => toast.error(errText(e)));
+                  setRenamingProject(null);
                   reloadSessions();
                 }
               }}

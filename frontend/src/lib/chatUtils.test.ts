@@ -5,7 +5,7 @@ import {
   groupSessionsByTime,
   groupSessionsByProject,
 } from "./chatUtils";
-import type { ChatSession } from "@/lib/api";
+import type { ChatSession, Project } from "@/lib/api";
 
 const msg = (over: Partial<UIMessage>): UIMessage => ({
   id: over.id ?? Math.random().toString(),
@@ -156,6 +156,13 @@ describe('groupSessionsByTime', () => {
 });
 
 describe('groupSessionsByProject', () => {
+  const proj = (over: Partial<Project>): Project => ({
+    id: over.id ?? 'proj_x',
+    name: over.name ?? 'alpha',
+    rootDir: over.rootDir ?? 'D:/proj/alpha',
+    createdAt: '2026-01-01T00:00:00Z',
+    ...over,
+  });
   const sess = (over: Partial<ChatSession>): ChatSession => ({
     id: over.id ?? Math.random().toString(),
     title: over.title ?? '会话',
@@ -167,35 +174,56 @@ describe('groupSessionsByProject', () => {
   });
   const WS = 'C:/ws';
 
-  it('groups explicit workspace roots by folder name and auto task dirs into the default project', () => {
+  it('groups registered projects by projectId and root match; auto task dirs stay in the default project', () => {
+    const alpha = proj({ id: 'proj_a', name: 'alpha', rootDir: 'D:/proj/alpha' });
     const groups = groupSessionsByProject(
       [
-        sess({ id: 'auto', workspaceDir: 'C:/ws/tasks/sess1', updatedAt: '2026-11-01T09:00:00' }),
+        sess({ id: 'bound', projectId: 'proj_a', updatedAt: '2026-11-01T10:00:00' }),
+        sess({ id: 'legacy-root', workspaceDir: 'd:/PROJ/alpha/', updatedAt: '2026-11-01T09:00:00' }),
+        sess({ id: 'adhoc', workspaceDir: 'E:/standalone', updatedAt: '2026-11-01T08:00:00' }),
+        sess({ id: 'auto', workspaceDir: 'C:/ws/tasks/sess1', updatedAt: '2026-11-01T07:00:00' }),
         sess({ id: 'legacy' }),
-        sess({ id: 'alpha-new', workspaceDir: 'D:/proj/alpha', updatedAt: '2026-11-01T10:00:00' }),
-        sess({ id: 'alpha-old', workspaceDir: 'D:/proj/alpha', updatedAt: '2026-10-20T10:00:00' }),
-        sess({ id: 'caseback', workspaceDir: 'c:\\WS\\tasks\\x', updatedAt: '2026-11-01T07:00:00' }),
-        sess({ id: 'gone', workspaceDir: 'E:/archived-proj', archived: true }),
+        sess({ id: 'gone', archived: true }),
       ],
+      [alpha, proj({ id: 'proj_b', name: 'beta', rootDir: 'D:/proj/beta' })],
       WS,
     );
     expect(groups.map((g) => [g.key, g.label, g.sessions.map((s) => s.id)])).toEqual([
-      ['D:/proj/alpha', 'alpha', ['alpha-new', 'alpha-old']],
-      ['default', '默认项目', ['auto', 'legacy', 'caseback']],
+      ['proj:proj_a', 'alpha', ['bound', 'legacy-root']],
+      ['E:/standalone', 'standalone', ['adhoc']],
+      ['default', '默认项目', ['legacy', 'auto']],
       ['archived', '已归档', ['gone']],
     ]);
     expect(groups[0].path).toBe('D:/proj/alpha');
-    expect(groups[1].path).toBeUndefined();
+    expect(groups[0].projectId).toBe('proj_a');
   });
 
-  it('sorts project groups by newest member', () => {
+  it('keeps ad-hoc dir dedupe and newest-first group order for non-project sessions', () => {
     const groups = groupSessionsByProject(
       [
         sess({ id: 'a1', workspaceDir: 'D:/a', updatedAt: '2026-10-01T00:00:00' }),
         sess({ id: 'b1', workspaceDir: 'D:/b', updatedAt: '2026-10-31T00:00:00' }),
+        sess({ id: 'caseback', workspaceDir: 'c:\\other\\tasks\\x', updatedAt: '2026-11-01T07:00:00' }),
       ],
+      [],
       WS,
     );
-    expect(groups.map((g) => g.label)).toEqual(['b', 'a']);
+    expect(groups.map((g) => [g.key, g.label, g.sessions.map((s) => s.id)])).toEqual([
+      ['c:\\other\\tasks\\x', 'x', ['caseback']],
+      ['D:/b', 'b', ['b1']],
+      ['D:/a', 'a', ['a1']],
+    ]);
+  });
+  it('sorts project groups by newest member and archived trails', () => {
+    const groups = groupSessionsByProject(
+      [
+        sess({ id: 'p1', projectId: 'proj_a', updatedAt: '2026-10-01T00:00:00' }),
+        sess({ id: 'p2', projectId: 'proj_b', updatedAt: '2026-10-31T00:00:00' }),
+        sess({ id: 'gone', archived: true }),
+      ],
+      [proj({ id: 'proj_a', name: 'a' }), proj({ id: 'proj_b', name: 'b' })],
+      WS,
+    );
+    expect(groups.map((g) => g.label)).toEqual(['b', 'a', '已归档']);
   });
 });

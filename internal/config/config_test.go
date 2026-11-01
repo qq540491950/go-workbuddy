@@ -57,6 +57,40 @@ func TestStoreRoundTrip(t *testing.T) {
 	}
 }
 
+func TestProjectsRoundTripAndCloneIndependent(t *testing.T) {
+	dir := t.TempDir()
+	s, err := Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = s.Update(func(cfg *Config) {
+		cfg.Projects = append(cfg.Projects, Project{
+			ID: "proj_1", Name: "go-workbuddy", RootDir: `D:\projects\go-workbuddy`,
+			CreatedAt: time.Now().UTC(),
+		})
+		cfg.Sessions = append(cfg.Sessions, ChatSession{ID: "s1", Title: "p", ProjectID: "proj_1"})
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	s2, err := Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := s2.Get()
+	if len(got.Projects) != 1 || got.Projects[0].Name != "go-workbuddy" {
+		t.Fatalf("projects not persisted: %+v", got.Projects)
+	}
+	if len(got.Sessions) != 1 || got.Sessions[0].ProjectID != "proj_1" {
+		t.Fatalf("session project binding not persisted: %+v", got.Sessions)
+	}
+	clone := got.Clone()
+	clone.Projects[0].Name = "changed"
+	if got.Projects[0].Name != "go-workbuddy" {
+		t.Fatalf("Clone shares the Projects backing array: %+v", got.Projects)
+	}
+}
+
 // TestSidebarSettingsNormalizeAndPersist: older config.json files without the
 // sidebar fields load with defaults; both fields persist; unknown grouping
 // values fall back to "time" on the next load.

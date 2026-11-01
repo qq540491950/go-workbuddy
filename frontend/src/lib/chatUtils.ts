@@ -1,5 +1,5 @@
 // Pure helpers shared by the chat page and its unit tests (vitest).
-import type { AttachmentOut, ChatSession, UsageInfo } from "@/lib/api";
+import type { AttachmentOut, ChatSession, Project, UsageInfo } from "@/lib/api";
 
 export type UIMessage = {
   id: string;
@@ -146,11 +146,13 @@ export interface SessionGroup {
 }
 
 export interface ProjectGroup {
-  /** key is the project's workspace root (or "default" / "archived"). */
+  /** key is "proj:<id>", an ad-hoc dir root, "default" or "archived". */
   key: string;
   label: string;
   /** Full workspace root for tooltips; undefined for the default project. */
   path?: string;
+  /** Registered project the group belongs to, if any. */
+  projectId?: string;
   sessions: ChatSession[];
 }
 
@@ -199,14 +201,14 @@ export function groupSessionsByTime(sessions: ChatSession[], now: Date): Session
     .map((key) => ({ key, label: SESSION_GROUP_LABELS[key], sessions: (buckets.get(key) ?? []).sort(byRecency) }));
 }
 
-/** groupSessionsByProject buckets sessions by their workspace ROOT directory:
- * sessions on an explicit workspace outside the global one form their own
- * project (labeled by folder name); auto-created task dirs under the global
- * workspace — and sessions without a workspace — belong to the default
- * project. Archived sessions trail in their own group; groups sort by their
- * newest member. Per-session task directories are NEVER project keys (every
- * session gets its own, which would fragment the list). */
-export function groupSessionsByProject(sessions: ChatSession[], globalWorkspace: string): ProjectGroup[] {
+/** groupSessionsByProject buckets sidebar sessions for the "项目" grouping.
+ * Registered projects come first: sessions bound via projectId — and legacy
+ * sessions whose explicit workspace equals a project root — join that
+ * project's group. Remaining explicit workspaces outside the global one keep
+ * their ad-hoc folder groups; auto task dirs under the global workspace and
+ * workspace-less sessions form the default project. Archived sessions trail
+ * in their own group; groups sort by their newest member. */
+export function groupSessionsByProject(sessions: ChatSession[], projects: Project[], globalWorkspace: string): ProjectGroup[] {
   const norm = (p: string) => p.replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
   const root = norm(globalWorkspace);
   const underGlobal = (dir: string) => {
@@ -219,14 +221,22 @@ export function groupSessionsByProject(sessions: ChatSession[], globalWorkspace:
   };
 
   const groups = new Map<string, ProjectGroup>();
-  const push = (key: string, label: string, path: string | undefined, s: ChatSession) => {
+  const push = (key: string, label: string, path: string | undefined, s: ChatSession, projectId?: string) => {
     const g = groups.get(key);
     if (g) g.sessions.push(s);
-    else groups.set(key, { key, label, path, sessions: [s] });
+    else groups.set(key, { key, label, path, projectId, sessions: [s] });
   };
+  const byId = new Map(projects.map((p) => [p.id, p]));
+  const byRoot = new Map(projects.map((p) => [norm(p.rootDir), p]));
   for (const s of sessions) {
     if (s.archived) {
       push("archived", SESSION_GROUP_LABELS.archived, undefined, s);
+      continue;
+    }
+    const registered = (s.projectId ? byId.get(s.projectId) : undefined)
+      ?? (s.workspaceDir ? byRoot.get(norm(s.workspaceDir)) : undefined);
+    if (registered) {
+      push(`proj:${registered.id}`, registered.name, registered.rootDir, s, registered.id);
       continue;
     }
     const dir = s.workspaceDir || "";

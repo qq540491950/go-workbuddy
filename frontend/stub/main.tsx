@@ -74,6 +74,10 @@ const seedConfig = {
   ],
   skills: [],
   mcpServers: [],
+  projects: [
+    { id: "proj_alpha", name: "proj-alpha", rootDir: "/tmp/proj-alpha", createdAt: "2026-10-01T00:00:00Z" },
+    { id: "proj_beta", name: "go-workbuddy", rootDir: "D:/projects/go-workbuddy", createdAt: "2026-10-20T00:00:00Z" },
+  ],
   sessions: [
     { id: "sess_confirm", title: "需要确认的写入", targetType: "agent", targetId: "agent_1", createdAt: "2026-09-18T01:00:00Z", updatedAt: "2026-09-18T01:05:00Z", modelOverride: "gpt-5-mini", workspaceDir: "/tmp/workbuddy-workspace/tasks/sess_confirm" },
     { id: "sess_plain", title: "普通对话", targetType: "team", targetId: "team_1", createdAt: "2026-09-17T09:00:00Z", updatedAt: "2026-09-17T09:10:00Z" },
@@ -86,6 +90,7 @@ const seedConfig = {
     { id: "sess_earlier", title: "重构登录流程", targetType: "", targetId: "", createdAt: iso(-15, 9), updatedAt: iso(-15, 10) },
     { id: "sess_archived", title: "旧版方案讨论", targetType: "", targetId: "", createdAt: iso(-30, 9), updatedAt: iso(-30, 10), archived: true },
     { id: "sess_project", title: "跨目录：独立项目任务", targetType: "agent", targetId: "agent_1", createdAt: iso(0, 8), updatedAt: iso(0, 9), workspaceDir: "/tmp/proj-alpha" },
+    { id: "sess_projchat", title: "项目内对话：绑定 proj-beta", targetType: "", targetId: "", createdAt: iso(0, 7), updatedAt: iso(0, 7), projectId: "proj_beta" },
   ],
 };
 
@@ -224,7 +229,61 @@ const handlers: Record<string, (args: any[]) => any> = {
   "3713305274": (args) => {
     const sess = seedConfig.sessions.find((s) => s.id === args[0]);
     if (!sess) throw new Error("会话不存在");
-    return sess.workspaceDir || seedConfig.settings.workspaceDir;
+    const project = seedConfig.projects.find((p: any) => p.id === (sess as any).projectId);
+    return sess.workspaceDir || project?.rootDir || seedConfig.settings.workspaceDir;
+  },
+  // ListProjects
+  "2203540805": () => seedConfig.projects,
+  // SaveProject(id, name, rootDir)
+  "2762009531": (args) => {
+    const [id, name, rootDir] = args;
+    if (!id) {
+      const proj = {
+        id: `proj_stub_${seedConfig.projects.length + 1}`,
+        name: name || rootDir.split("/").pop(),
+        rootDir,
+        createdAt: new Date().toISOString(),
+      };
+      seedConfig.projects.push(proj);
+      return proj;
+    }
+    const proj = seedConfig.projects.find((p: any) => p.id === id);
+    if (!proj) throw new Error("项目不存在");
+    if (name) proj.name = name;
+    if (rootDir) proj.rootDir = rootDir;
+    return proj;
+  },
+  // DeleteProject(id)
+  "911459121": (args) => {
+    seedConfig.projects = seedConfig.projects.filter((p: any) => p.id !== args[0]);
+    for (const sess of seedConfig.sessions) {
+      if ((sess as any).projectId === args[0]) delete (sess as any).projectId;
+    }
+    return null;
+  },
+  // NewSessionWithProject(targetType, targetID, title, projectID)
+  "3614387014": (args) => {
+    const id = `sess_stub_${seedConfig.sessions.length + 1}`;
+    const sess = {
+      id,
+      title: "新对话",
+      targetType: args[0],
+      targetId: args[1],
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      projectId: args[3],
+    };
+    seedConfig.sessions.unshift(sess);
+    histories[id] = [];
+    return sess;
+  },
+  // SetSessionProject(sessionID, projectID)
+  "3134520676": (args) => {
+    const sess = seedConfig.sessions.find((s) => s.id === args[0]);
+    if (!sess) throw new Error("会话不存在");
+    (sess as any).projectId = args[1] || undefined;
+    delete sess.workspaceDir;
+    return null;
   },
   // ArtifactService.TaskWorkspaceSnapshot(sessionID)
   "57605569": async (args) => {

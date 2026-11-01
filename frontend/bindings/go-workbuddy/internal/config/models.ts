@@ -113,6 +113,14 @@ export interface ChatSession {
      * global workspace.
      */
     "workspaceDir"?: string;
+
+    /**
+     * ProjectID attaches this chat to a registered project. Project chats
+     * keep WorkspaceDir empty: their effective workspace is the project root
+     * (see EffectiveWorkspaceFor), resolved dynamically so renaming or
+     * re-rooting a project propagates to every chat in it.
+     */
+    "projectId"?: string;
 }
 
 /**
@@ -124,6 +132,14 @@ export interface Config {
     "agents": AgentConfig[] | null;
     "remoteAgents"?: RemoteAgentConfig[] | null;
     "teams": TeamConfig[] | null;
+
+    /**
+     * Projects are named root directories chats can be attached to. A chat
+     * bound to a project resolves its workspace to the project root, so many
+     * sessions can share one directory without tripping the one-task-per-dir
+     * conflict that guards explicitly bound task workspaces.
+     */
+    "projects"?: Project[] | null;
 
     /**
      * MCPTokens caches OAuth tokens for streamable-http MCP servers
@@ -272,6 +288,16 @@ export interface ModelProvider {
      */
     "priceIn"?: number;
     "priceOut"?: number;
+}
+
+/**
+ * Project is a named root directory chats can be attached to.
+ */
+export interface Project {
+    "id": string;
+    "name": string;
+    "rootDir": string;
+    "createdAt": string;
 }
 
 /**

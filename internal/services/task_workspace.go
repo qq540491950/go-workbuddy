@@ -28,9 +28,11 @@ func (c *ChatService) SetSessionWorkspace(sessionID, workspaceDir string) error 
 	}
 	cfg := c.S.Store.Get()
 	found := false
+	projectID := ""
 	for _, s := range cfg.Sessions {
 		if s.ID == sessionID {
 			found = true
+			projectID = s.ProjectID
 			break
 		}
 	}
@@ -44,8 +46,14 @@ func (c *ChatService) SetSessionWorkspace(sessionID, workspaceDir string) error 
 	if started {
 		return fmt.Errorf("首轮已开始，任务工作区不可更改")
 	}
+	if projectID != "" {
+		return fmt.Errorf("项目会话使用项目根目录，请先移出项目再单独指定工作区")
+	}
 	ws, err := validateTaskWorkspace(workspaceDir)
 	if err != nil {
+		return err
+	}
+	if err := projectRootConflict(cfg, ws); err != nil {
 		return err
 	}
 	if err := workspaceConflict(cfg, ws, sessionID); err != nil {
@@ -85,6 +93,18 @@ func (c *ChatService) SetSessionWorkspace(sessionID, workspaceDir string) error 
 	return nil
 }
 
+// projectRootConflict rejects task directories that are registered project
+// roots: project chats share those via ProjectID, and a second exclusive
+// binding would make the two ownership models fight over the same directory.
+func projectRootConflict(cfg config.Config, dir string) error {
+	for _, p := range cfg.Projects {
+		if samePath(p.RootDir, dir) {
+			return fmt.Errorf("目录已被项目「%s」使用，请在项目中新建对话", p.Name)
+		}
+	}
+	return nil
+}
+
 func (c *ChatService) sessionWorkspaceLock(sessionID string) *sync.Mutex {
 	c.workspaceMu.Lock()
 	defer c.workspaceMu.Unlock()
@@ -105,7 +125,7 @@ func (c *ChatService) SessionWorkspace(sessionID string) (string, error) {
 		if chatSession.ID != sessionID {
 			continue
 		}
-		ws := chatSession.EffectiveWorkspace(cfg.Settings.WorkspaceDir)
+		ws := chatSession.EffectiveWorkspaceFor(cfg)
 		if strings.TrimSpace(ws) == "" {
 			return "", fmt.Errorf("任务工作区未配置")
 		}

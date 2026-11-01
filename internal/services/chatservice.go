@@ -249,16 +249,23 @@ func NewChatService(s *Services, sessions session.Service, db *gorm.DB) *ChatSer
 
 // NewSession creates a task session with an automatically isolated workspace.
 func (c *ChatService) NewSession(targetType, targetID, title string) (config.ChatSession, error) {
-	return c.NewSessionWithWorkspace(targetType, targetID, title, "")
+	return c.newSession(targetType, targetID, title, "", "")
 }
 
 // NewSessionWithWorkspace creates a task session. An empty workspaceDir asks
 // the backend to create a unique directory under the global workspace.
 func (c *ChatService) NewSessionWithWorkspace(targetType, targetID, title, workspaceDir string) (config.ChatSession, error) {
-	return c.newSession(targetType, targetID, title, workspaceDir)
+	return c.newSession(targetType, targetID, title, workspaceDir, "")
 }
 
-func (c *ChatService) newSession(targetType, targetID, title, workspaceDir string) (config.ChatSession, error) {
+// NewSessionWithProject creates a chat bound to a registered project. Project
+// chats share the project root as their workspace and own no task directory,
+// so many sessions can work in one project side by side.
+func (c *ChatService) NewSessionWithProject(targetType, targetID, title, projectID string) (config.ChatSession, error) {
+	return c.newSession(targetType, targetID, title, "", projectID)
+}
+
+func (c *ChatService) newSession(targetType, targetID, title, workspaceDir, projectID string) (config.ChatSession, error) {
 	// An empty target is a direct chat: the turn runs on the default
 	// provider's model with no persisted AgentConfig until the user
 	// @-mentions one.
@@ -272,7 +279,19 @@ func (c *ChatService) newSession(targetType, targetID, title, workspaceDir strin
 	createdDir := ""
 	c.workspaceMu.Lock()
 	defer c.workspaceMu.Unlock()
-	if strings.TrimSpace(workspaceDir) == "" {
+	projectName := ""
+	if strings.TrimSpace(projectID) != "" {
+		for _, p := range c.S.Store.Get().Projects {
+			if p.ID == projectID {
+				projectName = p.Name
+				workspaceDir = p.RootDir
+				break
+			}
+		}
+		if projectName == "" {
+			return config.ChatSession{}, fmt.Errorf("项目不存在或已被删除")
+		}
+	} else if strings.TrimSpace(workspaceDir) == "" {
 		global := strings.TrimSpace(c.S.Store.Get().Settings.WorkspaceDir)
 		if global == "" {
 			return config.ChatSession{}, fmt.Errorf("工作区目录未配置")
@@ -289,6 +308,12 @@ func (c *ChatService) newSession(targetType, targetID, title, workspaceDir strin
 		cleanupCreatedDir(createdDir)
 		return config.ChatSession{}, err
 	}
+	if projectID == "" {
+		if err := projectRootConflict(c.S.Store.Get(), workspaceDir); err != nil {
+			cleanupCreatedDir(createdDir)
+			return config.ChatSession{}, err
+		}
+	}
 	if err := workspaceConflict(c.S.Store.Get(), workspaceDir, ""); err != nil {
 		cleanupCreatedDir(createdDir)
 		return config.ChatSession{}, err
@@ -298,6 +323,13 @@ func (c *ChatService) newSession(targetType, targetID, title, workspaceDir strin
 		removeTaskBaseline(c.S.Store, id)
 		return config.ChatSession{}, err
 	}
+	// Project chats keep WorkspaceDir empty: their workspace resolves through
+	// ProjectID (see EffectiveWorkspaceFor), so re-rooting a project
+	// propagates to every chat without rewriting session rows.
+	storedWorkspace := workspaceDir
+	if projectID != "" {
+		storedWorkspace = ""
+	}
 	cs := config.ChatSession{
 		ID:           id,
 		Title:        title,
@@ -305,7 +337,8 @@ func (c *ChatService) newSession(targetType, targetID, title, workspaceDir strin
 		TargetID:     targetID,
 		CreatedAt:    nowUTC(),
 		UpdatedAt:    nowUTC(),
-		WorkspaceDir: workspaceDir,
+		WorkspaceDir: storedWorkspace,
+		ProjectID:    projectID,
 	}
 	cleanup := func() {
 		cleanupCreatedDir(createdDir)
@@ -327,7 +360,7 @@ func (c *ChatService) newSession(targetType, targetID, title, workspaceDir strin
 		if auditType == "" {
 			auditType = "direct"
 		}
-		c.audit(cs.ID, "session_created", "system", auditType, mustJSON(map[string]string{"targetId": targetID, "title": cs.Title}), "")
+		c.audit(cs.ID, "session_created", "system", auditType, mustJSON(map[string]string{"targetId": targetID, "title": cs.Title, "projectId": projectID}), "")
 	} else {
 		_ = c.sessions.Delete(context.Background(), &session.DeleteRequest{
 			AppName: c.appName, UserID: c.userID, SessionID: cs.ID,
@@ -335,6 +368,222 @@ func (c *ChatService) newSession(targetType, targetID, title, workspaceDir strin
 		cleanup()
 	}
 	return cs, err
+}
+
+// ListProjects returns the registered projects in creation order.
+func (c *ChatService) ListProjects() []config.Project {
+	return c.S.Store.Get().Projects
+}
+
+// SaveProject creates a project (empty id) or updates name/root of an
+// existing one (blank fields keep the stored value). The root must exist and
+// be writable and may not be claimed by another project.
+func (c *ChatService) SaveProject(id, name, rootDir string) (config.Project, error) {
+	c.workspaceMu.Lock()
+	defer c.workspaceMu.Unlock()
+	if strings.TrimSpace(id) == "" {
+		root, err := validateTaskWorkspace(rootDir)
+		if err != nil {
+			return config.Project{}, err
+		}
+		if err := projectRootConflict(c.S.Store.Get(), root); err != nil {
+			return config.Project{}, err
+		}
+		if strings.TrimSpace(name) == "" {
+			name = filepath.Base(root)
+		}
+		p := config.Project{ID: newID("proj_"), Name: strings.TrimSpace(name), RootDir: root, CreatedAt: nowUTC()}
+		if err := c.S.Store.Update(func(cfg *config.Config) {
+			cfg.Projects = append(cfg.Projects, p)
+		}); err != nil {
+			return config.Project{}, err
+		}
+		c.audit("projects", "project_saved", "system", "project", mustJSON(map[string]string{"id": p.ID, "name": p.Name, "root": p.RootDir}), "")
+		return p, nil
+	}
+
+	var updated config.Project
+	var saveErr error
+	err := c.S.Store.Update(func(cfg *config.Config) {
+		idx := -1
+		for i := range cfg.Projects {
+			if cfg.Projects[i].ID == id {
+				idx = i
+				break
+			}
+		}
+		if idx < 0 {
+			saveErr = fmt.Errorf("项目 %q 不存在", id)
+			return
+		}
+		p := &cfg.Projects[idx]
+		root := p.RootDir
+		if strings.TrimSpace(rootDir) != "" {
+			canonical, err := validateTaskWorkspace(rootDir)
+			if err != nil {
+				saveErr = err
+				return
+			}
+			for j := range cfg.Projects {
+				if j != idx && samePath(cfg.Projects[j].RootDir, canonical) {
+					saveErr = fmt.Errorf("目录已被项目「%s」使用", cfg.Projects[j].Name)
+					return
+				}
+			}
+			root = canonical
+		}
+		p.RootDir = root
+		if strings.TrimSpace(name) != "" {
+			p.Name = strings.TrimSpace(name)
+		}
+		updated = *p
+	})
+	if err != nil {
+		return config.Project{}, err
+	}
+	if saveErr != nil {
+		return config.Project{}, saveErr
+	}
+	c.audit("projects", "project_saved", "system", "project", mustJSON(map[string]string{"id": updated.ID, "name": updated.Name, "root": updated.RootDir}), "")
+	return updated, nil
+}
+
+// DeleteProject unregisters a project. Its chats fall back to the default
+// workspace and their baselines reset to the new directory; task files are
+// never touched. Projects with running chats are refused.
+func (c *ChatService) DeleteProject(id string) error {
+	c.workspaceMu.Lock()
+	defer c.workspaceMu.Unlock()
+	cfg := c.S.Store.Get()
+	found := false
+	for _, p := range cfg.Projects {
+		if p.ID == id {
+			found = true
+			break
+		}
+	}
+	if !found {
+		return fmt.Errorf("项目 %q 不存在", id)
+	}
+	for _, s := range cfg.Sessions {
+		if s.ProjectID == id && c.sessionRunning(s.ID) {
+			return fmt.Errorf("会话「%s」正在运行，不能删除项目", s.Title)
+		}
+	}
+	if err := c.S.Store.Update(func(cfg *config.Config) {
+		projects := make([]config.Project, 0, len(cfg.Projects))
+		for _, p := range cfg.Projects {
+			if p.ID != id {
+				projects = append(projects, p)
+			}
+		}
+		cfg.Projects = projects
+		for i := range cfg.Sessions {
+			if cfg.Sessions[i].ProjectID == id {
+				cfg.Sessions[i].ProjectID = ""
+			}
+		}
+	}); err != nil {
+		return err
+	}
+	// Baselines restart from the session's new effective (global) workspace
+	// so the task panel does not report the project's files as mass deletions.
+	for _, s := range cfg.Sessions {
+		if s.ProjectID != id {
+			continue
+		}
+		s.ProjectID = ""
+		_, _ = resetTaskBaseline(c.S.Store, s.ID, s.EffectiveWorkspaceFor(c.S.Store.Get()))
+	}
+	c.audit("projects", "project_deleted", "system", "project", mustJSON(map[string]string{"id": id}), "")
+	return nil
+}
+
+// SetSessionProject moves a chat into (empty id = out of) a project before
+// its first turn. Joining hands the workspace to the project root: the task
+// dir binding is cleared and the baseline restarts from the project.
+func (c *ChatService) SetSessionProject(sessionID, projectID string) error {
+	lock := c.sessionWorkspaceLock(sessionID)
+	lock.Lock()
+	defer lock.Unlock()
+	c.workspaceMu.Lock()
+	defer c.workspaceMu.Unlock()
+
+	if c.sessionRunning(sessionID) {
+		return fmt.Errorf("会话正在运行，不能更改项目")
+	}
+	cfg := c.S.Store.Get()
+	found := false
+	for _, s := range cfg.Sessions {
+		if s.ID == sessionID {
+			found = true
+			break
+		}
+	}
+	if !found {
+		return fmt.Errorf("会话 %q 不存在", sessionID)
+	}
+	started, err := c.sessionHasEvents(sessionID)
+	if err != nil {
+		return err
+	}
+	if started {
+		return fmt.Errorf("首轮已开始，项目不可更改")
+	}
+	if strings.TrimSpace(projectID) != "" {
+		known := false
+		for _, p := range cfg.Projects {
+			if p.ID == projectID {
+				known = true
+				break
+			}
+		}
+		if !known {
+			return fmt.Errorf("项目不存在或已被删除")
+		}
+	}
+	var notFound error
+	var revert func(*config.Config)
+	err = c.S.Store.Update(func(cfg *config.Config) {
+		for i := range cfg.Sessions {
+			if cfg.Sessions[i].ID != sessionID {
+				continue
+			}
+			oldProject, oldWorkspace := cfg.Sessions[i].ProjectID, cfg.Sessions[i].WorkspaceDir
+			cfg.Sessions[i].ProjectID = projectID
+			cfg.Sessions[i].WorkspaceDir = ""
+			cfg.Sessions[i].UpdatedAt = nowUTC()
+			revert = func(cfg *config.Config) {
+				for i := range cfg.Sessions {
+					if cfg.Sessions[i].ID == sessionID {
+						cfg.Sessions[i].ProjectID = oldProject
+						cfg.Sessions[i].WorkspaceDir = oldWorkspace
+						return
+					}
+				}
+			}
+			return
+		}
+		notFound = fmt.Errorf("会话 %q 不存在", sessionID)
+	})
+	if err != nil {
+		return err
+	}
+	if notFound != nil {
+		return notFound
+	}
+	ws := ""
+	for _, s := range c.S.Store.Get().Sessions {
+		if s.ID == sessionID {
+			ws = s.EffectiveWorkspaceFor(c.S.Store.Get())
+		}
+	}
+	if _, err := resetTaskBaseline(c.S.Store, sessionID, ws); err != nil {
+		_ = c.S.Store.Update(revert)
+		return err
+	}
+	c.audit(sessionID, "session_project_set", "system", "session", mustJSON(map[string]string{"projectId": projectID}), "")
+	return nil
 }
 
 func (c *ChatService) sessionRunning(sessionID string) bool {
@@ -1381,7 +1630,7 @@ func (c *ChatService) runTurn(target *config.ChatSession, guardOn bool, msg *gen
 	sessionID := target.ID
 	defer c.recoverRun(sessionID, &err)
 	cfg := c.S.Store.Get()
-	workspace := target.EffectiveWorkspace(cfg.Settings.WorkspaceDir)
+	workspace := target.EffectiveWorkspaceFor(cfg)
 	// Per-agent run guardrails (0 = unlimited); teams fall back to unlimited.
 	maxTurnSeconds, maxToolCalls := 0, 0
 	var maxSessionTokens int64
@@ -1763,7 +2012,7 @@ func (c *ChatService) ForkSession(sessionID string) (config.ChatSession, error) 
 		return config.ChatSession{}, fmt.Errorf("会话 %q 不存在", sessionID)
 	}
 	id := newID("sess_")
-	workspace := src.EffectiveWorkspace(cfg.Settings.WorkspaceDir)
+	workspace := src.EffectiveWorkspaceFor(cfg)
 	if _, err := resetTaskBaseline(c.S.Store, id, workspace); err != nil {
 		return config.ChatSession{}, err
 	}
@@ -1823,7 +2072,8 @@ func (c *ChatService) ForkSession(sessionID string) (config.ChatSession, error) 
 		CreatedAt:    nowUTC(),
 		UpdatedAt:    nowUTC(),
 		ForkedFrom:   sessionID,
-		WorkspaceDir: workspace,
+		WorkspaceDir: src.WorkspaceDir,
+		ProjectID:    src.ProjectID,
 	}
 	err := c.S.Store.Update(func(cfg *config.Config) {
 		cfg.Sessions = append([]config.ChatSession{branch}, cfg.Sessions...)

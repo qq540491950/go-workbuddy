@@ -195,7 +195,7 @@ func (a *ArtifactService) sessionWorkspace(sessionID string) (string, error) {
 	cfg := a.S.Store.Get()
 	for _, session := range cfg.Sessions {
 		if session.ID == sessionID {
-			return session.EffectiveWorkspace(cfg.Settings.WorkspaceDir), nil
+			return session.EffectiveWorkspaceFor(cfg), nil
 		}
 	}
 	return "", fmt.Errorf("会话 %q 不存在", sessionID)
