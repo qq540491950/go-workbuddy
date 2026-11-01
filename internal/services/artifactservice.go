@@ -12,6 +12,7 @@ import (
 	"unicode/utf8"
 
 	"go-workbuddy/internal/agentkit"
+	"go-workbuddy/internal/config"
 )
 
 const (
@@ -192,7 +193,13 @@ func (a *ArtifactService) OpenForSession(sessionID, relPath string) (*Artifact, 
 }
 
 func (a *ArtifactService) sessionWorkspace(sessionID string) (string, error) {
-	cfg := a.S.Store.Get()
+	return sessionWorkspaceOf(a.S.Store.Get(), sessionID)
+}
+
+// sessionWorkspaceOf resolves one session's effective workspace from an
+// already-fetched config snapshot (Store.Get returns a deep copy, so callers
+// must reuse one snapshot instead of re-fetching per field).
+func sessionWorkspaceOf(cfg config.Config, sessionID string) (string, error) {
 	for _, session := range cfg.Sessions {
 		if session.ID == sessionID {
 			return session.EffectiveWorkspaceFor(cfg), nil

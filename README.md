@@ -197,7 +197,12 @@ internal/
     auth.go                #   Bearer / API Key / OAuth 2.1 授权码+PKCE 传输层
   memory/                  # 长期记忆（ADK memory.Service，SQLite）
   services/                # Wails 服务（前端可调用 RPC）
-    chatservice.go         #   会话/对话核心：runTurn 共享引擎、HITL 确认、分叉、并行、护栏
+    chatservice.go           #   共享类型/构造/审计/运行生命周期
+    chatservice_sessions.go  #   会话 CRUD、项目、改绑守卫、分叉
+    chatservice_turn.go      #   Send/ConfirmToolCall/runTurn/autoTitle（护栏应用点）
+    chatservice_render.go    #   事件渲染、目标与 @ 路由解析
+    chatservice_export.go    #   Markdown/HTML 导出
+    chatservice_stats.go     #   长期记忆、会话统计
     task_workspace.go      #   任务目录校验、会话级改绑锁与工作区 RPC
     workspace_snapshot.go  #   任务快照基线、产物与文件级变更
     artifactservice.go     #   会话级文件列表/预览与安全扫描

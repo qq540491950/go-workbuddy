@@ -186,13 +186,11 @@ func buildTaskSnapshot(store *config.Store, sessionID, workspace string) (*TaskW
 	for _, f := range files {
 		current[f.Path] = f
 		base, existed := baseline.Files[f.Path]
-		status := WorkspaceChangeStatus("")
-		switch {
-		case !existed:
-			status = ChangeAdded
+		status := classifyChange(base, existed, f.Size, f.ModTime)
+		switch status {
+		case ChangeAdded:
 			added++
-		case base.Size != f.Size || !base.ModTime.Equal(f.ModTime):
-			status = ChangeModified
+		case ChangeModified:
 			modified++
 		}
 		if status == "" {

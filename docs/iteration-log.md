@@ -3,6 +3,22 @@
 本文件按轮次记录每次功能迭代的依据、实现要点与测试证据。最新记录在最上方。
 
 ## 视觉测试与体验设计
+### 第一百六十七轮迭代：双轴代码审查修复批（已实施）
+
+依据：对第 154–166 轮全部提交（3d8eb08^..HEAD，13 提交 37 文件）执行 Standards/Spec 双轴审查（并行子代理），汇总 1 条硬违规、6 条判断题、2 条实现与声明不符。
+
+修复清单：
+
+- **硬违规（文档地图未同步拆分）**：AGENTS.md 与 README.md 的目录地图仍把 runTurn/HITL/分叉/并行全部记在 chatservice.go 名下，按六文件拆分后的职责逐文件更正（README 原行尾「护栏」归位到 turn 行）。
+- **重复代码（RevealWorkspaceFile vs sessionWorkspace）**：提取共享 `sessionWorkspaceOf(cfg, sessionID)`，两处调用统一；顺带消除 `a.S.Store.Get()` 在 range 头与循环体内各调一次的双深拷贝（AGENTS：Get 返回深拷贝）。
+- **重复口径（changeStatus vs buildTaskSnapshot）**：提取 `classifyChange(base, existed, size, modTime)` 供快照 diff 与 FileDiff 共用，文件级分类单点维护；顺带删除冗余 `statOK` 参数。
+- **死代码**：filediff_test.go 的 `_ = mustSplit` 占位行删除。
+- **删除确认丢失 await**：ConfirmDialog 回调里 `Chat.DeleteSession` 改回 await 后再刷新列表（与旧实现语义一致）。
+- **语音 updater 不纯（Spec）**：onresult 不再在 setState 更新器内改写闭包变量（StrictMode 重放会双次前滚），改为处理器内以 DOM textarea 值为实时真源同步计算；onend 重置识别段；中间手动编辑导致无法按后缀剥离时自然退化为追加（注释声明该边界）。
+- **Shift+↑ 误触编辑（Spec）**：↑ 编辑守卫补 `!e.shiftKey`（Shift+↑ 是文本选择）。
+
+测试证据：`go test ./internal/... . -count=1` 全绿、`go vet` 干净；`tsc --noEmit`、vitest 17/17、`npm run build` 通过；`go test -race ./internal/... .`（本机首次可跑，clang 就绪）全绿——含 filediff/快照/工作区全部新代码的并发回归。审查确认项：Spec 轴逐轮核对无缺失、无 scope creep；排队数组/Esc 链/成本口径/Reveal 校验链/chatservice 拆分零行为搬移均与声明一致。
+
 ### 第一百六十六轮迭代：浅色主题走查——本批新 UI 主题适配验证（无代码变更）
 
 依据：第 155–165 轮新增了大量带语义配色的 UI（行级 diff 红绿行、未读点、ConfirmDialog、EmptyState、回到底部浮钮、拖拽高亮），需确认浅色主题下全部可读。
@@ -38,6 +54,18 @@
 测试证据：新增 `app_reveal_test.go`（revealCommand 三平台参数、未知会话/路径穿越/文件不存在校验）；`go test ./internal/... . -count=1` 全绿、`go vet` 干净；绑定再生成后 `tsc --noEmit`、vitest 17/17、`npm run build` 通过。浏览器桩走查：archive.zip 行出现「显示」按钮，点击命中桩处理器并记录 relPath；成本口径与语音路径为纯前端逻辑，由类型与代码审查覆盖。
 
 ## 视觉测试与体验设计
+
+### 第一百六十二轮迭代：ChatPage 组件拆分——消息渲染独立（已实施）
+
+依据：ChatPage.tsx 单文件 2511 行，尾部 320 行是六个只吃 props 的自包含组件，与管理页状态无耦合，可无风险迁出，为后续 Sidebar/Composer 拆分立边界。
+
+实现要点：
+
+- 迁至 `components/chat/`：`MessageBubble.tsx`（MessageBubble + ConfirmCard + DaySeparator，memo 语义不变）、`TodoCards.tsx`（TodoItem 类型 + TodoListCard + PlanStrip）、`Onboarding.tsx`。
+- ChatPage 相应导入并裁剪不再使用的 icons/组件导入，2511→2427 行。
+- 纯 props 组件搬移，无状态迁移。
+
+测试证据：`tsc --noEmit`、vitest 17/17、`npm run build` 通过；浏览器桩走查用户气泡、任务计划卡、确认卡渲染正常（拆分后回归）。
 
 ### 第一百六十三轮迭代：回到底部浮钮 + 工具 JSON 复制 + 附件大图（已实施）
 

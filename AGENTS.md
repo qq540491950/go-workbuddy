@@ -42,7 +42,12 @@ internal/agentkit/           # ADK 集成核心
 internal/mcpmgr/             # MCP 服务器生命周期；auth.go = Bearer/API-Key/OAuth 2.1 传输层
 internal/memory/             # 长期记忆（ADK memory.Service，SQLite）
 internal/services/           # Wails 服务（前端可调用 RPC）
-  chatservice.go             #   会话/对话核心：runTurn 共享引擎、HITL 确认、分叉、并行
+  chatservice.go             #   共享类型/构造/审计/运行生命周期（recoverRun/Cancel/registerRun）
+  chatservice_sessions.go    #   会话 CRUD、项目、改绑守卫、GetSessionMessages、Fork
+  chatservice_turn.go        #   Send/Regenerate/sendTurn/ConfirmToolCall/runTurn/autoTitle
+  chatservice_render.go      #   renderEvent、确认中断识别、目标与 @ 路由解析
+  chatservice_export.go      #   Markdown/HTML 导出
+  chatservice_stats.go       #   长期记忆、会话统计
   task_workspace.go          #   任务目录校验、会话级改绑锁与工作区 RPC
   workspace_snapshot.go      #   任务快照基线、产物与文件级变更
   artifactservice.go         #   会话级文件列表/预览与安全扫描

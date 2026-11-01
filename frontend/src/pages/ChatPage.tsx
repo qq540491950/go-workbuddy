@@ -785,21 +785,27 @@ export function ChatPage({ isDark, onToggleTheme, onOpenHelp, onOpenSettings }: 
     rec.continuous = false;
     // Interim results REPLACE the previously inserted segment of the CURRENT
     // input (not a snapshot taken at start): typing while recording must not
-    // be clobbered by the recognizer.
+    // be clobbered by the recognizer. All bookkeeping happens in the handler
+    // (never inside a setState updater — updaters must stay pure): the DOM
+    // textarea value is the live source of truth, and a partial manual edit
+    // that no longer ends with the recognized segment simply falls back to
+    // appending the new text.
     let recognized = "";
     rec.onresult = (e: any) => {
       let text = "";
       for (let i = e.resultIndex; i < e.results.length; i++) {
         text += e.results[i][0].transcript;
       }
-      setInput((cur) => {
-        const base = recognized && cur.endsWith(recognized) ? cur.slice(0, cur.length - recognized.length) : cur;
-        const sep = base && !/\s$/.test(base) ? " " : "";
-        recognized = text;
-        return (base + sep + text).trim();
-      });
+      const cur = inputRef.current?.value ?? "";
+      const base = recognized && cur.endsWith(recognized) ? cur.slice(0, cur.length - recognized.length) : cur;
+      const sep = base && !/\s$/.test(base) ? " " : "";
+      recognized = text;
+      setInput((base + sep + text).trim());
     };
-    rec.onend = () => setListening(false);
+    rec.onend = () => {
+      recognized = "";
+      setListening(false);
+    };
     rec.onerror = () => setListening(false);
     w.__wbRecognition = rec;
     setListening(true);
@@ -972,9 +978,12 @@ export function ChatPage({ isDark, onToggleTheme, onOpenHelp, onOpenSettings }: 
       title: `删除会话「${s.title}」？`,
       description: "会话与消息将不可恢复，任务工作区中的文件会保留。",
       confirmText: "删除",
-      action: () => {
-        Chat.DeleteSession(s.id)
-          .catch((e) => toast.error(`删除失败: ${errText(e)}`));
+      action: async () => {
+        try {
+          await Chat.DeleteSession(s.id);
+        } catch (e) {
+          toast.error(`删除失败: ${errText(e)}`);
+        }
         if (s.id === activeID) {
           setActiveID("");
           setMessages([]);
@@ -2227,7 +2236,7 @@ export function ChatPage({ isDark, onToggleTheme, onOpenHelp, onOpenSettings }: 
                   }
                   // ↑ on an empty composer edits the last user message
                   // (Codex-style) — the fastest way to fix a typo in a prompt.
-                  if (e.key === "ArrowUp" && input.length === 0 && !editing && !running && !e.nativeEvent.isComposing && !e.altKey && !e.metaKey && !e.ctrlKey) {
+                  if (e.key === "ArrowUp" && input.length === 0 && !editing && !running && !e.nativeEvent.isComposing && !e.shiftKey && !e.altKey && !e.metaKey && !e.ctrlKey) {
                     for (let i = messages.length - 1; i >= 0; i--) {
                       const m = messages[i];
                       if (m.kind === "user" && m.text) {

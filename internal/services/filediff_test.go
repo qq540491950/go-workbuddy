@@ -27,6 +27,11 @@ func fileDiffFixture(t *testing.T) (*ArtifactService, string) {
 	return svc, sessionDir
 }
 
+func mustSplit(t *testing.T, text string) []string {
+	t.Helper()
+	return splitDiffLines(text)
+}
+
 func writeWSFile(t *testing.T, dir, rel, body string) {
 	t.Helper()
 	path := filepath.Join(dir, filepath.FromSlash(rel))
@@ -36,11 +41,6 @@ func writeWSFile(t *testing.T, dir, rel, body string) {
 	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
 		t.Fatal(err)
 	}
-}
-
-func mustSplit(t *testing.T, text string) []string {
-	t.Helper()
-	return splitDiffLines(text)
 }
 
 func TestSplitDiffLines(t *testing.T) {
@@ -66,7 +66,6 @@ func TestSplitDiffLines(t *testing.T) {
 			}
 		}
 	}
-	_ = mustSplit
 }
 
 func TestLineDiffScenarios(t *testing.T) {

@@ -540,15 +540,9 @@ func revealCommand(goos, path string) *exec.Cmd {
 // manager (Finder/Explorer). The path rules match ArtifactService previews:
 // resolved against the session's effective workspace, traversal blocked.
 func (a *AppService) RevealWorkspaceFile(sessionID, relPath string) error {
-	ws := ""
-	for _, session := range a.S.Store.Get().Sessions {
-		if session.ID == sessionID {
-			ws = session.EffectiveWorkspaceFor(a.S.Store.Get())
-			break
-		}
-	}
-	if ws == "" {
-		return fmt.Errorf("会话 %q 不存在", sessionID)
+	ws, err := sessionWorkspaceOf(a.S.Store.Get(), sessionID)
+	if err != nil {
+		return err
 	}
 	if strings.TrimSpace(ws) == "" {
 		return fmt.Errorf("工作区目录未配置")

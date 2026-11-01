@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	"go-workbuddy/internal/agentkit"
@@ -464,7 +465,7 @@ func (a *ArtifactService) FileDiff(sessionID, relPath string) (*FileDiffResult, 
 	if curExists {
 		res.NewSize = st.Size()
 	}
-	res.Status = changeStatus(baseExisted, curExists, base, st, curExists && statErr == nil)
+	res.Status = changeStatus(baseExisted, curExists, base, st)
 
 	var baseLines, curLines []string
 	if baseContent != "" {
@@ -506,16 +507,29 @@ func (a *ArtifactService) FileDiff(sessionID, relPath string) (*FileDiffResult, 
 	return res, nil
 }
 
-// changeStatus mirrors buildTaskSnapshot's file-level classification and
-// leaves the status empty for files identical to their baseline entry.
-func changeStatus(baseExisted, curExists bool, base taskBaselineFile, st os.FileInfo, statOK bool) WorkspaceChangeStatus {
+// classifyChange is the single file-level classification shared by the
+// snapshot diff (buildTaskSnapshot) and FileDiff: files identical to their
+// baseline entry carry no status.
+func classifyChange(base taskBaselineFile, existed bool, size int64, modTime time.Time) WorkspaceChangeStatus {
+	switch {
+	case !existed:
+		return ChangeAdded
+	case base.Size != size || !base.ModTime.Equal(modTime):
+		return ChangeModified
+	default:
+		return ""
+	}
+}
+
+// changeStatus adapts classifyChange to FileDiff's existence inputs.
+func changeStatus(baseExisted, curExists bool, base taskBaselineFile, st os.FileInfo) WorkspaceChangeStatus {
 	switch {
 	case baseExisted && !curExists:
 		return ChangeDeleted
 	case !baseExisted && curExists:
 		return ChangeAdded
-	case baseExisted && curExists && statOK && (base.Size != st.Size() || !base.ModTime.Equal(st.ModTime())):
-		return ChangeModified
+	case baseExisted && curExists:
+		return classifyChange(base, true, st.Size(), st.ModTime())
 	default:
 		return ""
 	}
