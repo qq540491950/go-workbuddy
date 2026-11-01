@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useState } from "react";
 import { Events } from "@wailsio/runtime";
-import { Plus, Trash2, Play, RefreshCw, Wrench } from "lucide-react";
+import { Plus, Trash2, Play, RefreshCw, Wrench, Network } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { EmptyState } from "@/components/EmptyState";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -167,10 +168,11 @@ export function MCPPage() {
       <div className="grid gap-3">
         {servers.length === 0 && (
           <Card>
-            <CardContent className="p-8 text-center text-sm text-muted-foreground">
-              还没有 MCP 服务。例如添加一个 stdio 服务：command 填 npx，参数填
-              <code className="mx-1 rounded bg-muted px-1">-y,@modelcontextprotocol/server-everything</code>
-            </CardContent>
+            <EmptyState
+              icon={Network}
+              title="还没有 MCP 服务"
+              desc={'例如添加一个 stdio 服务：command 填 npx，参数填 -y,@modelcontextprotocol/server-everything'}
+            />
           </Card>
         )}
         {servers.map((s) => {

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Plus, Trash2, Users } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { EmptyState } from "@/components/EmptyState";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -182,7 +183,7 @@ export function TeamsPage() {
         {teams.length === 0 && (
           <Card className="md:col-span-2">
             <CardContent className="p-8 text-center text-sm text-muted-foreground">
-              还没有团队。创建团队前请先在「Agents」页创建成员 Agent。
+              <EmptyState icon={Users} title="还没有团队" desc="创建团队前请先在「Agents」页创建成员 Agent。" />
             </CardContent>
           </Card>
         )}

@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
-import { Plus, Trash2, PlugZap, Star, Loader2, RefreshCw, Image as ImageIcon } from "lucide-react";
+import { Plus, Trash2, PlugZap, Star, Loader2, RefreshCw, Image as ImageIcon, Boxes } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { EmptyState } from "@/components/EmptyState";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -167,7 +168,7 @@ export function ModelsPage() {
         {providers.length === 0 && (
           <Card>
             <CardContent className="p-8 text-center text-sm text-muted-foreground">
-              还没有配置模型供应商。点击右上角「新增供应商」，配置 OpenAI 兼容 / Anthropic / Gemini 接口。
+              <EmptyState icon={Boxes} title="还没有配置模型供应商" desc="点击右上角「新增供应商」，配置 OpenAI 兼容 / Anthropic / Gemini 接口。" />
             </CardContent>
           </Card>
         )}

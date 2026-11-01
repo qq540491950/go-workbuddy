@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Plus, Trash2, Bot, Network, Loader2, FolderDown, Upload } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { EmptyState } from "@/components/EmptyState";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -265,9 +266,7 @@ export function AgentsPage() {
       <div className="grid gap-3 md:grid-cols-2">
         {agents.length === 0 && (
           <Card className="md:col-span-2">
-            <CardContent className="p-8 text-center text-sm text-muted-foreground">
-              还没有 Agent。先到「模型配置」添加供应商，然后创建你的第一个 Agent。
-            </CardContent>
+            <EmptyState icon={Bot} title="还没有 Agent" desc="先到「模型配置」添加供应商，然后创建你的第一个 Agent。" />
           </Card>
         )}
         {agents.map((a) => {
@@ -376,9 +375,7 @@ export function AgentsPage() {
       <div className="grid gap-3 md:grid-cols-2">
         {remotes.length === 0 && (
           <Card className="md:col-span-2">
-            <CardContent className="p-6 text-center text-sm text-muted-foreground">
-              还没有远程 Agent。填写对方的 A2A 服务地址即可连接（例如 http://localhost:8080）。
-            </CardContent>
+            <EmptyState icon={Network} title="还没有远程 Agent" desc="填写对方的 A2A 服务地址即可连接（例如 http://localhost:8080）。" />
           </Card>
         )}
         {remotes.map((r) => (

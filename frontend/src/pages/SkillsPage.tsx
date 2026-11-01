@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
-import { Plus, Trash2, Sparkles, FolderDown } from "lucide-react";
+import { Plus, Trash2, Sparkles, FolderDown, ListTodo } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { EmptyState } from "@/components/EmptyState";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -82,7 +83,7 @@ export function SkillsPage() {
       <div className="grid gap-3 md:grid-cols-2">
         {skills.length === 0 && (
           <div className="col-span-full rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground">
-            还没有 Skill。点击「新增 Skill」创建，或从工作区 knowledge 目录导入。
+            <EmptyState icon={ListTodo} title="还没有 Skill" desc="点击「新增 Skill」创建，或从工作区 knowledge 目录导入。" />
           </div>
         )}
         {skills.map((s) => (
