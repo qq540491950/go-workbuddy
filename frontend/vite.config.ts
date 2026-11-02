@@ -8,7 +8,8 @@ import wails from "@wailsio/runtime/plugins/vite";
 export default defineConfig({
   server: {
     host: "127.0.0.1",
-    port: Number(process.env.WAILS_VITE_PORT) || 9245,
+    // 9527: 与 Taskfile.yml 的 VITE_PORT 默认值保持一致（避开 9245 冲突）
+    port: Number(process.env.WAILS_VITE_PORT) || 9527,
     strictPort: true,
   },
   plugins: [react(), tailwindcss(), wails("./bindings")],

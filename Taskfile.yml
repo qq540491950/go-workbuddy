@@ -4,7 +4,8 @@ vars:
   APP_NAME: "go-workbuddy"
   BIN_DIR: "bin"
   PACKAGE_MANAGER: '{{.PACKAGE_MANAGER | default "npm"}}'
-  VITE_PORT: '{{.WAILS_VITE_PORT | default 9245}}'
+  # 9527: 不用 Wails 默认的 9245，避免和本机同时开发的其他应用（如 agent-go）抢端口
+  VITE_PORT: '{{.WAILS_VITE_PORT | default 9527}}'
   # Target OS for build/package/run. Defaults to the host OS, and is overridden
   # by `wails3 build GOOS=...` (or the GOOS env var) for cross-compilation. The
   # tasks below dispatch to the matching platform Taskfile via this variable.
